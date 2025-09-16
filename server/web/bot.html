@@ -1,0 +1,278 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Poker Lab — Bot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <script>
+    // -------------------- helpers / boot --------------------
+    const $ = s => document.querySelector(s);
+    const q = new URLSearchParams(location.search);
+    const id = q.get('id');
+
+    // nav active state
+    document.addEventListener('DOMContentLoaded', ()=>{
+      document.querySelectorAll('.topnav a').forEach(a=>{
+        try{
+          if(location.pathname.endsWith(a.getAttribute('href').split('/').pop()))
+            a.classList.add('active');
+        }catch(e){}
+      });
+    });
+
+    // numbers + labels
+    const sum = x => (x==null?0:Number(x)).toLocaleString();
+    const pct = x => Number(x||0).toFixed(1);
+    function canonicalStyle(s){
+      const raw = (s||'').toUpperCase().replace(/[^A-Z]/g,'');
+      const map = {
+        LAG:'LAG', LOOSEAGGRESSIVE:'LAG',
+        TAG:'TAG', TIGHTAGGRESSIVE:'TAG',
+        FISH:'FISH', LOOSEPASSIVE:'FISH',
+        NIT:'NIT',  TIGHTPASSIVE:'NIT'
+      };
+      return map[raw] || 'N/A';
+    }
+
+    // -------------------- API-driven sections --------------------
+    async function getJSON(url, fallback){
+      try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
+      if (fallback){ try{ const r2 = await fetch(fallback); if(r2.ok) return await r2.json(); }catch(e){} }
+      return null;
+    }
+
+    async function loadStyle(){
+      try{
+        const d = await getJSON(`/api/bot-style?id=${encodeURIComponent(id)}`, `/web/data/bot-style-${encodeURIComponent(id)}.json`);
+        if(!d) return;
+        const styleCode = canonicalStyle(d.style);
+        const wrap = $('#playstyle');
+        if(!wrap) return;
+        wrap.innerHTML = `
+          <div class="muted">Playstyle <span class="num-sub">(click squares for details)</span></div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+            <span class="style-grid lg" data-style="${styleCode}">
+              <span class="sq"></span><span class="sq"></span><span class="sq"></span><span class="sq"></span>
+            </span>
+            <span class="muted mono">
+              raise ${pct(d.raise_pct)}% &bull;
+              call ${pct(d.call_pct)}% &bull;
+              fold ${pct(d.fold_pct)}%
+            </span>
+          </div>`;
+      }catch{/* noop */}
+    }
+
+    async function load(){
+      if (!id) {
+        document.body.innerHTML = '<div class="wrap"><div class="card">Missing id</div></div>';
+        return;
+      }
+      const d = await getJSON(`/api/bot?id=${encodeURIComponent(id)}`, `/web/data/bot-${encodeURIComponent(id)}.json`);
+      if (!d) { document.body.innerHTML = '<div class="wrap"><div class="card">Bot not found</div></div>'; return; }
+      const c = d.career || {};
+
+      // Header
+      $('#title').textContent = c.model || 'Bot';
+      $('#sub').textContent   = `Elo ${(Number(c.elo)||0).toFixed(1)}`;
+
+      // Meta KVs
+      $('#meta').innerHTML = `
+        <div class="muted">Matches</div><div>${sum(c.matches)}</div>
+        <div class="muted">Hands</div><div>${sum(c.hands)}</div>
+        <div class="muted">Accuracy</div><div id="meta-acc">&mdash;</div>
+        <div class="muted">Updated</div><div>${c.updated_at ? new Date(c.updated_at).toLocaleString() : '-'}</div>`;
+
+      // Judge accuracy (best-effort) + polling
+      async function refreshAcc(){
+        try {
+          const ja = await getJSON('/api/judge-accuracy');
+          if (ja && ja.rows) {
+            const row = (ja.rows||[]).find(x => String(x.bot_id) === String(c.bot_id || id));
+            const el = document.getElementById('meta-acc');
+            if (!el) return;
+            if (row && typeof row.total === 'number') {
+              if (row.total > 0) {
+                const acc = (typeof row.acc === 'number' && !Number.isNaN(row.acc)) ? row.acc : ((row.good || 0) / Math.max(row.total, 1));
+                const pct = Math.round(Math.max(0, Math.min(1, acc)) * 100);
+                el.textContent = `${pct}% (${row.good||0}/${row.total})`;
+              } else {
+                el.textContent = 'n/a';
+              }
+            }
+          }
+        } catch {}
+      }
+      refreshAcc();
+      setInterval(refreshAcc, 10000);
+
+      // Playstyle block
+      loadStyle();
+
+      // Recent matches
+      const rows = d.matches || [];
+      $('#tbody').innerHTML = rows.map(m => `
+        <tr>
+          <td class="num">${m.match_id}</td>
+          <td>${m.created_at ? new Date(m.created_at).toLocaleString() : '—'}</td>
+          <td>${m.ended_at ? new Date(m.ended_at).toLocaleString() : 'in progress'}</td>
+          <td>${m.label ?? ''}</td>
+          <td>${m.opponent_model ?? ''}</td>
+          <td class="num">${sum(m.start_bank)}</td>
+          <td class="num">${sum(m.end_bank)}</td>
+          <td class="num">${sum(m.wins)}</td>
+          <td class="num">${sum(m.hands)}</td>
+          <td class="num">${sum(m.net_chips)}</td>
+          <td class="num">${sum(m.check)}</td>
+          <td class="num">${sum(m.call)}</td>
+          <td class="num">${sum(m.raise)}</td>
+          <td class="num">${sum(m.fold)}</td>
+        </tr>
+      `).join('');
+    }
+
+    // -------------------- Playstyle tooltip (enhanced) --------------------
+    let tipEl, tipAnchor = null, autoHideTimer = null;
+
+    function hideTip(){
+      if (!tipEl) return;
+      tipEl.classList.remove('show');
+      tipEl.style.display = 'none';
+      tipAnchor = null;
+      if (autoHideTimer) { clearTimeout(autoHideTimer); autoHideTimer = null; }
+    }
+
+    function positionTip(){
+      if (!tipEl || !tipAnchor || !tipEl.classList.contains('show')) return;
+      const rect = tipAnchor.getBoundingClientRect();
+      const w = tipEl.offsetWidth || 260;
+      const h = tipEl.offsetHeight || 90;
+      const maxLeft = window.scrollX + document.documentElement.clientWidth - 16 - w;
+      const left = Math.min(maxLeft, Math.max(8, rect.left + window.scrollX));
+      const top  = Math.max(8, rect.top + window.scrollY - h - 8);
+      tipEl.style.left = left + 'px';
+      tipEl.style.top  = top  + 'px';
+    }
+
+    function showTip(anchor, label){
+      const explain = {
+        LAG:'Loose-Aggressive: plays many hands and applies pressure with bets/raises.',
+        TAG:'Tight-Aggressive: selects stronger ranges and applies pressure.',
+        FISH:'Loose-Passive: calls too much, weak ranges.',
+        NIT:'Very tight/passive: waits for premiums, folds often.'
+      };
+      tipAnchor = anchor;
+      tipEl.innerHTML =
+        '<button class="close" aria-label="Close">×</button>' +
+        '<div class="title">'+label+'</div>' +
+        '<div class="body">'+(explain[label]||'Playstyle summary.')+'</div>';
+
+      tipEl.style.display = 'block';
+      tipEl.classList.add('show');
+      positionTip();
+
+      // Auto-hide after 5s
+      if (autoHideTimer) clearTimeout(autoHideTimer);
+      autoHideTimer = setTimeout(hideTip, 5000);
+    }
+
+    document.addEventListener('DOMContentLoaded', ()=>{
+      tipEl = document.getElementById('tip-pop');
+      if (!tipEl) {
+        tipEl = document.createElement('div');
+        tipEl.id = 'tip-pop';
+        tipEl.className = 'tooltip-pop';
+        document.body.appendChild(tipEl);
+      }
+
+      // Guaranteed close: local listener on the popover
+      tipEl.addEventListener('click', (ev)=>{
+        if (ev.target.closest('.close')) hideTip();
+      });
+
+      // Toggle via clicks
+      document.addEventListener('click', (ev)=>{
+        const grid = ev.target.closest('.style-grid');
+        if (!grid) {
+          if (!ev.target.closest('#tip-pop')) hideTip();
+          return;
+        }
+        const label = grid.getAttribute('data-style') || 'N/A';
+        if (tipEl.classList.contains('show') && tipAnchor === grid) {
+          hideTip();
+        } else {
+          showTip(grid, label);
+        }
+      });
+
+      // Close on Escape
+      document.addEventListener('keydown', (e)=>{
+        if (e.key === 'Escape') hideTip();
+      });
+
+      // Keep anchored on scroll/resize
+      window.addEventListener('scroll', positionTip, { passive:true });
+      window.addEventListener('resize', positionTip);
+    });
+
+    // -------------------- boot --------------------
+    addEventListener('DOMContentLoaded', load);
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topnav">
+      <div class="brand">AI Poker Lab</div>
+      <nav style="display:flex; gap:8px; align-items:center">
+        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
+        <a class="pill" href="/web/matrix.html">Matrix</a>
+        <a class="pill" href="/web/elo.html">Elo</a>
+        <a class="pill" href="/web/replay.html">Replay</a>
+        <a class="pill" href="/web/history.html">History</a>
+        <a class="pill" href="/web/about.html">About</a>
+      </nav>
+    </div>
+
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+      <div>
+        <h1 id="title">Bot</h1>
+        <div id="sub" class="muted"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="kvs" id="meta"></div>
+      <div id="playstyle" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent Matches</h2>
+      <table class="table-compact">
+        <thead>
+          <tr>
+            <th class="num">Match</th>
+            <th>Created</th>
+            <th>Ended</th>
+            <th>Label</th>
+            <th>Opponent</th>
+            <th class="num">Start</th>
+            <th class="num">End</th>
+            <th class="num">Wins</th>
+            <th class="num">Hands</th>
+            <th class="num">Net</th>
+            <th class="num">Check</th>
+            <th class="num">Call</th>
+            <th class="num">Raise</th>
+            <th class="num">Fold</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"><tr><td colspan="14">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- floating tooltip node (populated via JS) -->
+  <div id="tip-pop" class="tooltip-pop" aria-live="polite"></div>
+</body>
+</html>

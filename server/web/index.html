@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Poker Lab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <script>
+    document.addEventListener('DOMContentLoaded', ()=>{
+      document.querySelectorAll('.topnav a').forEach(a=>{ try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){} });
+    });
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topnav">
+      <div class="brand">AI Poker Lab</div>
+      <nav style="display:flex; gap:8px; align-items:center">
+        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
+        <a class="pill" href="/web/matrix.html">Matrix</a>
+        <a class="pill" href="/web/elo.html">Elo</a>
+        <a class="pill" href="/web/replay.html">Replay</a>
+        <a class="pill" href="/web/history.html">History</a>
+        <a class="pill" href="/web/about.html">About</a>
+      </nav>
+    </div>
+
+    <div class="card" id="hero">
+      <h1 style="margin-bottom:4px">Latest Match</h1>
+      <div class="muted">Health: <code>/api/health</code> &bull; Data: <code>/api/last-match</code></div>
+      <div id="cta" style="margin-top:10px"></div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h2>Meta</h2>
+        <div id="meta" class="kvs mono"></div>
+      </div>
+      <div class="card">
+        <h2>Participants</h2>
+        <div id="parts" class="grid2"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h2>Action Mix</h2>
+        <div id="mix" class="grid2"></div>
+      </div>
+      <div class="card">
+        <h2>Elo Timeline</h2>
+        <svg id="eloChart" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+        <div class="muted" style="margin-top:6px">Includes start/end and per pair (after_pair).</div>
+      </div>
+    </div>
+
+    <div class="footer">Tip: start a duel, then refresh. Career results on the Leaderboard.</div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const fmt = n => n.toLocaleString();
+    const pct = n => `${Math.max(0, Math.round(n))}%`;
+
+    function kv(key, val) {
+      return `<div class="muted">${key}</div><div>${val}</div>`;
+    }
+    function pill(txt){ return `<span class="pill">${txt}</span>` }
+
+    function barRow(title, x) {
+      const total = x.total_actions || (x.check_ct + x.call_ct + x.raise_ct + x.fold_ct);
+      const c = x.check_pct ?? Math.round(100*x.check_ct/Math.max(1,total));
+      const ca= x.call_pct  ?? Math.round(100*x.call_ct /Math.max(1,total));
+      const r = x.raise_pct ?? Math.round(100*x.raise_ct/Math.max(1,total));
+      const f = x.fold_pct  ?? Math.round(100*x.fold_ct /Math.max(1,total));
+      return `
+        <div class="muted">${title}</div>
+        <div>
+          <div class="bar">
+            <span class="check" style="width:${c}%"></span>
+            <span class="call"  style="width:${ca}%"></span>
+            <span class="raise" style="width:${r}%"></span>
+            <span class="fold"  style="width:${f}%"></span>
+          </div>
+          <div class="muted mono" style="display:flex; gap:12px; margin-top:6px;">
+            <span>check ${pct(c)}</span><span>call ${pct(ca)}</span>
+            <span>raise ${pct(r)}</span><span>fold ${pct(f)}</span>
+          </div>
+        </div>`;
+    }
+
+    function drawElo(svg, ptsA, ptsB) {
+      const el = svg;
+      const w = 600, h = 140, pad = 8;
+      el.innerHTML = '';
+      if (!ptsA.length) return;
+
+      const all = ptsA.concat(ptsB);
+      const minY = Math.min(...all.map(p=>p.y));
+      const maxY = Math.max(...all.map(p=>p.y));
+      const xScale = i => pad + (i*(w-2*pad))/Math.max(1,ptsA.length-1);
+      const yScale = y => h - pad - ((y - minY) * (h-2*pad)) / Math.max(1,(maxY-minY||1));
+
+      const path = (pts, cls) => {
+        let d = '';
+        pts.forEach((p,i)=>{
+          const X = xScale(i), Y = yScale(p.y);
+          d += (i?` L ${X} ${Y}`:`M ${X} ${Y}`);
+        });
+        const g = document.createElementNS('http://www.w3.org/2000/svg','path');
+        g.setAttribute('d', d);
+        g.setAttribute('fill','none');
+        g.setAttribute('stroke', cls);
+        g.setAttribute('stroke-width','2');
+        el.appendChild(g);
+      };
+
+      // grid
+      const grid = document.createElementNS('http://www.w3.org/2000/svg','path');
+      grid.setAttribute('d', `M ${pad} ${pad} V ${h-pad} M ${w-pad} ${pad} V ${h-pad}`);
+      grid.setAttribute('stroke','#233042'); grid.setAttribute('fill','none');
+      el.appendChild(grid);
+
+      path(ptsA, '#39d98a'); // A
+      path(ptsB, '#d6c29b'); // B
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('/api/last-match');
+        if (!res.ok) {
+          $('.wrap').insertAdjacentHTML('afterbegin',
+            `<div class="card">No matches yet. Run a duel, then refresh.</div>`);
+          return;
+        }
+        const d = await res.json();
+        const ended = d.match && d.match.ended_at ? new Date(d.match.ended_at).toLocaleString() : 'in progress';
+        if (!d.match.ended_at) {
+          $('#cta').innerHTML = `<a class="btn" href="/web/live.html?match_id=${d.match.id}">Watch Live</a>`;
+        } else {
+          $('#cta').innerHTML = '';
+        }
+
+        // Meta
+        $('#meta').innerHTML =
+          kv('Match ID', d.match.id) +
+          kv('When', new Date(d.match.created_at).toLocaleString()) +
+          kv('Ended', ended) +
+          kv('Blinds', `${d.match.sb}/${d.match.bb}`) +
+          kv('Start stack', fmt(d.match.start_stack)) +
+          kv('Mirrored pairs', d.match.duel_seeds) +
+          kv('Elo', `start ${d.match.elo_start}, K=${d.match.elo_k}, per_hand=${d.match.elo_per_hand}`) +
+          kv('Weight by pot', d.match.elo_weight_by_pot);
+
+        // Participants
+        $('#parts').innerHTML = d.participants.map(p => `
+          <div class="card">
+            <h3>${p.label} - <span class="muted">${p.company||'bot'}</span></h3>
+            <div class="mono" style="word-break:break-all">${p.model}</div>
+            <div style="margin:6px 0">${p.reasoning_effort ? pill('reasoning: '+p.reasoning_effort) : ''}</div>
+            <div class="kvs mono" style="margin-top:8px">
+              ${kv('Start', fmt(p.start_bank))}
+              ${kv('End', fmt(p.end_bank))}
+              ${kv('Wins', p.wins)}
+            </div>
+          </div>
+        `).join('');
+
+        // Action mix
+        const A = d.action_mix.find(x=>x.label==='A');
+        const B = d.action_mix.find(x=>x.label==='B');
+        $('#mix').innerHTML =
+          `<div>${barRow(`A - ${A?.model||''}`, A||{check_ct:0,call_ct:0,raise_ct:0,fold_ct:0,total_actions:0})}</div>` +
+          `<div>${barRow(`B - ${B?.model||''}`, B||{check_ct:0,call_ct:0,raise_ct:0,fold_ct:0,total_actions:0})}</div>`;
+
+        // Elo sparkline
+        const ordered = d.rating; // already ordered by pair_index in API
+        const ptsA = ordered.map(r => ({ y: r.elo_a }));
+        const ptsB = ordered.map(r => ({ y: r.elo_b }));
+        drawElo(document.getElementById('eloChart'), ptsA, ptsB);
+
+        // Auto-refresh during live matches
+        if (!d.match.ended_at) {
+          setTimeout(load, 2000);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

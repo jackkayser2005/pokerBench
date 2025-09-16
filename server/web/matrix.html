@@ -1,0 +1,94 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Poker Lab — Win Matrix</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
+  <script>
+    document.addEventListener('DOMContentLoaded', ()=>{
+      document.querySelectorAll('.topnav a').forEach(a=>{ try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){} });
+    });
+    const $ = s => document.querySelector(s);
+    function heat(p){
+      const x = Math.max(0, Math.min(1, p));
+      const hue = 240*(1-x); // blue -> red
+      return `background-color: hsl(${hue} 70% 42% / .22)`;
+    }
+    function shortName(s){
+      s = (s||'').trim().replace(/^"+|"+$/g,'');
+      s = s.replace(/[\-_.]20\d{2}(?:[\-_.]?\d{2}){0,2}$/,'');
+      const parts = s.split(/[\/:@]/).filter(Boolean);
+      s = (parts[parts.length-1]||s).trim();
+      if (s.length>28) s = s.slice(0,28)+'…';
+      return s;
+    }
+    function eloProb(ra, rb){ return 1 / (1 + Math.pow(10, (rb - ra)/400)); }
+    async function getJSON(url, fallback){
+      try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
+      if (fallback){ try{ const r2 = await fetch(fallback); if(r2.ok) return await r2.json(); }catch(e){} }
+      return { bots: [], pairs: [] };
+    }
+    async function load(){
+      const d = await getJSON('/api/matrix', '/web/data/matrix.json');
+      const bots = d.bots || [];
+      const pairs = d.pairs || [];
+      const idx = new Map(bots.map((b,i)=>[b.id,i]));
+      const N = bots.length;
+      const wins = Array.from({length:N}, ()=>Array(N).fill(null));
+      const hands = Array.from({length:N}, ()=>Array(N).fill(0));
+      const elo = bots.map(b=>b.elo ?? 1500);
+      for(const p of pairs){
+        const i = idx.get(p.a_id), j = idx.get(p.b_id);
+        hands[i][j] = hands[j][i] = p.hands;
+        const total = p.a_wins + p.b_wins;
+        const pa = total>0 ? p.a_wins/total : 0.5;
+        wins[i][j] = pa; wins[j][i] = 1-pa;
+      }
+      let html = '<div class="table-wrap"><table class="matrix-table"><thead><tr><th>Model</th>' + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
+      bots.forEach((b, i)=>{
+        html += `<tr><th scope="row"><div>${shortName(b.name)}</div><div class=\"sub\">${b.company}</div></th>`;
+        for(let j=0;j<N;j++){
+          if(i===j){ html += '<td class="matrix-diag">-</td>'; continue; }
+          const p = wins[i][j];
+          const pct = p==null? '-' : Math.round(100*p)+'%';
+          const exp = Math.round(100*eloProb(elo[i], elo[j]))+'%';
+          const tip = hands[i][j] ? `${pct} actual of ${hands[i][j]} hands\n${exp} expected (Elo)` : `${pct} actual\n${exp} expected (Elo)`;
+          const style = heat(p==null?0.5:p);
+          html += `<td class="num" style="${style}" title="${tip}">${pct}</td>`;
+        }
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      $('#matrix').innerHTML = html;
+    }
+    addEventListener('DOMContentLoaded', load);
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topnav">
+      <div class="brand">AI Poker Lab</div>
+      <nav style="display:flex; gap:8px; align-items:center">
+        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
+        <a class="pill" href="/web/matrix.html">Matrix</a>
+        <a class="pill" href="/web/elo.html">Elo</a>
+        <a class="pill" href="/web/replay.html">Replay</a>
+        <a class="pill" href="/web/history.html">History</a>
+        <a class="pill" href="/web/about.html">About</a>
+      </nav>
+    </div>
+
+    <div class="card">
+      <h1>Win Percentage Matrix</h1>
+      <div class="muted">Cell shows A’s win rate vs B (hand-level). Heat indicates stronger advantage.</div>
+    </div>
+
+    <div class="card" id="matrix">Loading…</div>
+  </div>
+</body>
+</html>
+
+
+

@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Poker Lab - Replay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
+  <script>
+    // ------- helpers
+    const $ = (s) => document.querySelector(s);
+    const q = new URLSearchParams(location.search);
+    const fmtChips = (n) => (n == null ? '0' : Number(n).toLocaleString());
+
+    // ------- state
+    let matchId = q.get('match_id');
+    let modelA = 'A', modelB = 'B';
+    let rows = [];
+    let i = 0;
+    let timer = null;
+    let playing = false;
+    const introHoldFactor = 1.8; // extra delay between first and second action
+    const speedBase = 1500; // ms for v=1
+    let speed = speedBase;
+    let prevHandId = null;
+    let prevBoardKey = '';
+    let dealerOnSB = true;
+    let dealerEl = null;
+    let winnerSeat = null; // 'SB' | 'BB' | null
+
+    // Suit / rank splitter (expects like 'Ah', 'Tc')
+    function cardParts(c) {
+      if (!c || c.length < 2) return { r: '', suitName: '' };
+      const r = c[0], s = c[1];
+      const suitMap = { c: 'club', d: 'diamond', h: 'heart', s: 'spade' };
+      return { r, suitName: suitMap[s] || '' };
+    }
+
+    // Render cards into a slot; reveal by toggling .flip post-insert
+    function setCards(el, arr, reveal) {
+      if (!el) return;
+      el.innerHTML = '';
+      (arr || []).forEach((c, idx) => {
+        const { r, suitName } = cardParts(c);
+        const card = document.createElement('div');
+        card.className = 'cardx deal ' + (suitName || '');
+        card.style.animationDelay = `${idx * 100}ms`;
+
+        const back = document.createElement('div');
+        back.className = 'face back';
+        const front = document.createElement('div');
+        front.className = 'face front';
+        front.innerHTML = r ? `
+          <div class="num-box top suit">${r}</div>
+          <div class="num-box bottom suit">${r}</div>
+          <div class="suit main"></div>` : '';
+
+        card.appendChild(back);
+        card.appendChild(front);
+        el.appendChild(card);
+        if (reveal && r) card.classList.add('flip');
+      });
+    }
+
+    function dateShort(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function draw() {
+      if (!rows.length) return;
+      const r = rows[i];
+
+      // Hand header "<hand> — <street>"
+      const handEl = $('#hand');
+      if (handEl) handEl.textContent = `${r.hand_id} \u2014 ${r.street}`;
+      const potEl = $('#pot');
+      if (potEl) potEl.textContent = fmtChips(r.pot);
+
+      // Board: reflip when composition changes
+      const boardArr = r.board || [];
+      const key = boardArr.join(',');
+      if (key !== prevBoardKey) {
+        prevBoardKey = key;
+        setCards($('#board'), boardArr, false);
+        setTimeout(() => { $('#board')?.querySelectorAll('.cardx').forEach((c) => c.classList.add('flip')); }, 140);
+      }
+
+      // Holes: reveal based on selector
+      const sel = $('#holesSel');
+      const mode = sel ? sel.value : 'both';
+      const showSB = mode === 'both' || mode === 'sb';
+      const showBB = mode === 'both' || mode === 'bb';
+      setCards($('#sb_hole'), r.sb_hole || [], false);
+      setCards($('#bb_hole'), r.bb_hole || [], false);
+      $('#sb_hole')?.querySelectorAll('.cardx').forEach((c) => c.classList.toggle('flip', showSB));
+      $('#bb_hole')?.querySelectorAll('.cardx').forEach((c) => c.classList.toggle('flip', showBB));
+
+      // Seat headers per hand: map A/B to SB/BB using hand suffix
+      const aIsSB = /A$/i.test((r.hand_id||''));
+      const sbName = aIsSB ? modelA : modelB;
+      const bbName = aIsSB ? modelB : modelA;
+      const sbHdr = document.querySelector('#sbZone .muted');
+      const bbHdr = document.querySelector('#bbZone .muted');
+      if (sbHdr) sbHdr.textContent = `SB \u2014 ${sbName}`;
+      if (bbHdr) bbHdr.textContent = `BB \u2014 ${bbName}`;
+
+      // Stacks
+      const sbTag = $('#sb_stack_tag');
+      const bbTag = $('#bb_stack_tag');
+      if (sbTag) sbTag.textContent = `Stack: ${fmtChips(r.sb_stack)}`;
+      if (bbTag) bbTag.textContent = `Stack: ${fmtChips(r.bb_stack)}`;
+
+      // Caption + turn indicator
+      const who = (r.actor_label === 'A' ? modelA : modelB) || r.actor_label;
+      const actionText = `${who} ${r.action}` + (r.amount != null ? ` ${r.action === 'call' ? 'for' : 'to'} ${r.amount}` : '');
+      const log = $('#log'); if (log) log.textContent = actionText;
+      const caption = $('#caption'); if (caption) caption.textContent = actionText;
+
+      const turn = $('#turn');
+      if (turn) {
+        const abbrev = r.actor_label;
+        const name = r.actor_label === 'A' ? modelA : modelB;
+        turn.textContent = `Turn: ${abbrev} \u2022 ${name}`;
+      }
+
+      const replayCard = document.querySelector('.card.replay');
+      if (replayCard) {
+        replayCard.classList.remove('focus-sb', 'focus-bb');
+        replayCard.classList.add(r.actor_label === 'A' ? 'focus-sb' : 'focus-bb');
+      }
+
+      // Dealer hop on hand boundary
+      if (prevHandId !== r.hand_id) {
+        prevHandId = r.hand_id;
+        winnerSeat = null; // reset for new hand
+        const sbZ = $('#sbZone'), bbZ = $('#bbZone');
+        sbZ?.classList.remove('win-glow');
+        bbZ?.classList.remove('win-glow');
+        const hb0 = $('#handBanner'); if (hb0) hb0.textContent = '';
+        dealerOnSB = !dealerOnSB;
+        const target = dealerOnSB ? sbZ : bbZ;
+        if (target) {
+          if (!dealerEl) { dealerEl = document.createElement('div'); dealerEl.className = 'dealer dealer-move'; dealerEl.textContent = 'D'; }
+          target.prepend(dealerEl);
+          dealerEl.classList.remove('dealer-move'); void dealerEl.offsetWidth; dealerEl.classList.add('dealer-move');
+        }
+      }
+
+      // End-of-hand banner + winner glow
+      const sbZ = $('#sbZone'), bbZ = $('#bbZone');
+      const hb = $('#handBanner');
+      const endOfHand = i === rows.length - 1 || (rows[i + 1]?.hand_id !== r.hand_id);
+      if (endOfHand) {
+        if (!winnerSeat && r.winner_seat) {
+          winnerSeat = r.winner_seat; // showdown from server
+        }
+        if (!winnerSeat && (r.action || '').toLowerCase() === 'fold') {
+          const wl = r.actor_label === 'A' ? 'B' : 'A';
+          const aIsSB2 = ((r.hand_id || '').slice(-1).toUpperCase() === 'A');
+          winnerSeat = wl === 'A' ? (aIsSB2 ? 'SB' : 'BB') : (aIsSB2 ? 'BB' : 'SB');
+        }
+        if (winnerSeat === 'SB') sbZ?.classList.add('win-glow');
+        if (winnerSeat === 'BB') bbZ?.classList.add('win-glow');
+        if (hb) {
+          let msg = 'Hand complete.';
+          if (winnerSeat === 'SB' || winnerSeat === 'BB') {
+            const aIsSB3 = ((r.hand_id || '').slice(-1).toUpperCase() === 'A');
+            const winModel = (winnerSeat === 'SB') ? (aIsSB3 ? modelA : modelB) : (aIsSB3 ? modelB : modelA);
+            msg = `${winModel} wins \u2014 ${winnerSeat}`;
+          }
+          hb.textContent = msg;
+        }
+      }
+
+      // Progress UI
+      const prog = $('#prog');
+      const count = $('#count');
+      if (prog) prog.value = i;
+      if (count) count.textContent = `${i + 1}/${rows.length}`;
+
+      if (i === rows.length - 1) {
+        const banner = $('#handBanner');
+        if (banner) banner.textContent = 'Match over.';
+        pause();
+        i = 0; // rewind for next play
+      }
+    }
+
+    function step(delta = 1) {
+      if (!rows.length) return;
+      i = Math.max(0, Math.min(i + delta, rows.length - 1));
+      draw();
+    }
+
+    function isHandStart(idx){
+      if (!rows.length) return false;
+      if (idx <= 0) return true;
+      return rows[idx-1]?.hand_id !== rows[idx]?.hand_id;
+    }
+
+    function scheduleNext(){
+      if (!playing) return;
+      const delay = Math.round(speed * (isHandStart(i) ? introHoldFactor : 1));
+      timer = setTimeout(() => { step(+1); scheduleNext(); }, delay);
+    }
+
+    function play() {
+      if (playing) return;
+      playing = true;
+      const st = $('#status'); if (st) { st.textContent = 'Playing'; st.className = 'pill ok'; }
+      scheduleNext();
+    }
+
+    function pause() {
+      playing = false;
+      if (timer) { clearTimeout(timer); timer = null; }
+      const st = $('#status'); if (st) { st.textContent = 'Paused'; st.className = 'pill ghost'; }
+    }
+
+    async function getJSON(url, fallback) {
+      try { const r = await fetch(url, { cache: 'no-store' }); if (r.ok) return await r.json(); } catch {}
+      if (fallback) { try { const r2 = await fetch(fallback, { cache: 'no-store' }); if (r2.ok) return await r2.json(); } catch {} }
+      return null;
+    }
+
+    async function populateModels() {
+      try {
+        const data = await getJSON('/api/matches', '/web/data/matches.json');
+        if (!data) return;
+        const list = data.rows || [];
+
+        // Populate selector
+        const sel = $('#matchSel');
+        if (sel) {
+          sel.innerHTML = list.slice(0, 30).map(m => `<option value="${m.id}">#${m.id} &bull; ${dateShort(m.created_at)}</option>`).join('');
+          if (matchId) sel.value = String(matchId);
+          else if (list[0]) { matchId = list[0].id; sel.value = String(matchId); }
+          sel.onchange = () => { matchId = sel.value; history.replaceState(null, '', `?match_id=${matchId}`); load(); };
+        }
+
+        // Current match row for names
+        const row = list.find(m => String(m.id) === String(matchId)) || list[0];
+        if (row) {
+          modelA = row.model_a || 'A';
+          modelB = row.model_b || 'B';
+          const map = $('#map');
+          if (map) { map.innerHTML = `<span class="pill">A &bull; ${modelA}</span> <span class="pill">B &bull; ${modelB}</span>`; }
+          try { localStorage.setItem(`replay_models_${matchId}`, JSON.stringify({A:modelA,B:modelB})); } catch {}
+        } else {
+          // fallback to cached names for this match
+          try { const cached = localStorage.getItem(`replay_models_${matchId}`); if (cached){ const o = JSON.parse(cached); if (o?.A && o?.B){ modelA = o.A; modelB = o.B; const map = $('#map'); if (map){ map.innerHTML = `<span class="pill">A &bull; ${modelA}</span> <span class="pill">B &bull; ${modelB}</span>`; } } } } catch {}
+        }
+      } catch {}
+    }
+
+    async function load() {
+      if (!matchId) await populateModels();
+      await populateModels(); // refresh labels
+
+      if (!matchId) { const log = $('#log'); if (log) log.textContent = 'No match selected.'; return; }
+      const data = await getJSON(`/api/match-logs?match_id=${encodeURIComponent(matchId)}`, `/web/data/match-logs-${encodeURIComponent(matchId)}.json`);
+      rows = (data && data.rows) ? data.rows : [];
+
+      // reset state
+      i = 0; prevHandId = null; prevBoardKey = ''; winnerSeat = null;
+      const prog = $('#prog'); if (prog) { prog.max = Math.max(0, rows.length - 1); prog.value = 0; }
+      draw();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Nav active state
+      document.querySelectorAll('.topnav a').forEach((a) => {
+        try { const target = a.getAttribute('href').split('/').pop(); if (location.pathname.endsWith(target)) a.classList.add('active'); } catch {}
+      });
+
+      // initial load
+      populateModels().then(load);
+
+      // Controls
+      $('#play')?.addEventListener('click', play);
+      $('#pause')?.addEventListener('click', pause);
+      $('#next')?.addEventListener('click', () => step(+1));
+      $('#sl')?.addEventListener('input', (e) => { const v = Math.max(1, parseInt(e.target.value || '1', 10) || 1); speed = Math.round(speedBase / v); if (playing) { pause(); play(); } });
+      $('#prog')?.addEventListener('input', (e) => { i = parseInt(e.target.value || '0', 10) || 0; draw(); });
+      const hs = $('#holesSel'); if (hs) hs.onchange = () => draw();
+
+      // Keyboard
+      addEventListener('keydown', (ev) => { if (ev.key === 'ArrowRight') step(+1); else if (ev.key === 'ArrowLeft') step(-1); });
+    });
+  </script>
+</head>
+<body class="replay-theme">
+  <div class="wrap">
+    <div class="topnav">
+      <div class="brand">AI Poker Lab</div>
+      <nav style="display:flex; gap:8px; align-items:center">
+        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
+        <a class="pill" href="/web/matrix.html">Matrix</a>
+        <a class="pill" href="/web/elo.html">Elo</a>
+        <a class="pill" href="/web/replay.html">Replay</a>
+        <a class="pill" href="/web/history.html">History</a>
+        <a class="pill" href="/web/about.html">About</a>
+      </nav>
+    </div>
+
+    <div class="card">
+      <h1>Replay</h1>
+      <div class="muted">Latest match loads automatically. Switch below.</div>
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:6px">
+        <label class="muted" for="matchSel">Match</label>
+        <select id="matchSel" class="pill" style="background:#0f1712; border-color: var(--line); color: var(--text)"></select>
+        <div id="map" class="muted" style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <div class="card replay">
+      <div class="table">
+        <div class="controls" style="grid-column:1/4">
+          <div class="group">
+            <button class="pill" id="play" type="button">Play</button>
+            <button class="pill" id="pause" type="button">Pause</button>
+            <button class="pill" id="next" type="button">Next</button>
+          </div>
+          <div class="group">
+            <label class="muted" for="sl">Speed</label>
+            <input id="sl" type="range" min="1" max="5" value="1"/>
+          </div>
+          <span id="status" class="pill ghost" aria-live="polite">Paused</span>
+          <span id="turn" class="pill" style="background:linear-gradient(90deg,#ffd166,#ffaf66); color:#1a1200">Turn: &mdash;</span>
+          <div class="group">
+            <label class="muted" for="holesSel">Holes</label>
+            <select id="holesSel" class="pill" style="background:#0f1712; border-color: var(--line); color: var(--text)">
+              <option value="both">Both</option>
+              <option value="sb">SB Only</option>
+              <option value="bb">BB Only</option>
+              <option value="none">Hidden</option>
+            </select>
+          </div>
+          <input id="prog" type="range" min="0" value="0" style="flex:1 1 240px"/>
+          <span class="muted mono" id="count">0/0</span>
+        </div>
+
+        <div class="felt">
+          <div class="muted" id="hand" style="margin-bottom:8px">&mdash;</div>
+          <div id="caption" class="mono" style="text-align:center; color:var(--muted); margin-bottom:6px"></div>
+          <div id="handBanner" class="hand-banner"></div>
+          <div class="cards" id="board" style="justify-content:center"></div>
+          <div class="stacks">
+            <div id="sbZone" class="sb-zone">
+              <div class="muted">SB</div>
+              <div class="cards" id="sb_hole"></div>
+              <div id="sb_stack_tag" class="stack-tag">Stack: 0</div>
+            </div>
+            <div>Pot: <span class="mono" id="pot">0</span></div>
+            <div id="bbZone" class="bb-zone">
+              <div class="muted" style="text-align:right">BB</div>
+              <div class="cards" id="bb_hole" style="justify-content:flex-end"></div>
+              <div id="bb_stack_tag" class="stack-tag" style="justify-self:end">Stack: 0</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</body>
+</html>

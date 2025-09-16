@@ -1,0 +1,71 @@
+secrets:
+  openai_api_key:
+    file: ${OPENAI_API_SECRET_FILE:-./secrets/openai_api_key.txt}   # one line: your API key (not committed)
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: poker
+      POSTGRES_PASSWORD: poker
+      POSTGRES_DB: thunderdome
+    ports: ["5432:5432"]
+    healthcheck:
+      # Check the thunderdome database explicitly to avoid "database \"poker\" does not exist"
+      test: ["CMD-SHELL", "pg_isready -U poker -d thunderdome"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    secrets:
+      - openai_api_key
+    env_file:
+      - ${ENV_FILE:-compose.env}        # set ENV_FILE to choose a different env
+    environment:
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["8080:8080"]
+    command: ["/app/ai-thunderdome"]    # server mode
+    restart: unless-stopped
+
+  duel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    secrets:
+      - openai_api_key
+    env_file:
+      - ${ENV_FILE:-compose.env}
+    environment:
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["/app/ai-thunderdome", "--duel"]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    secrets:
+      - openai_api_key
+    env_file:
+      - ${ENV_FILE:-compose.env}
+    environment:
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["/app/ai-thunderdome", "--migrate"]
+    restart: "no"
+
+volumes:
+  pgdata:

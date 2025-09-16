@@ -1,0 +1,17 @@
+# secrets
+.env
+
+
+# misc
+*.log
+# secrets
+openai_api_key.txt
+server/openai_api_key.txt
+secrets/openai_api_key.txt
+compose.env
+compose.env.local
+compose.env.supabase
+secrets/*
+secrets/openrouter_api_key.txt
+compose.env.deepseek
+compose.env.openrouter

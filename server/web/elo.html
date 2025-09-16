@@ -1,0 +1,105 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Poker Lab — Elo Over Time</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
+  <script>
+    document.addEventListener('DOMContentLoaded', ()=>{
+      document.querySelectorAll('.topnav a').forEach(a=>{ try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){} });
+    });
+    const $ = s => document.querySelector(s);
+    function color(i){ const pal=['#00ffa0','#69c2ff','#ffd166','#ff6b6b','#c792ea','#6ee7b7','#fca5a5','#60a5fa']; return pal[i%pal.length]; }
+    function groupByBot(rows){
+      const map = new Map();
+      rows.forEach(r=>{ if(!map.has(r.bot_id)) map.set(r.bot_id,{meta:{model:r.model,company:r.company}, pts:[]}); map.get(r.bot_id).pts.push({t:new Date(r.when), elo:r.elo}); });
+      return map;
+    }
+    function draw(series){
+      const svg = document.getElementById('chart');
+      const w=980, h=340, pad=40; svg.setAttribute('viewBox',`0 0 ${w} ${h}`); svg.innerHTML='';
+      const allPts=[]; series.forEach(v=>v.pts.forEach(p=>allPts.push(p)));
+      if(!allPts.length){ svg.innerHTML='<text x="20" y="24" fill="#5b7089" font-size="14">No data yet.</text>'; return; }
+      const t0r = Math.min(...allPts.map(p=>p.t.getTime()));
+      let   t1r = Math.max(...allPts.map(p=>p.t.getTime()));
+      if (t1r === t0r) t1r = t0r + 1;
+      const y0r = Math.min(...allPts.map(p=>p.elo));
+      const y1r = Math.max(...allPts.map(p=>p.elo));
+      const ypad = Math.max(10, (y1r - y0r) * 0.05);
+      const base = 1500; // baseline around 1500
+      const y0 = Math.min(base, y0r) - ypad, y1 = y1r + ypad;
+      const x = T => pad + ((T - t0r) * (w-2*pad)) / Math.max(1,(t1r-t0r||1));
+      const y = V => h - pad - ((V - y0) * (h-2*pad)) / Math.max(1,(y1-y0||1));
+      // axes + grid
+      const mk = (tag) => document.createElementNS('http://www.w3.org/2000/svg', tag);
+      const axis = mk('path'); axis.setAttribute('d', `M ${pad} ${pad} V ${h-pad} M ${pad} ${h-pad} H ${w-pad}`);
+      axis.setAttribute('stroke','#233042'); axis.setAttribute('fill','none'); svg.appendChild(axis);
+      // y ticks
+      const ticks = 4; for(let t=0;t<=ticks;t++){
+        const v = y0 + (t*(y1-y0))/ticks; const yy = y(v);
+        const gl = mk('path'); gl.setAttribute('d', `M ${pad} ${yy} H ${w-pad}`); gl.setAttribute('stroke','#1d2a3a'); gl.setAttribute('opacity','0.55'); svg.appendChild(gl);
+        const tx = mk('text'); tx.setAttribute('x', String(6)); tx.setAttribute('y', String(yy+4)); tx.setAttribute('fill', '#5b7089'); tx.setAttribute('font-size','10'); tx.textContent = Math.round(v).toString(); svg.appendChild(tx);
+      }
+      // x ticks (dates)
+      const xt = 5; for(let k=0;k<=xt;k++){
+        const t = t0r + (k*(t1r-t0r))/xt; const xx = x(t);
+        const gl = mk('path'); gl.setAttribute('d', `M ${xx} ${pad} V ${h-pad}`); gl.setAttribute('stroke','#1d2a3a'); gl.setAttribute('opacity','0.35'); svg.appendChild(gl);
+        const tx = mk('text'); tx.setAttribute('x', String(xx-24)); tx.setAttribute('y', String(h-6)); tx.setAttribute('fill','#5b7089'); tx.setAttribute('font-size','10'); tx.textContent = new Date(t).toLocaleDateString(); svg.appendChild(tx);
+      }
+      // series
+      let i=0; const legend=$('#legend'); legend.innerHTML='';
+      series.forEach(entry=>{
+        const pts = entry.pts.sort((a,b)=>a.t-b.t);
+        if (!pts.length) return;
+        // Prepend a synthetic point at baseline 1500 just before first timestamp
+        const firstT = pts[0].t.getTime();
+        const seeded = [{ t: new Date(firstT - 60000), elo: 1500 }].concat(pts);
+        let d=''; seeded.forEach((p,k)=>{ const X=x(p.t.getTime()), Y=y(p.elo); d += (k?` L ${X} ${Y}`:`M ${X} ${Y}`); });
+        const path = mk('path'); path.setAttribute('d', d); path.setAttribute('fill','none'); path.setAttribute('stroke', color(i)); path.setAttribute('stroke-width','2'); path.setAttribute('stroke-linejoin','round'); path.setAttribute('stroke-linecap','round'); svg.appendChild(path);
+        seeded.slice(1).forEach(p=>{ const c=mk('circle'); c.setAttribute('cx', x(p.t.getTime())); c.setAttribute('cy', y(p.elo)); c.setAttribute('r', 2.5); c.setAttribute('fill', color(i)); svg.appendChild(c); });
+        const item = document.createElement('div'); item.className='pill'; item.style.borderColor='transparent'; item.style.background=color(i); item.style.color='#0b0f12'; item.textContent=entry.meta.model; legend.appendChild(item);
+        i++;
+      });
+    }
+    async function getJSON(url, fallback){
+      try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
+      if (fallback){ try{ const r2 = await fetch(fallback); if(r2.ok) return await r2.json(); }catch(e){} }
+      return { rows: [] };
+    }
+    async function load(){
+      const data = await getJSON('/api/elo-history', '/web/data/elo-history.json');
+      const rows = data.rows || [];
+      const map = groupByBot(rows);
+      draw([...map.values()]);
+    }
+    addEventListener('DOMContentLoaded', load);
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topnav">
+      <div class="brand">AI Poker Lab</div>
+      <nav style="display:flex; gap:8px; align-items:center">
+        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
+        <a class="pill" href="/web/matrix.html">Matrix</a>
+        <a class="pill" href="/web/elo.html">Elo</a>
+        <a class="pill" href="/web/replay.html">Replay</a>
+        <a class="pill" href="/web/history.html">History</a>
+        <a class="pill" href="/web/about.html">About</a>
+      </nav>
+    </div>
+
+    <div class="card">
+      <h1>Elo Over Time</h1>
+      <div class="muted">End-of-match Elo per bot across all duels.</div>
+    </div>
+
+    <div class="card">
+      <svg id="chart"></svg>
+      <div id="legend" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px"></div>
+    </div>
+  </div>
+</body>
+</html>

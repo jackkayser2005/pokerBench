@@ -1,0 +1,10 @@
+.git
+.gitignore
+README.md
+*.md
+node_modules
+*.log
+.env
+compose.env
+compose.env.local
+compose.env.supabase

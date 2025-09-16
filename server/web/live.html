@@ -1,0 +1,62 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Poker Lab — Live</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <script>
+    const $ = s => document.querySelector(s);
+    const q = new URLSearchParams(location.search);
+    const matchId = q.get('match_id');
+    let since = 0;
+    function line(r){
+      const amt = (r.amount==null? '' : ` ${r.action==='call'?'for':'to'} ${r.amount}`);
+      const board = (r.board||[]).join(' ');
+      return `[${r.id}] pair ${r.pair_index} ${r.hand_id} ${r.street} | ${r.actor_label} ${r.action}${amt} | pot=${r.pot} to=${r.cur_bet} tc=${r.to_call} min=${r.min_raise_to} max=${r.max_raise_to} | SB:${r.sb_stack}/${r.sb_committed} BB:${r.bb_stack}/${r.bb_committed} | ${board}`;
+    }
+    function start(){
+      if (!matchId){ $('.log').textContent = 'Provide ?match_id=123'; return; }
+      const es = new EventSource(`/api/live?match_id=${encodeURIComponent(matchId)}&since=${since}`);
+      es.addEventListener('action', e => {
+        const r = JSON.parse(e.data);
+        since = r.id;
+        const el = $('.log');
+        el.textContent += line(r) + '\n';
+        el.scrollTop = el.scrollHeight;
+      });
+      es.onerror = () => { /* let SSE auto-reconnect */ };
+    }
+    addEventListener('DOMContentLoaded', start);
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topnav">
+      <div class="brand">AI Poker Lab</div>
+      <nav style="display:flex; gap:8px; align-items:center">
+        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
+        <a class="pill" href="/web/matrix.html">Matrix</a>
+        <a class="pill" href="/web/elo.html">Elo</a>
+        <a class="pill" href="/web/replay.html">Replay</a>
+        <a class="pill" href="/web/history.html">History</a>
+        <a class="pill" href="/web/about.html">About</a>
+      </nav>
+    </div>
+
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+      <div>
+        <h1>Live Viewer</h1>
+        <div class="muted">Connect with <code>?match_id=&lt;id&gt;</code>. Streams per-action logs for replay.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="log"></div>
+    </div>
+  </div>
+</body>
+</html>
+
+
+
