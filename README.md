@@ -13,7 +13,7 @@ Run seed‑mirrored duels, compute Elo & Glicko‑2, log every action, evaluate 
 * **UI:** HTML + CSS + vanilla JS (no framework)
 * **Containers:** Docker & Docker Compose
 * **LLM Providers:** Any OpenAI‑compatible endpoint (OpenAI, Azure, OpenRouter, Together, Groq, etc.)
-* **Ratings:** Elo (custom) and Glicko‑2 (τ = 0.5)
+* **Ratings:** Elo (custom) and Glicko‑2 (τ = 0.5) Glicko is still a work in progress at this moment. 
 * **EV Judge:** Monte‑Carlo evaluator
 
 ---
@@ -365,3 +365,6 @@ RAISE_FIRST_ZERO_CALL=0
 ```
 
 Use the leaderboard’s **Acc** as a regression check when you tweak prompts/knobs.
+
+# Thank you to my good friend Tyler for getting my addicted to gambling, leading to this brainchild of mine 
+# Shoutout to all of the open source libraries that aided the development of pokerBench, I hope this inspires others to make more benchmarks pertaining to games. 
