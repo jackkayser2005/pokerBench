@@ -35,7 +35,15 @@ func (e *Elo) SetAccuracy(accA, accB float64) {
 
 // Pair update → returns applied deltas (dA, dB).
 // chipsA = A's net chips over mirrored pair; potSum = pot1+pot2; bb = big blind.
-func (e *Elo) UpdateFromMirror(chipsA, potSum, bb int) (dA, dB float64) {
+// winsA/B are fractional hand wins collected across the mirrored pair (0..2). foldScore*
+// capture decision quality where +1 rewards a good fold (player would have lost)
+// and -1 penalizes folding the winner. These richer signals reduce variance by
+// blending chip outcomes with discrete results and decision-aware credit.
+func (e *Elo) UpdateFromMirror(
+	chipsA, potSum, bb int,
+	winsA, winsB float64,
+	foldScoreA, foldScoreB float64,
+) (dA, dB float64) {
 	ea, eb := e.expect()
 
 	denom := float64(potSum)
@@ -51,7 +59,15 @@ func (e *Elo) UpdateFromMirror(chipsA, potSum, bb int) (dA, dB float64) {
 	if scale <= 0 {
 		scale = 1
 	}
-	norm := math.Tanh(float64(chipsA) / (scale * 1.4))
+
+	chipNorm := math.Tanh(float64(chipsA) / (scale * 1.4))
+	winDiff := clamp(winsA-winsB, -2, 2)
+	winNorm := (winDiff / 2.0) // [-1,1]
+	foldDiff := clamp(foldScoreA-foldScoreB, -2, 2)
+	foldNorm := (foldDiff / 2.0) // [-1,1]
+
+	// Blend chip margin with discrete outcomes and fold quality for stability.
+	norm := clamp(0.6*chipNorm+0.3*winNorm+0.1*foldNorm, -0.999, 0.999)
 	bias := clamp((e.AccA-e.AccB)*0.35, -0.2, 0.2)
 	norm = clamp(norm+bias, -0.999, 0.999)
 	sA := 0.5 + 0.5*norm
