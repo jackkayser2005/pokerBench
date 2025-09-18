@@ -18,10 +18,13 @@
   </script>
 </head>
 <body>
-  <div class="wrap wrap--wide">
+  <header class="site-header">
     <div class="topnav">
       <a class="brand" href="/web/index.html" aria-label="PokerBench home">
-        <img src="/web/img/PokerBenchNavLong.svg" alt="PokerBench"/>
+        <span class="brand__mark">
+          <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+        </span>
+        <span class="brand__text">PokerBench</span>
       </a>
       <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
@@ -32,8 +35,11 @@
         <a class="pill" href="/web/about.html">About</a>
       </nav>
     </div>
+  </header>
 
-    <section class="card about-hero">
+  <main class="page-content">
+    <div class="wrap wrap--wide">
+      <section class="card about-hero">
       <div>
         <div class="about-hero__eyebrow">About PokerBench</div>
         <h1>Deterministic evaluation for heads-up LLM poker agents</h1>
@@ -57,9 +63,9 @@
           <div class="about-metric__caption">Post-match rollouts estimate EV accuracy so prompt regressions surface immediately.</div>
         </div>
       </div>
-    </section>
+      </section>
 
-    <section class="card about-section">
+      <section class="card about-section">
       <h2>Scientific pillars</h2>
       <p class="muted">Every capability is designed to be audited, replayed, and repeated without hidden randomness.</p>
       <ul class="about-list">
@@ -69,9 +75,9 @@
         <li><strong>Telemetry-first logging.</strong> Structured action logs, stack snapshots, and board states back the Replay, History, and analytics views.</li>
         <li><strong>Provider agnostic.</strong> Any OpenAI-compatible endpoint (OpenAI, Azure, OpenRouter, Together, Groq, &hellip;) can be slotted in.</li>
       </ul>
-    </section>
+      </section>
 
-    <section class="card about-section">
+      <section class="card about-section">
       <h2>System architecture at a glance</h2>
       <p class="muted">A lean Go stack keeps the benchmark predictable and inspectable.</p>
       <div class="about-grid about-grid--columns">
@@ -96,9 +102,9 @@
           <p class="muted">Normalized tables (<code>matches</code>, <code>action_logs</code>, <code>bot_ratings</code>, &hellip;) persist every hand, rating, and telemetry stream.</p>
         </article>
       </div>
-    </section>
+      </section>
 
-    <section class="card about-section">
+      <section class="card about-section">
       <h2>Experimental modes</h2>
       <div class="about-grid about-grid--columns">
         <article class="about-block">
@@ -174,18 +180,48 @@
         <li><strong>Security awareness.</strong> Secrets stay in <code>secrets/</code>, and the stack is ship-ready via Docker or local binaries.</li>
         <li><strong>Open science.</strong> Released under AGPL-3.0-or-later with transparent schemas, logs, and UI so results can be audited end-to-end.</li>
       </ul>
-    </section>
-  </div>
+      </section>
+    </div>
+  </main>
 
   <footer class="site-footer">
-    <div class="site-footer__inner">
-      <a class="site-footer__brand" href="/web/index.html">
-        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench emblem"/>
-        <span>PokerBench</span>
-      </a>
+    <div class="site-footer__shell">
+      <div class="site-footer__top">
+        <div class="site-footer__brand">
+          <a class="site-footer__logo" href="/web/index.html">
+            <img src="/web/img/PokerBenchNavLong.svg" alt="PokerBench wordmark"/>
+          </a>
+          <p class="site-footer__tagline">Open benchmark tracking head-to-head poker agents.</p>
+        </div>
+        <div class="site-footer__cta">
+          <span class="site-footer__cta-label">Follow the project</span>
+          <div class="site-footer__actions">
+            <a class="site-footer__button" href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">Star on GitHub</a>
+            <a class="site-footer__button site-footer__button--outline" href="https://github.com/jackkayser2005" target="_blank" rel="noopener">@jackkayser2005</a>
+          </div>
+        </div>
+      </div>
       <div class="site-footer__links">
-        <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://twitter.com/PokerAIArena" target="_blank" rel="noopener">X: @PokerAIArena</a>
+        <div class="site-footer__column">
+          <span class="site-footer__heading">Explore</span>
+          <a class="site-footer__link" href="/web/leaderboard.html">Leaderboard</a>
+          <a class="site-footer__link" href="/web/matrix.html">Matrix</a>
+          <a class="site-footer__link" href="/web/history.html">History</a>
+          <a class="site-footer__link" href="/web/about.html">About</a>
+        </div>
+        <div class="site-footer__column">
+          <span class="site-footer__heading">Connect</span>
+          <a class="site-footer__link" href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub Repo</a>
+          <a class="site-footer__link" href="https://github.com/jackkayser2005" target="_blank" rel="noopener">@jackkayser2005</a>
+          <a class="site-footer__link" href="https://twitter.com/PokerAIArena" target="_blank" rel="noopener">X / @PokerAIArena</a>
+        </div>
+      </div>
+      <div class="site-footer__meta">
+        <p class="site-footer__copy">© 2025 PokerBench. All rights reserved.</p>
+        <div class="site-footer__credit">
+          <span>Crafted by</span>
+          <a href="https://github.com/jackkayser2005" target="_blank" rel="noopener">@jackkayser2005</a>
+        </div>
       </div>
     </div>
   </footer>
