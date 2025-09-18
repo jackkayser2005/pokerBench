@@ -1119,7 +1119,7 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
     linear-gradient(180deg, rgba(8, 18, 32, .95), rgba(8, 14, 26, .92));
   border: 1px solid rgba(118, 177, 255, .3);
   padding: 32px;
-  overflow: hidden;
+  overflow: visible;
 }
 .elo-chart svg {
   width: 100%;
@@ -1143,15 +1143,15 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
 }
 .chart-tooltip {
   position: absolute;
-  min-width: 220px;
-  border-radius: 16px;
-  padding: 16px 18px;
+  min-width: 180px;
+  border-radius: 14px;
+  padding: 12px 14px;
   background: linear-gradient(180deg, rgba(10,18,28,.95), rgba(14,26,42,.94));
-  border: 1px solid rgba(132, 196, 255, .32);
-  box-shadow: 0 22px 38px rgba(0,0,0,.45);
+  border: 1px solid rgba(132, 196, 255, .28);
+  box-shadow: 0 18px 32px rgba(0,0,0,.42);
   color: #f5fbff;
   pointer-events: none;
-  transform: translate(-50%, calc(-100% - 18px));
+  transform: translate(-50%, calc(-100% - 12px));
   opacity: 0;
   visibility: hidden;
   transition: opacity .18s var(--ease-2), visibility .18s var(--ease-2);
@@ -1163,58 +1163,72 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
 }
 .chart-tooltip__time {
   font-weight: 700;
-  letter-spacing: .35px;
-  margin-bottom: 8px;
+  letter-spacing: .45px;
+  margin-bottom: 6px;
+  font-size: .78rem;
+  text-transform: uppercase;
+  color: rgba(230, 244, 255, .75);
 }
 .chart-tooltip__series {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 .chart-tooltip__row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  font-size: 0.92rem;
+  gap: 12px;
+  font-size: 0.88rem;
 }
 .chart-tooltip__label {
   display: inline-flex;
-  align-items: flex-start;
-  gap: 10px;
-  color: rgba(230, 244, 255, .86);
-  min-width: 0;
-}
-.chart-tooltip__text {
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  min-width: 0;
-}
-.chart-tooltip__names {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1.2;
+  color: rgba(230, 244, 255, .88);
   min-width: 0;
 }
 .chart-tooltip__model {
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
-}
-.chart-tooltip__company {
-  font-size: .7rem;
-  text-transform: uppercase;
-  letter-spacing: .35px;
-  color: rgba(230, 244, 255, .65);
+  letter-spacing: .25px;
 }
 .chart-tooltip__value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+}
+.chart-tooltip__elo {
+  font-weight: 700;
+  font-size: .95rem;
+  letter-spacing: .3px;
   color: #ffffff;
 }
+.chart-tooltip__delta {
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .32px;
+  text-transform: uppercase;
+  color: rgba(230, 244, 255, .68);
+}
+.chart-tooltip__delta::before {
+  content: 'Δ ';
+  opacity: .78;
+}
+.chart-tooltip__delta.positive {
+  color: #7dffb8;
+}
+.chart-tooltip__delta.negative {
+  color: #ff9b9b;
+}
+.chart-tooltip__delta.neutral {
+  color: rgba(230, 244, 255, .68);
+}
 .chart-bullet {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   box-shadow: 0 0 0 2px rgba(0,0,0,.35);
   flex-shrink: 0;

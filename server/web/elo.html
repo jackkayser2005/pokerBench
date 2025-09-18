@@ -326,15 +326,20 @@
         const group = mk('g');
         svg.appendChild(group);
 
-        const pts = entry.pts.map(pt => ({
-          time: pt.t,
-          timeMs: pt.t.getTime(),
-          elo: pt.elo,
-          x: x(pt.t.getTime()),
-          y: y(pt.elo),
-          meta: entry.meta,
-          color: stroke
-        }));
+        const pts = entry.pts.map((pt, idx) => {
+          const prev = idx > 0 ? entry.pts[idx - 1] : null;
+          const delta = prev ? pt.elo - prev.elo : null;
+          return {
+            time: pt.t,
+            timeMs: pt.t.getTime(),
+            elo: pt.elo,
+            delta,
+            x: x(pt.t.getTime()),
+            y: y(pt.elo),
+            meta: entry.meta,
+            color: stroke
+          };
+        });
 
         const pathData = pts.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ');
         const glow = mk('path');
@@ -471,28 +476,36 @@
           bullet.style.background = pt.color;
           label.appendChild(bullet);
 
-          const textWrap = document.createElement('div');
-          textWrap.className = 'chart-tooltip__text';
-          const iconEl = createIconElement(pt.meta.iconMarkup);
-          if (iconEl) textWrap.appendChild(iconEl);
-
-          const names = document.createElement('div');
-          names.className = 'chart-tooltip__names';
           const modelEl = document.createElement('span');
           modelEl.className = 'chart-tooltip__model';
           modelEl.textContent = pt.meta.model || 'Unknown';
-          const companyEl = document.createElement('span');
-          companyEl.className = 'chart-tooltip__company';
-          companyEl.textContent = canonicalCompany(pt.meta.company);
-          names.appendChild(modelEl);
-          names.appendChild(companyEl);
-          textWrap.appendChild(names);
-
-          label.appendChild(textWrap);
+          label.appendChild(modelEl);
 
           const value = document.createElement('div');
           value.className = 'chart-tooltip__value';
-          value.textContent = Math.round(pt.elo).toString();
+          const eloEl = document.createElement('span');
+          eloEl.className = 'chart-tooltip__elo';
+          eloEl.textContent = Math.round(pt.elo).toString();
+          value.appendChild(eloEl);
+
+          const deltaEl = document.createElement('span');
+          deltaEl.className = 'chart-tooltip__delta';
+          if (Number.isFinite(pt.delta)) {
+            const roundedDelta = Math.round(pt.delta);
+            const sign = roundedDelta > 0 ? '+' : '';
+            deltaEl.textContent = `${sign}${roundedDelta}`;
+            if (roundedDelta > 0) {
+              deltaEl.classList.add('positive');
+            } else if (roundedDelta < 0) {
+              deltaEl.classList.add('negative');
+            } else {
+              deltaEl.classList.add('neutral');
+            }
+          } else {
+            deltaEl.textContent = '–';
+            deltaEl.classList.add('neutral');
+          }
+          value.appendChild(deltaEl);
 
           row.appendChild(label);
           row.appendChild(value);
@@ -502,8 +515,8 @@
         const chartRect = chartWrap.getBoundingClientRect();
         const relX = (point.x / width) * chartRect.width;
         const relY = (point.y / height) * chartRect.height;
-        const clampedX = Math.min(Math.max(relX, 96), chartRect.width - 96);
-        const clampedY = Math.min(Math.max(relY, 90), chartRect.height - 24);
+        const clampedX = Math.min(Math.max(relX, 72), chartRect.width - 72);
+        const clampedY = Math.min(Math.max(relY, 78), chartRect.height - 18);
 
         tooltip.style.left = `${clampedX}px`;
         tooltip.style.top = `${clampedY}px`;
