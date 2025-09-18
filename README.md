@@ -231,10 +231,52 @@ High-level JSON endpoints exposed by the server include:
 
 ## Data & Ratings
 
-- **Mirrored pairs** ensure each agent plays both seats on identical boards to remove deck bias.
-- **Elo updates** can occur per hand or once per mirrored pair, with optional pot-weighted scoring.
-- **Glicko-2** uses τ = 0.5 and normalizes chip margins by effective stack (`S = 0.5 + 0.5 * tanh(m)`).
-- **EV Judge** runs Monte-Carlo rollouts post-match; aggregated accuracy powers the UI’s regression guardrail.
+The benchmarking pipeline emphasizes repeatability and transparent rating math.
+
+### Mirrored Pair Normalization
+
+- Every duel is scheduled as a mirrored seed pair so that each agent plays both **small blind** and **big blind** on the **identical shuffled deck**.
+- Chip margins are normalized by the effective stack depth before being converted into a score. If `m` is the mean chip differential in big blinds, the logistic squashing
+  \[
+  S = 0.5 + 0.5 \tanh(m)
+  \]
+  maps unbounded chip margins into \([0, 1]\) while preserving directionality.
+
+### Elo Update Path
+
+- The expected score for agent A against agent B follows the classical logistic model
+  \[
+  E_A = \frac{1}{1 + 10^{(R_B - R_A)/400}}, \qquad E_B = 1 - E_A.
+  \]
+- After each hand (or mirrored pair, depending on configuration) the realized score \(S_A\) is combined with an optional **pot-weight** term \(w\) to yield the rating delta
+  \[
+  \Delta R_A = K \cdot w \cdot (S_A - E_A), \qquad \Delta R_B = -\Delta R_A,
+  \]
+  where \(K\) and \(w\) are governed by `ELO_K`, `ELO_PER_HAND`, and `ELO_WEIGHT_BY_POT`.
+- Ratings are initialized via `ELO_START` and persist through `bot_ratings` so rematches pick up the correct prior.
+
+### Glicko-2 Implementation
+
+- PokerBench follows the original Glicko-2 formulation with system constant \(\tau = 0.5\).
+- Ratings are expressed as \(\mu = (R - 1500)/173.7178\) with deviation \(\phi\) and volatility \(\sigma\). For each opponent \(j\), the scale term and expectation are
+  \[
+  g(\phi_j) = \frac{1}{\sqrt{1 + 3\phi_j^2/\pi^2}}, \qquad E(\mu, \mu_j) = \frac{1}{1 + e^{-g(\phi_j)(\mu - \mu_j)}}.
+  \]
+- The variance accumulator
+  \[
+  v^{-1} = \sum_j g(\phi_j)^2 E(\mu, \mu_j) (1 - E(\mu, \mu_j))
+  \]
+  and the score term \(\Delta = v \sum_j g(\phi_j) (S_j - E(\mu, \mu_j))\) feed the volatility update solved via the iterative `f(x)` root finding recommended by Glickman.
+- Updated \(\phi'\) and \(\mu'\) are finally converted back to rating units using \(R' = 173.7178\, \mu' + 1500\).
+
+### Monte-Carlo EV Judge
+
+- After a duel completes, the Monte-Carlo judge replays each terminal hand with stochastic rollouts to approximate counterfactual values.
+- The judge reports **good** versus **total** decisions, which aggregate into the **Acc** column of the leaderboard via
+  \[
+  \text{Acc} = \frac{\text{good}}{\text{total}}.
+  \]
+- Consistently monitoring **Acc** helps detect regression when adjusting prompts, reasoning depth, or heuristic knobs.
 
 Use the leaderboard’s **Acc** column as a regression check whenever you tweak prompts or knob settings.
 
