@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="56" viewBox="0 0 220 56" fill="none">
+  <defs>
+    <linearGradient id="pb-card" x1="14" y1="4" x2="60" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3C8DFF"/>
+      <stop offset="1" stop-color="#6AE9FF"/>
+    </linearGradient>
+    <linearGradient id="pb-shadow" x1="4" y1="6" x2="50" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15264F" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#0A162C" stop-opacity="0.1"/>
+    </linearGradient>
+    <linearGradient id="pb-text" x1="74" y1="16" x2="202" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0F8FF"/>
+      <stop offset="1" stop-color="#8BD6FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="6" width="46" height="36" rx="10" fill="url(#pb-shadow)"/>
+  <rect x="14" y="4" width="46" height="36" rx="10" fill="#101B35" stroke="url(#pb-card)" stroke-width="2"/>
+  <path d="M42.5 26.6c-1.96 2.2-4.32 3.72-5.9 4.44-.1.05-.22.05-.32 0-1.58-.72-3.94-2.24-5.9-4.44-1.12-1.24-1.74-2.72-1.74-4.2 0-2.7 2.02-4.64 4.44-4.64 1.32 0 2.52.64 3.22 1.64.7-1 1.9-1.64 3.22-1.64 2.42 0 4.44 1.94 4.44 4.64 0 1.48-.62 2.96-1.74 4.2Z" fill="#FF6B35"/>
+  <text x="74" y="34" fill="url(#pb-text)" font-family="'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="0.4">
+    <tspan>Poker</tspan>
+    <tspan fill="#4D6BFE">Bench</tspan>
+  </text>
+</svg>
