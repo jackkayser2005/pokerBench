@@ -120,8 +120,7 @@
       const turn = $('#turn');
       if (turn) {
         const abbrev = r.actor_label;
-        const name = r.actor_label === 'A' ? modelA : modelB;
-        turn.textContent = `Turn: ${abbrev} \u2022 ${name}`;
+        turn.textContent = `Turn: ${abbrev}`;
       }
 
       const replayCard = document.querySelector('.card.replay');
@@ -327,7 +326,7 @@
             <input id="sl" type="range" min="1" max="5" value="1"/>
           </div>
           <span id="status" class="pill ghost" aria-live="polite">Paused</span>
-          <span id="turn" class="pill" style="background:linear-gradient(90deg,#ffd166,#ffaf66); color:#1a1200">Turn: &mdash;</span>
+          <span id="turn" class="pill" style="background:linear-gradient(90deg,#1f6f3d,#2bbd6b); color:#f6fff4; font-weight:700">Turn: &mdash;</span>
           <div class="group">
             <label class="muted" for="holesSel">Holes</label>
             <select id="holesSel" class="pill" style="background:#0f1712; border-color: var(--line); color: var(--text)">

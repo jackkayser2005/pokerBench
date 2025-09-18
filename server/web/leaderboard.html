@@ -51,22 +51,28 @@
     function judgeStatsFor(botId, row){
       const stats = { good: undefined, total: undefined, acc: undefined };
       if (row) {
-        if (typeof row.good === 'number') stats.good = row.good;
-        if (typeof row.total === 'number') stats.total = row.total;
-        if (typeof row.acc === 'number') stats.acc = row.acc;
+        const goodNum = Number(row.good);
+        if (!Number.isNaN(goodNum)) stats.good = goodNum;
+        const totalNum = Number(row.total);
+        if (!Number.isNaN(totalNum)) stats.total = totalNum;
+        const accNum = Number(row.acc);
+        if (!Number.isNaN(accNum)) stats.acc = accNum;
       }
       const live = judgeMap.get(botId);
       if (live) {
-        if (typeof live.good === 'number') stats.good = live.good;
-        if (typeof live.total === 'number') stats.total = live.total;
-        if (typeof live.acc === 'number') stats.acc = live.acc;
+        const goodNum = Number(live.good);
+        if (!Number.isNaN(goodNum)) stats.good = goodNum;
+        const totalNum = Number(live.total);
+        if (!Number.isNaN(totalNum)) stats.total = totalNum;
+        const accNum = Number(live.acc);
+        if (!Number.isNaN(accNum)) stats.acc = accNum;
       }
-      const total = Number.isFinite(stats.total) ? stats.total : undefined;
-      if (!total || total <= 0) {
+      const total = Number(stats.total);
+      if (!Number.isFinite(total) || total <= 0) {
         return { hasData: false, display: 'n/a', ratio: 0, good: Number(stats.good || 0), total: 0 };
       }
       const good = Number(stats.good || 0);
-      const ratioRaw = (typeof stats.acc === 'number' && !Number.isNaN(stats.acc)) ? stats.acc : (good / total);
+      const ratioRaw = Number.isFinite(stats.acc) ? stats.acc : (total > 0 ? good / total : 0);
       const ratio = Math.max(0, Math.min(1, ratioRaw));
       const pct = Math.round(ratio * 100);
       return { hasData: true, display: `${pct}% (${good}/${total})`, ratio, good, total };
@@ -287,14 +293,14 @@
       <table class="lb-table">
         <colgroup>
           <col style="width:56px" />
-          <col />
-          <col style="width:100px" />
+          <col style="width:260px" />
+          <col style="width:110px" />
           <col style="width:120px" />
-          <col style="width:110px" />
+          <col style="width:120px" />
           <col style="width:160px" />
-          <col style="width:90px" />
-          <col style="width:110px" />
-          <col style="width:200px" />
+          <col style="width:120px" />
+          <col style="width:130px" />
+          <col style="width:220px" />
         </colgroup>
         <thead>
           <tr>

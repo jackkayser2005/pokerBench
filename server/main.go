@@ -46,27 +46,23 @@ const (
 	colCyan   = "\033[36m"
 )
 const benchSystem = `
-You are playing heads-up no-limit Texas Hold'em as a strong, balanced pro.
+You are an objective poker engine playing heads-up no-limit Texas Hold'em.
 
-Hard anti-passivity rule:
-- Do not default to repeated checks. When to_call == 0 and raise is legal, mix in probe/value raises using the minimum legal raise_to when unsure.
-- When to_call > 0: "check" is illegal. Choose between call, fold, or raise (to a legal integer).
+Fundamental directives:
+- Base every action on quantified equity, position, stack-to-pot ratio, and blocker effects.
+- Keep language clinical; reason about ranges and EV without narrative or emotion.
+- When to_call == 0 and raising is legal, mix probing/value raises with checks so your strategy stays balanced.
+- When to_call > 0, select among call, raise, or fold only; never output an illegal check.
 
-General style:
-- Mix checking, calling, and raising appropriately. Avoid extremes of pure aggression or passivity.
-- Use position: more IP float/check-backs; OOP protect your checking range.
-- Size sensibly: smaller for thin value/probes; larger with strong value and robust bluffs.
+Sizing policy:
+- Evaluate the full legal raise interval [min_to, max_to]; choose an integer raise_to that supports your line.
+- Larger raises suit polarized value/bluff combinations; smaller sizes protect capped ranges or thin value.
+- You may use the maximum legal size when EV calculations justify it.
 
-Strategy guardrails:
-- Fold dominated, weak hands facing multi-street pressure.
-- Raise for value when ahead of the opponent's calling range.
-- Bluff with equity/backdoors and a credible story; avoid spew with no equity.
-- Respect min-raise rules; pick an amount within [min_to, max_to].
-- Size raises intentionally: mix smaller probe bets and larger value bets; do not always choose the minimum.
-
-Output policy:
-- Use only legal_actions for the current state.
-- If an amount is needed for a raise, provide a single integer raise_to within [min_to, max_to]; otherwise omit any amount.
+Output format:
+- Return exactly one option from legal_actions.
+- For raises, include raise_to with a single integer inside [min_to, max_to]; otherwise omit an amount.
+- Do not add commentary or explanations.
 `
 
 func c(code, s string) string {
@@ -1764,6 +1760,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	// ---- DB: register bots, seed ratings (if present), create match, write start point
 	var matchID int64
 	var botAID, botBID int64
+	accA, accB := 0.5, 0.5
 	if db != nil {
 		companyA, companyB := companyForModel(a.Model), companyForModel(b.Model)
 		rePtr := strptr(os.Getenv("OPENAI_REASONING_EFFORT"))
@@ -1783,6 +1780,21 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 				db = nil
 			} else {
 				botBID = idB
+			}
+		}
+
+		if db != nil && botAID != 0 {
+			if good, total, err := db.GetJudgeAccuracy(context.Background(), botAID); err != nil {
+				log.Printf("GetJudgeAccuracy(A) failed: %v", err)
+			} else if total > 0 {
+				accA = float64(good) / float64(total)
+			}
+		}
+		if db != nil && botBID != 0 {
+			if good, total, err := db.GetJudgeAccuracy(context.Background(), botBID); err != nil {
+				log.Printf("GetJudgeAccuracy(B) failed: %v", err)
+			} else if total > 0 {
+				accB = float64(good) / float64(total)
 			}
 		}
 
@@ -1817,6 +1829,8 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			}
 		}
 	}
+
+	elo.SetAccuracy(accA, accB)
 
 	// ---- loop pairs
 	for i := 0; i < seeds; i++ {
@@ -2013,11 +2027,30 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			log.Printf("InsertParticipantsAndTallies failed: %v", err)
 		}
 
-		// persist career ratings and total hands
-		if err := db.UpdateBotRatings(context.Background(), botAID, elo.A, gA.Rating, gA.RD, gA.Volatility, 1, handsA); err != nil {
+		var judgeGoodA, judgeTotalA, judgeGoodB, judgeTotalB int
+		if db != nil && matchID != 0 {
+			if err := judge.EvaluateMatchMC(context.Background(), db, matchID); err != nil {
+				log.Printf("MCJudge failed for match %d: %v", matchID, err)
+			} else {
+				log.Printf("MCJudge complete for match %d", matchID)
+				if accMap, err := db.MatchJudgeAccuracy(context.Background(), matchID); err != nil {
+					log.Printf("MatchJudgeAccuracy failed for match %d: %v", matchID, err)
+				} else {
+					if acc, ok := accMap["A"]; ok {
+						judgeGoodA, judgeTotalA = acc.Good, acc.Total
+					}
+					if acc, ok := accMap["B"]; ok {
+						judgeGoodB, judgeTotalB = acc.Good, acc.Total
+					}
+				}
+			}
+		}
+
+		// persist career ratings, hands, and judge accuracy
+		if err := db.UpdateBotRatings(context.Background(), botAID, elo.A, gA.Rating, gA.RD, gA.Volatility, 1, handsA, judgeGoodA, judgeTotalA); err != nil {
 			log.Printf("UpdateBotRatings(A) failed: %v", err)
 		}
-		if err := db.UpdateBotRatings(context.Background(), botBID, elo.B, gB.Rating, gB.RD, gB.Volatility, 1, handsB); err != nil {
+		if err := db.UpdateBotRatings(context.Background(), botBID, elo.B, gB.Rating, gB.RD, gB.Volatility, 1, handsB, judgeGoodB, judgeTotalB); err != nil {
 			log.Printf("UpdateBotRatings(B) failed: %v", err)
 		}
 
@@ -2025,15 +2058,6 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			log.Printf("CompleteMatch failed: %v", err)
 		} else {
 			log.Printf("match %d persisted.", matchID)
-		}
-
-		// Run EV judge synchronously so the DB pool is still open
-		if db != nil && matchID != 0 {
-			if err := judge.EvaluateMatchMC(context.Background(), db, matchID); err != nil {
-				log.Printf("MCJudge failed for match %d: %v", matchID, err)
-			} else {
-				log.Printf("MCJudge complete for match %d", matchID)
-			}
 		}
 	}
 }

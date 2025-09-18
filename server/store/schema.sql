@@ -18,8 +18,16 @@ CREATE TABLE IF NOT EXISTS bot_ratings (
   g_sigma    REAL NOT NULL DEFAULT 0.06,
   matches    INT  NOT NULL DEFAULT 0,
   hands      INT  NOT NULL DEFAULT 0,
+  judge_good INT  NOT NULL DEFAULT 0,
+  judge_total INT NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE bot_ratings
+  ADD COLUMN IF NOT EXISTS matches INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hands   INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS judge_good INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS judge_total INT NOT NULL DEFAULT 0;
 
 -- =========================
 -- MATCHES (one row per duel run)
@@ -151,10 +159,13 @@ FROM per_match
 GROUP BY bot_id, model, company, reasoning_effort
 ORDER BY matches DESC;
 
-CREATE OR REPLACE VIEW v_bot_career AS
+-- Recreate to allow column order/name changes safely during upgrades
+DROP VIEW IF EXISTS v_bot_career;
+CREATE VIEW v_bot_career AS
 SELECT
   b.id, b.name, b.company, r.elo,
-  r.g_rating, r.g_rd, r.g_sigma, r.matches, r.hands, r.updated_at
+  r.g_rating, r.g_rd, r.g_sigma, r.matches, r.hands,
+  r.judge_good, r.judge_total, r.updated_at
 FROM bots b
 LEFT JOIN bot_ratings r ON r.bot_id = b.id
 ORDER BY b.name;
@@ -237,3 +248,11 @@ SELECT p.bot_id,
   JOIN match_participants p ON p.match_id = a.match_id AND p.label = a.actor_label
  WHERE e.solver = 'MCJudge'
  GROUP BY p.bot_id;
+
+-- Backfill persisted judge accuracy aggregates
+UPDATE bot_ratings br
+   SET judge_good = COALESCE(ja.good, br.judge_good),
+       judge_total = COALESCE(ja.total, br.judge_total)
+  FROM v_judge_accuracy ja
+ WHERE ja.bot_id = br.bot_id;
+

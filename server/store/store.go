@@ -1,12 +1,13 @@
 package store
 
 import (
-    "context"
-    "embed"
-    "strings"
+	"context"
+	"embed"
+	"errors"
+	"strings"
 
-    "github.com/jackc/pgx/v5"
-    "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 //go:embed schema.sql
@@ -40,15 +41,15 @@ func Migrate(ctx context.Context, db *DB) error {
 
 // Upsert a bot and return its id.
 func (db *DB) UpsertBot(ctx context.Context, name, company string, reasoningEffort *string) (int64, error) {
-    var id int64
-    var re any
-    if reasoningEffort != nil {
-        v := strings.TrimSpace(*reasoningEffort)
-        if v != "" {
-            re = v
-        }
-    }
-    err := db.QueryRow(ctx, `
+	var id int64
+	var re any
+	if reasoningEffort != nil {
+		v := strings.TrimSpace(*reasoningEffort)
+		if v != "" {
+			re = v
+		}
+	}
+	err := db.QueryRow(ctx, `
         INSERT INTO bots(name, company, reasoning_effort)
         VALUES ($1,$2,$3)
         ON CONFLICT (name) DO UPDATE
@@ -56,7 +57,7 @@ func (db *DB) UpsertBot(ctx context.Context, name, company string, reasoningEffo
               reasoning_effort = EXCLUDED.reasoning_effort
         RETURNING id
     `, name, company, re).Scan(&id)
-    return id, err
+	return id, err
 }
 
 // Ensure a bot_ratings row exists and fetch it.
@@ -74,7 +75,7 @@ func (db *DB) GetOrInitRatings(ctx context.Context, botID int64) (elo, gR, gRD, 
 }
 
 // Persist final ratings and increment career counters.
-func (db *DB) UpdateBotRatings(ctx context.Context, botID int64, elo, gR, gRD, gSigma float64, matchesInc, handsInc int) error {
+func (db *DB) UpdateBotRatings(ctx context.Context, botID int64, elo, gR, gRD, gSigma float64, matchesInc, handsInc, judgeGoodInc, judgeTotalInc int) error {
 	_, err := db.Exec(ctx, `
 		UPDATE bot_ratings
 		   SET elo = $2,
@@ -83,10 +84,61 @@ func (db *DB) UpdateBotRatings(ctx context.Context, botID int64, elo, gR, gRD, g
 		       g_sigma = $5,
 		       matches = matches + $6,
 		       hands = hands + $7,
+		       judge_good = judge_good + $8,
+		       judge_total = judge_total + $9,
 		       updated_at = now()
 		 WHERE bot_id = $1
-	`, botID, elo, gR, gRD, gSigma, matchesInc, handsInc)
+	`, botID, elo, gR, gRD, gSigma, matchesInc, handsInc, judgeGoodInc, judgeTotalInc)
 	return err
+}
+
+type JudgeAccuracy struct {
+	Good  int
+	Total int
+}
+
+func (db *DB) GetJudgeAccuracy(ctx context.Context, botID int64) (good, total int, err error) {
+	err = db.QueryRow(ctx, `
+		SELECT judge_good, judge_total
+		  FROM bot_ratings
+		 WHERE bot_id = $1
+	`, botID).Scan(&good, &total)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, nil
+		}
+		return 0, 0, err
+	}
+	return
+}
+
+func (db *DB) MatchJudgeAccuracy(ctx context.Context, matchID int64) (map[string]JudgeAccuracy, error) {
+	rows, err := db.Query(ctx, `
+		SELECT a.actor_label,
+		       SUM(CASE WHEN e.is_top_action THEN 1 ELSE 0 END)::int AS good,
+		       COUNT(*)::int AS total
+		  FROM action_eval e
+		  JOIN action_logs a ON a.id = e.action_log_id
+		 WHERE a.match_id = $1 AND e.solver = 'MCJudge'
+		 GROUP BY a.actor_label
+	`, matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]JudgeAccuracy, 2)
+	for rows.Next() {
+		var label string
+		var good, total int
+		if err := rows.Scan(&label, &good, &total); err != nil {
+			return nil, err
+		}
+		out[label] = JudgeAccuracy{Good: good, Total: total}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Create a match row and return the id.
@@ -111,19 +163,19 @@ func (db *DB) CreateMatch(
 
 // Add a rating history point (stage=start|after_pair|end).
 func (db *DB) InsertRatingPoint(
-    ctx context.Context,
-    matchID int64,
-    stage string,
-    pairIndex *int, // nil for start/end
-    eloA, eloB float64,
-    gAr, gArd, gAsigma float64,
-    gBr, gBrd, gBsigma float64,
+	ctx context.Context,
+	matchID int64,
+	stage string,
+	pairIndex *int, // nil for start/end
+	eloA, eloB float64,
+	gAr, gArd, gAsigma float64,
+	gBr, gBrd, gBsigma float64,
 ) error {
-    var p any
-    if pairIndex != nil {
-        p = *pairIndex
-    }
-    _, err := db.Exec(ctx, `
+	var p any
+	if pairIndex != nil {
+		p = *pairIndex
+	}
+	_, err := db.Exec(ctx, `
         INSERT INTO rating_history(
             match_id, stage, pair_index,
             elo_a, elo_b,
@@ -132,26 +184,26 @@ func (db *DB) InsertRatingPoint(
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     `, matchID, stage, p,
-        eloA, eloB,
-        gAr, gArd, gAsigma,
-        gBr, gBrd, gBsigma,
-    )
-    return err
+		eloA, eloB,
+		gAr, gArd, gAsigma,
+		gBr, gBrd, gBsigma,
+	)
+	return err
 }
 
 // Insert participants (A & B) + tallies + hands atomically.
 func (db *DB) InsertParticipantsAndTallies(
-    ctx context.Context,
-    matchID int64,
-    // A
-    labelA string, botA int64, nameA, compA string, reA *string,
-    startA, endA, winsA int, handsA, handsASB, handsABB, netA int,
-    // B
-    labelB string, botB int64, nameB, compB string, reB *string,
-    startB, endB, winsB int, handsB, handsBSB, handsBBB, netB int,
-    // tallies
-    checkA, callA, raiseA, foldA int,
-    checkB, callB, raiseB, foldB int,
+	ctx context.Context,
+	matchID int64,
+	// A
+	labelA string, botA int64, nameA, compA string, reA *string,
+	startA, endA, winsA int, handsA, handsASB, handsABB, netA int,
+	// B
+	labelB string, botB int64, nameB, compB string, reB *string,
+	startB, endB, winsB int, handsB, handsBSB, handsBBB, netB int,
+	// tallies
+	checkA, callA, raiseA, foldA int,
+	checkB, callB, raiseB, foldB int,
 ) error {
 	tx, err := db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -160,14 +212,14 @@ func (db *DB) InsertParticipantsAndTallies(
 	defer tx.Rollback(ctx) // safe if already committed
 
 	// participants
-    var reAParam any
-    if reA != nil {
-        v := strings.TrimSpace(*reA)
-        if v != "" {
-            reAParam = v
-        }
-    }
-    if _, err := tx.Exec(ctx, `
+	var reAParam any
+	if reA != nil {
+		v := strings.TrimSpace(*reA)
+		if v != "" {
+			reAParam = v
+		}
+	}
+	if _, err := tx.Exec(ctx, `
         INSERT INTO match_participants(
             match_id, label, bot_id,
             name_snapshot, company_snapshot, reasoning_effort_snapshot,
@@ -175,17 +227,17 @@ func (db *DB) InsertParticipantsAndTallies(
             hands_dealt, hands_sb, hands_bb, net_chips
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     `, matchID, labelA, botA, nameA, compA, reAParam, startA, endA, winsA,
-        handsA, handsASB, handsABB, netA); err != nil {
-        return err
-    }
-    var reBParam any
-    if reB != nil {
-        v := strings.TrimSpace(*reB)
-        if v != "" {
-            reBParam = v
-        }
-    }
-    if _, err := tx.Exec(ctx, `
+		handsA, handsASB, handsABB, netA); err != nil {
+		return err
+	}
+	var reBParam any
+	if reB != nil {
+		v := strings.TrimSpace(*reB)
+		if v != "" {
+			reBParam = v
+		}
+	}
+	if _, err := tx.Exec(ctx, `
         INSERT INTO match_participants(
             match_id, label, bot_id,
             name_snapshot, company_snapshot, reasoning_effort_snapshot,
@@ -193,9 +245,9 @@ func (db *DB) InsertParticipantsAndTallies(
             hands_dealt, hands_sb, hands_bb, net_chips
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     `, matchID, labelB, botB, nameB, compB, reBParam, startB, endB, winsB,
-        handsB, handsBSB, handsBBB, netB); err != nil {
-        return err
-    }
+		handsB, handsBSB, handsBBB, netB); err != nil {
+		return err
+	}
 
 	// tallies
 	if _, err := tx.Exec(ctx, `
@@ -215,31 +267,31 @@ func (db *DB) InsertParticipantsAndTallies(
 }
 
 func (db *DB) CompleteMatch(ctx context.Context, matchID int64) error {
-    _, err := db.Exec(ctx, `UPDATE matches SET ended_at = now() WHERE id = $1`, matchID)
-    return err
+	_, err := db.Exec(ctx, `UPDATE matches SET ended_at = now() WHERE id = $1`, matchID)
+	return err
 }
 
 // InsertActionLog records one action step for live viewers and auditing.
 func (db *DB) InsertActionLog(
-    ctx context.Context,
-    matchID int64,
-    pairIndex int,
-    handID string,
-    street string,
-    actorLabel string,
-    action string,
-    amount *int,
-    pot, curBet, toCall, minTo, maxTo int,
-    sbStack, bbStack, sbCommitted, bbCommitted int,
-    board []string,
-    sbHole []string,
-    bbHole []string,
+	ctx context.Context,
+	matchID int64,
+	pairIndex int,
+	handID string,
+	street string,
+	actorLabel string,
+	action string,
+	amount *int,
+	pot, curBet, toCall, minTo, maxTo int,
+	sbStack, bbStack, sbCommitted, bbCommitted int,
+	board []string,
+	sbHole []string,
+	bbHole []string,
 ) error {
-    var amt any
-    if amount != nil {
-        amt = *amount
-    }
-    _, err := db.Exec(ctx, `
+	var amt any
+	if amount != nil {
+		amt = *amount
+	}
+	_, err := db.Exec(ctx, `
         INSERT INTO action_logs(
             match_id, pair_index, hand_id, street,
             actor_label, action, amount,
@@ -254,51 +306,75 @@ func (db *DB) InsertActionLog(
             $17,$18,$19
         )
     `,
-        matchID, pairIndex, handID, street,
-        actorLabel, action, amt,
-        pot, curBet, toCall, minTo, maxTo,
-        sbStack, bbStack, sbCommitted, bbCommitted,
-        board, sbHole, bbHole,
-    )
-    return err
+		matchID, pairIndex, handID, street,
+		actorLabel, action, amt,
+		pot, curBet, toCall, minTo, maxTo,
+		sbStack, bbStack, sbCommitted, bbCommitted,
+		board, sbHole, bbHole,
+	)
+	return err
 }
 
 // InsertActionEval records a solver evaluation for a specific action log id.
 func (db *DB) InsertActionEval(
-    ctx context.Context,
-    actionLogID int64,
-    solver string,
-    solverVersion *string,
-    abstraction *string,
-    policyJSON any,
-    evsJSON any,
-    bestAction *string,
-    bestAmountTo *int,
-    chosenAction *string,
-    chosenAmountTo *int,
-    evChosen *float64,
-    evBest *float64,
-    evGapBB *float64,
-    correctnessProb *float64,
-    isTopAction *bool,
-    computeMS *int,
+	ctx context.Context,
+	actionLogID int64,
+	solver string,
+	solverVersion *string,
+	abstraction *string,
+	policyJSON any,
+	evsJSON any,
+	bestAction *string,
+	bestAmountTo *int,
+	chosenAction *string,
+	chosenAmountTo *int,
+	evChosen *float64,
+	evBest *float64,
+	evGapBB *float64,
+	correctnessProb *float64,
+	isTopAction *bool,
+	computeMS *int,
 ) error {
-    var sv, abs, ba, ca any
-    if solverVersion != nil { sv = *solverVersion }
-    if abstraction != nil { abs = *abstraction }
-    if bestAction != nil { ba = *bestAction }
-    if chosenAction != nil { ca = *chosenAction }
-    var bat, cat, evc, evb, gap, prob, top, ms any
-    if bestAmountTo != nil { bat = *bestAmountTo }
-    if chosenAmountTo != nil { cat = *chosenAmountTo }
-    if evChosen != nil { evc = *evChosen }
-    if evBest != nil { evb = *evBest }
-    if evGapBB != nil { gap = *evGapBB }
-    if correctnessProb != nil { prob = *correctnessProb }
-    if isTopAction != nil { top = *isTopAction }
-    if computeMS != nil { ms = *computeMS }
+	var sv, abs, ba, ca any
+	if solverVersion != nil {
+		sv = *solverVersion
+	}
+	if abstraction != nil {
+		abs = *abstraction
+	}
+	if bestAction != nil {
+		ba = *bestAction
+	}
+	if chosenAction != nil {
+		ca = *chosenAction
+	}
+	var bat, cat, evc, evb, gap, prob, top, ms any
+	if bestAmountTo != nil {
+		bat = *bestAmountTo
+	}
+	if chosenAmountTo != nil {
+		cat = *chosenAmountTo
+	}
+	if evChosen != nil {
+		evc = *evChosen
+	}
+	if evBest != nil {
+		evb = *evBest
+	}
+	if evGapBB != nil {
+		gap = *evGapBB
+	}
+	if correctnessProb != nil {
+		prob = *correctnessProb
+	}
+	if isTopAction != nil {
+		top = *isTopAction
+	}
+	if computeMS != nil {
+		ms = *computeMS
+	}
 
-    _, err := db.Exec(ctx, `
+	_, err := db.Exec(ctx, `
         INSERT INTO action_eval(
             action_log_id, solver, solver_version, abstraction,
             policy_json, evs_json,
@@ -331,12 +407,12 @@ func (db *DB) InsertActionEval(
             is_top_action = EXCLUDED.is_top_action,
             compute_ms = EXCLUDED.compute_ms
     `,
-        actionLogID, solver, sv, abs,
-        policyJSON, evsJSON,
-        ba, bat,
-        ca, cat,
-        evc, evb, gap, prob,
-        top, ms,
-    )
-    return err
+		actionLogID, solver, sv, abs,
+		policyJSON, evsJSON,
+		ba, bat,
+		ca, cat,
+		evc, evb, gap, prob,
+		top, ms,
+	)
+	return err
 }

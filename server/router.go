@@ -2,17 +2,16 @@
 package main
 
 import (
-    "context"
-    "embed"
-    "encoding/json"
-    "fmt"
-    "io/fs"
-    "net/http"
-    "strings"
-    "time"
+	"embed"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"strings"
+	"time"
 
-    "ai-thunderdome/server/engine"
-    "ai-thunderdome/server/store"
+	"ai-thunderdome/server/engine"
+	"ai-thunderdome/server/store"
 )
 
 // embed the /web directory so index.html and assets ship in the binary
@@ -246,7 +245,40 @@ func Router(db *store.DB) http.Handler {
 			Total       int       `json:"total"`
 			Acc         float64   `json:"acc"`
 		}
-        rows, err := db.Query(ctx, `
+		const leaderboardSQL = `
+            WITH summary AS (
+                SELECT bot_id,
+                       COALESCE(SUM(total_hand_wins),0) AS total_hand_wins,
+                       COALESCE(SUM(total_hands),0)      AS total_hands,
+                       COALESCE(SUM(total_net_chips),0)  AS total_net_chips,
+                       ROUND(100.0 * COALESCE(SUM(total_hand_wins)::float / NULLIF(SUM(total_hands),0), 0)) AS win_rate_pct
+                  FROM v_bot_summary
+                 GROUP BY bot_id
+            )
+            SELECT c.id AS bot_id,
+                   c.name AS model,
+                   c.company AS company,
+                   COALESCE(c.elo, 1500)         AS elo,
+                   COALESCE(c.matches, 0)        AS matches,
+                   COALESCE(c.hands, 0)          AS hands,
+                   COALESCE(c.updated_at, now()) AS updated_at,
+                   COALESCE(s.total_hand_wins, 0) AS career_wins,
+                   COALESCE(s.total_hands, 0)     AS career_hands,
+                   COALESCE(s.win_rate_pct, 0)    AS win_rate_pct,
+                   COALESCE(s.total_net_chips, 0) AS net_chips,
+                   COALESCE(ja.good, c.judge_good, 0)  AS good,
+                   COALESCE(ja.total, c.judge_total, 0) AS total,
+                   CASE
+                     WHEN COALESCE(ja.total, c.judge_total, 0) > 0
+                       THEN COALESCE(ja.good, c.judge_good, 0)::float / COALESCE(ja.total, c.judge_total, 0)::float
+                     ELSE 0
+                   END AS acc
+              FROM v_bot_career c
+              LEFT JOIN summary s ON s.bot_id = c.id
+              LEFT JOIN v_judge_accuracy ja ON ja.bot_id = c.id
+             ORDER BY COALESCE(c.elo,1500) DESC, c.matches DESC, c.hands DESC
+        `
+		const leaderboardFallback = `
             WITH summary AS (
                 SELECT bot_id,
                        COALESCE(SUM(total_hand_wins),0) AS total_hand_wins,
@@ -274,7 +306,13 @@ func Router(db *store.DB) http.Handler {
               LEFT JOIN summary s ON s.bot_id = c.id
               LEFT JOIN v_judge_accuracy ja ON ja.bot_id = c.id
              ORDER BY COALESCE(c.elo,1500) DESC, c.matches DESC, c.hands DESC
-        `)
+        `
+
+		rows, err := db.Query(ctx, leaderboardSQL)
+		if err != nil {
+			rows, err = db.Query(ctx, leaderboardFallback)
+		}
+
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -305,14 +343,27 @@ func Router(db *store.DB) http.Handler {
 			 WHERE e.solver = 'MCJudge'
 			 GROUP BY p.bot_id
 		`)
-		if err != nil { http.Error(w, err.Error(), 500); return }
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		defer rows.Close()
-		type Row struct{ BotID int64 `json:"bot_id"`; Good int `json:"good"`; Total int `json:"total"`; Acc float64 `json:"acc"` }
+		type Row struct {
+			BotID int64   `json:"bot_id"`
+			Good  int     `json:"good"`
+			Total int     `json:"total"`
+			Acc   float64 `json:"acc"`
+		}
 		var out []Row
-		for rows.Next(){
+		for rows.Next() {
 			var x Row
-			if err := rows.Scan(&x.BotID, &x.Good, &x.Total); err != nil { http.Error(w, err.Error(), 500); return }
-			if x.Total > 0 { x.Acc = float64(x.Good)/float64(x.Total) }
+			if err := rows.Scan(&x.BotID, &x.Good, &x.Total); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if x.Total > 0 {
+				x.Acc = float64(x.Good) / float64(x.Total)
+			}
 			out = append(out, x)
 		}
 		writeJSON(w, map[string]any{"rows": out})
@@ -703,38 +754,38 @@ func Router(db *store.DB) http.Handler {
 			http.Error(w, "bad match_id", 400)
 			return
 		}
-    type Row struct {
-        ID          int64     `json:"id"`
-        PairIndex   int       `json:"pair_index"`
-        HandID      string    `json:"hand_id"`
-        Street      string    `json:"street"`
-        ActorLabel  string    `json:"actor_label"`
-        Action      string    `json:"action"`
-        Amount      *int      `json:"amount"`
-        Pot         int       `json:"pot"`
-        CurBet      int       `json:"cur_bet"`
-        ToCall      int       `json:"to_call"`
-        MinRaiseTo  int       `json:"min_raise_to"`
-        MaxRaiseTo  int       `json:"max_raise_to"`
-        SBStack     int       `json:"sb_stack"`
-        BBStack     int       `json:"bb_stack"`
-        SBCommitted int       `json:"sb_committed"`
-        BBCommitted int       `json:"bb_committed"`
-        Board       []string  `json:"board"`
-        SBHole      []string  `json:"sb_hole"`
-        BBHole      []string  `json:"bb_hole"`
-        CreatedAt   time.Time `json:"created_at"`
-        // Optional solver eval join
-        Solver          *string  `json:"solver"`
-        SolverVersion   *string  `json:"solver_version"`
-        EvalBestAction  *string  `json:"eval_best_action"`
-        EvalBestTo      *int     `json:"eval_best_to"`
-        EvalGapBB       *float64 `json:"eval_gap_bb"`
-        EvalCorrectProb *float64 `json:"eval_correct_prob"`
-        EvalIsTop       *bool    `json:"eval_is_top"`
-        // Server-enriched winner at end of hand
-        WinnerSeat     *string  `json:"winner_seat,omitempty"`
-    }
+		type Row struct {
+			ID          int64     `json:"id"`
+			PairIndex   int       `json:"pair_index"`
+			HandID      string    `json:"hand_id"`
+			Street      string    `json:"street"`
+			ActorLabel  string    `json:"actor_label"`
+			Action      string    `json:"action"`
+			Amount      *int      `json:"amount"`
+			Pot         int       `json:"pot"`
+			CurBet      int       `json:"cur_bet"`
+			ToCall      int       `json:"to_call"`
+			MinRaiseTo  int       `json:"min_raise_to"`
+			MaxRaiseTo  int       `json:"max_raise_to"`
+			SBStack     int       `json:"sb_stack"`
+			BBStack     int       `json:"bb_stack"`
+			SBCommitted int       `json:"sb_committed"`
+			BBCommitted int       `json:"bb_committed"`
+			Board       []string  `json:"board"`
+			SBHole      []string  `json:"sb_hole"`
+			BBHole      []string  `json:"bb_hole"`
+			CreatedAt   time.Time `json:"created_at"`
+			// Optional solver eval join
+			Solver          *string  `json:"solver"`
+			SolverVersion   *string  `json:"solver_version"`
+			EvalBestAction  *string  `json:"eval_best_action"`
+			EvalBestTo      *int     `json:"eval_best_to"`
+			EvalGapBB       *float64 `json:"eval_gap_bb"`
+			EvalCorrectProb *float64 `json:"eval_correct_prob"`
+			EvalIsTop       *bool    `json:"eval_is_top"`
+			// Server-enriched winner at end of hand
+			WinnerSeat *string `json:"winner_seat,omitempty"`
+		}
 		rows, err := db.Query(ctx, `
             SELECT a.id, a.pair_index, a.hand_id, a.street, a.actor_label, a.action, a.amount,
                    a.pot, a.cur_bet, a.to_call, a.min_raise_to, a.max_raise_to,
@@ -751,87 +802,112 @@ func Router(db *store.DB) http.Handler {
 			return
 		}
 		defer rows.Close()
-    out := []Row{}
-    for rows.Next() {
-        var r Row
-        if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
-            &r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
-            &r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
-            &r.Board, &r.SBHole, &r.BBHole, &r.CreatedAt,
-            &r.Solver, &r.SolverVersion, &r.EvalBestAction, &r.EvalBestTo, &r.EvalGapBB, &r.EvalCorrectProb, &r.EvalIsTop); err != nil {
-            http.Error(w, err.Error(), 500)
-            return
-        }
-        out = append(out, r)
-    }
-    // Enrich end-of-hand rows with winner seat (showdown or fold)
-    parseCard := func(s string) (engine.Card, bool) {
-        if len(s) < 2 {
-            return engine.Card{}, false
-        }
-        rankCh := s[0]
-        suitCh := s[1]
-        var rank int
-        switch rankCh {
-        case 'A': rank = 14
-        case 'K': rank = 13
-        case 'Q': rank = 12
-        case 'J': rank = 11
-        case 'T': rank = 10
-        default:
-            if rankCh >= '2' && rankCh <= '9' { rank = int(rankCh - '0') }
-        }
-        if rank == 0 { return engine.Card{}, false }
-        if suitCh != 'c' && suitCh != 'd' && suitCh != 'h' && suitCh != 's' { return engine.Card{}, false }
-        return engine.Card{Rank: rank, Suit: suitCh}, true
-    }
-    computeShowdown := func(r Row) *string {
-        if len(r.Board) < 5 || len(r.SBHole) != 2 || len(r.BBHole) != 2 { return nil }
-        toCards := func(ss []string) ([]engine.Card, bool) {
-            cs := make([]engine.Card, 0, len(ss))
-            for _, s := range ss {
-                if c, ok := parseCard(s); ok {
-                    cs = append(cs, c)
-                } else {
-                    return nil, false
-                }
-            }
-            return cs, true
-        }
-        board, ok1 := toCards(r.Board[:5])
-        sb, ok2 := toCards(r.SBHole)
-        bb, ok3 := toCards(r.BBHole)
-        if !ok1 || !ok2 || !ok3 { return nil }
-        h := &engine.Hand{Board: board, SB: &engine.Player{Seat: engine.SB, Hole: sb}, BB: &engine.Player{Seat: engine.BB, Hole: bb}}
-        seat := string(h.Showdown())
-        if seat == string(engine.SB) || seat == string(engine.BB) {
-            return &seat
-        }
-        return nil
-    }
-    for idx := range out {
-        isLast := idx == len(out)-1
-        boundary := isLast || out[idx+1].HandID != out[idx].HandID
-        if !boundary { continue }
-        // Prefer showdown if available
-        if ws := computeShowdown(out[idx]); ws != nil {
-            out[idx].WinnerSeat = ws
-            continue
-        }
-        // Fold fallback: last action was a fold -> winner is other label mapped by hand suffix
-        r := out[idx]
-        if strings.EqualFold(r.Action, "fold") && r.ActorLabel != "" {
-            aIsSB := strings.HasSuffix(strings.ToUpper(r.HandID), "A")
-            var seat string
-            if r.ActorLabel == "A" { // A folded -> B wins
-                if aIsSB { seat = "BB" } else { seat = "SB" }
-            } else { // B folded -> A wins
-                if aIsSB { seat = "SB" } else { seat = "BB" }
-            }
-            out[idx].WinnerSeat = &seat
-        }
-    }
-    writeJSON(w, map[string]any{"rows": out})
+		out := []Row{}
+		for rows.Next() {
+			var r Row
+			if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
+				&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
+				&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
+				&r.Board, &r.SBHole, &r.BBHole, &r.CreatedAt,
+				&r.Solver, &r.SolverVersion, &r.EvalBestAction, &r.EvalBestTo, &r.EvalGapBB, &r.EvalCorrectProb, &r.EvalIsTop); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			out = append(out, r)
+		}
+		// Enrich end-of-hand rows with winner seat (showdown or fold)
+		parseCard := func(s string) (engine.Card, bool) {
+			if len(s) < 2 {
+				return engine.Card{}, false
+			}
+			rankCh := s[0]
+			suitCh := s[1]
+			var rank int
+			switch rankCh {
+			case 'A':
+				rank = 14
+			case 'K':
+				rank = 13
+			case 'Q':
+				rank = 12
+			case 'J':
+				rank = 11
+			case 'T':
+				rank = 10
+			default:
+				if rankCh >= '2' && rankCh <= '9' {
+					rank = int(rankCh - '0')
+				}
+			}
+			if rank == 0 {
+				return engine.Card{}, false
+			}
+			if suitCh != 'c' && suitCh != 'd' && suitCh != 'h' && suitCh != 's' {
+				return engine.Card{}, false
+			}
+			return engine.Card{Rank: rank, Suit: suitCh}, true
+		}
+		computeShowdown := func(r Row) *string {
+			if len(r.Board) < 5 || len(r.SBHole) != 2 || len(r.BBHole) != 2 {
+				return nil
+			}
+			toCards := func(ss []string) ([]engine.Card, bool) {
+				cs := make([]engine.Card, 0, len(ss))
+				for _, s := range ss {
+					if c, ok := parseCard(s); ok {
+						cs = append(cs, c)
+					} else {
+						return nil, false
+					}
+				}
+				return cs, true
+			}
+			board, ok1 := toCards(r.Board[:5])
+			sb, ok2 := toCards(r.SBHole)
+			bb, ok3 := toCards(r.BBHole)
+			if !ok1 || !ok2 || !ok3 {
+				return nil
+			}
+			h := &engine.Hand{Board: board, SB: &engine.Player{Seat: engine.SB, Hole: sb}, BB: &engine.Player{Seat: engine.BB, Hole: bb}}
+			seat := string(h.Showdown())
+			if seat == string(engine.SB) || seat == string(engine.BB) {
+				return &seat
+			}
+			return nil
+		}
+		for idx := range out {
+			isLast := idx == len(out)-1
+			boundary := isLast || out[idx+1].HandID != out[idx].HandID
+			if !boundary {
+				continue
+			}
+			// Prefer showdown if available
+			if ws := computeShowdown(out[idx]); ws != nil {
+				out[idx].WinnerSeat = ws
+				continue
+			}
+			// Fold fallback: last action was a fold -> winner is other label mapped by hand suffix
+			r := out[idx]
+			if strings.EqualFold(r.Action, "fold") && r.ActorLabel != "" {
+				aIsSB := strings.HasSuffix(strings.ToUpper(r.HandID), "A")
+				var seat string
+				if r.ActorLabel == "A" { // A folded -> B wins
+					if aIsSB {
+						seat = "BB"
+					} else {
+						seat = "SB"
+					}
+				} else { // B folded -> A wins
+					if aIsSB {
+						seat = "SB"
+					} else {
+						seat = "BB"
+					}
+				}
+				out[idx].WinnerSeat = &seat
+			}
+		}
+		writeJSON(w, map[string]any{"rows": out})
 	})
 
 	return mux
@@ -842,9 +918,4 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
-}
-
-// optional helper if you ever need a context with timeout inside handlers
-func withTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, d)
 }
