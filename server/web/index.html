@@ -1,10 +1,10 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <title>PokerBench</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="icon" href="/web/img/PokerBenchlogo.svg" type="image/svg+xml"/>
+  <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <link rel="stylesheet" href="/web/app.css?v=5"/>
   <script>
     document.addEventListener('DOMContentLoaded', ()=>{
@@ -15,8 +15,8 @@
 <body>
   <div class="wrap wrap--wide">
     <div class="topnav">
-      <a class="brand" href="/web/index.html">
-        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench logo">
+      <a class="brand" href="/web/index.html" aria-label="PokerBench home">
+        <img src="/web/img/PokerBenchNavLong.svg" alt="PokerBench"/>
       </a>
       <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
@@ -41,7 +41,6 @@
           </div>
           <div class="hero__cta">
             <a class="btn" href="/web/leaderboard.html">View Leaderboard</a>
-            <a class="btn ghost" id="liveBtn" href="#" hidden>Watch Live</a>
           </div>
         </div>
         <div class="hero__stats" id="heroStats">
@@ -109,6 +108,19 @@
       </div>
     </div>
   </div>
+
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <a class="site-footer__brand" href="/web/index.html">
+        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench emblem"/>
+        <span>PokerBench</span>
+      </a>
+      <div class="site-footer__links">
+        <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://twitter.com/PokerAIArena" target="_blank" rel="noopener">X: @PokerAIArena</a>
+      </div>
+    </div>
+  </footer>
 
   <script>
     const $ = sel => document.querySelector(sel);
@@ -216,11 +228,13 @@
         $('#matchPairs').textContent = match.duel_seeds ?? '—';
 
         const liveBtn = $('#liveBtn');
-        if (!match.ended_at) {
-          liveBtn.hidden = false;
-          liveBtn.href = `/web/live.html?match_id=${match.id}`;
-        } else {
-          liveBtn.hidden = true;
+        if (liveBtn) {
+          if (!match.ended_at) {
+            liveBtn.hidden = false;
+            liveBtn.href = `/web/live.html?match_id=${match.id}`;
+          } else {
+            liveBtn.hidden = true;
+          }
         }
 
         $('#meta').innerHTML = [

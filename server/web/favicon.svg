@@ -1,12 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="faviconTitle faviconDesc">
+  <title id="faviconTitle">PokerBench favicon</title>
+  <desc id="faviconDesc">PokerBench poker chip with initials PB</desc>
   <defs>
-    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0%" stop-color="#39d98a"/>
-      <stop offset="100%" stop-color="#5ca0ff"/>
+    <linearGradient id="chipFill" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38d88f"/>
+      <stop offset="100%" stop-color="#6cbaff"/>
+    </linearGradient>
+    <linearGradient id="chipRing" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#192742"/>
+      <stop offset="100%" stop-color="#233a66"/>
     </linearGradient>
   </defs>
-  <circle cx="32" cy="32" r="28" fill="#0b1320" stroke="#2b3b56" stroke-width="2"/>
-  <circle cx="32" cy="32" r="22" fill="url(#g)" opacity="0.18"/>
-  <circle cx="32" cy="32" r="18" fill="none" stroke="#8fb5ff" stroke-width="2" stroke-dasharray="4 4" opacity="0.6"/>
-  <text x="32" y="38" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" fill="#e6f1ff">A♠</text>
+  <circle cx="32" cy="32" r="30" fill="#0b1324" stroke="#1c2b49" stroke-width="2"/>
+  <circle cx="32" cy="32" r="23" fill="url(#chipRing)" opacity="0.85"/>
+  <circle cx="32" cy="32" r="17" fill="none" stroke="#8abfff" stroke-width="2" stroke-dasharray="5 5" opacity="0.6"/>
+  <circle cx="32" cy="32" r="12" fill="url(#chipFill)"/>
+  <text x="32" y="38" text-anchor="middle" font-family="'Montserrat', 'Segoe UI', sans-serif" font-weight="700" font-size="18" fill="#081122">PB</text>
 </svg>

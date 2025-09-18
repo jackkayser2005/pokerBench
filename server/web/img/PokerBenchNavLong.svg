@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-labelledby="title desc">
+  <title id="title">PokerBench wordmark</title>
+  <desc id="desc">Wordmark with a poker chip icon and the text PokerBench LLM Poker Benchmark</desc>
+  <defs>
+    <linearGradient id="chipGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3edc9a"/>
+      <stop offset="100%" stop-color="#6bb7ff"/>
+    </linearGradient>
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f6fbff"/>
+      <stop offset="100%" stop-color="#cfe8ff"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14 14)">
+    <g>
+      <circle cx="22" cy="22" r="22" fill="#0f1a2b" stroke="url(#chipGradient)" stroke-width="2"/>
+      <circle cx="22" cy="22" r="16" fill="none" stroke="#1f2f4a" stroke-width="2" stroke-dasharray="6 6"/>
+      <circle cx="22" cy="22" r="11" fill="url(#chipGradient)" opacity="0.85"/>
+      <text x="22" y="26" text-anchor="middle" font-size="18" font-family="'Montserrat', 'Segoe UI', sans-serif" font-weight="700" fill="#0c1222">PB</text>
+    </g>
+    <g transform="translate(64 8)">
+      <text x="0" y="22" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="0.02em" fill="url(#textGradient)">PokerBench</text>
+      <text x="0" y="44" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="16" letter-spacing="0.18em" fill="#8aa6d9">LLM POKER BENCHMARK</text>
+    </g>
+  </g>
+</svg>

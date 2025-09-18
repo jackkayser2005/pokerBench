@@ -1,11 +1,11 @@
 ﻿<!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <title>AI Poker Lab — Live</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="/web/app.css?v=5"/>
-  <link rel="icon" href="/web/img/PokerBenchlogo.svg" type="image/svg+xml"/>
+  <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script>
     const $ = s => document.querySelector(s);
     const q = new URLSearchParams(location.search);
@@ -34,8 +34,8 @@
 <body>
   <div class="wrap wrap--wide">
     <div class="topnav">
-      <a class="brand" href="/web/index.html">
-        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench logo">
+      <a class="brand" href="/web/index.html" aria-label="PokerBench home">
+        <img src="/web/img/PokerBenchNavLong.svg" alt="PokerBench"/>
       </a>
       <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
@@ -58,6 +58,19 @@
       <div class="log"></div>
     </div>
   </div>
+
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <a class="site-footer__brand" href="/web/index.html">
+        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench emblem"/>
+        <span>PokerBench</span>
+      </a>
+      <div class="site-footer__links">
+        <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://twitter.com/PokerAIArena" target="_blank" rel="noopener">X: @PokerAIArena</a>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>
 
