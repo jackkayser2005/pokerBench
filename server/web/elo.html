@@ -9,15 +9,64 @@
     <script>
     const palette = ['#4df6b4', '#76b0ff', '#ffd166', '#f08cf0', '#ff6d6d', '#9de7ff', '#c4f98b', '#b59bff'];
     const state = {
-      dims: { width: 1100, height: 420 },
+      dims: { width: 1100, height: 440 },
       pad: { top: 48, right: 70, bottom: 64, left: 78 },
       baseline: 1500,
       plots: [],
-      flat: []
+      flat: [],
+      flatSorted: [],
+      fullSeries: [],
+      currentSeries: [],
+      companies: [],
+      selectedCompany: 'all',
+      resizeTimer: null,
+      resizeBound: null,
+      lastHoverKey: null
     };
     const dateFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const shortDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
     const $ = (sel) => document.querySelector(sel);
+
+    function canonicalCompany(company) {
+      const trimmed = (company || 'OpenAI').trim();
+      return trimmed ? trimmed : 'OpenAI';
+    }
+
+    function companyKey(company) {
+      return canonicalCompany(company).toLowerCase();
+    }
+
+    function openaiIconMarkup() {
+      return `<svg class="org-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><path d="M14.949 6.547a3.94 3.94 0 0 0-.348-3.273 4.11 4.11 0 0 0-4.4-1.934A4.1 4.1 0 0 0 8.423.2 4.15 4.15 0 0 0 6.305.086a4.1 4.1 0 0 0-1.891.948 4.04 4.04 0 0 0-1.158 1.753 4.1 4.1 0 0 0-1.563.679A4 4 0 0 0 .554 4.72a3.99 3.99 0 0 0 .502 4.731 3.94 3.94 0 0 0 .346 3.274 4.11 4.11 0 0 0 4.402 1.933c.382.425.852.764 1.377.995.526.231 1.095.35 1.67.346 1.78.002 3.358-1.132 3.901-2.804a4.1 4.1 0 0 0 1.563-.68 4 4 0 0 0 1.14-1.253 3.99 3.99 0 0 0-.506-4.716m-6.097 8.406a3.05 3.05 0 0 1-1.945-.694l.096-.054 3.23-1.838a.53.53 0 0 0 .265-.455v-4.49l1.366.778q.02.011.025.035v3.722c-.003 1.653-1.361 2.992-3.037 2.996m-6.53-2.75a2.95 2.95 0 0 1-.36-2.01l.095.057L5.29 12.09a.53.53 0 0 0 .527 0l3.949-2.246v1.555a.05.05 0 0 1-.022.041L6.473 13.3c-1.454.826-3.31 1.335-4.15-1.098m-.85-6.94A3.02 3.02 0 0 1 3.07 3.949v3.785a.51.51 0 0 0 .262.451l3.93 2.237-1.366.779a.05.05 0 0 1-.048 0L2.585 9.342a2.98 2.98 0 0 1-1.113-4.094zm11.216 2.571L8.747 5.576l1.362-.776a.05.05 0 0 1 .048 0l3.265 1.86a3 3 0 0 1 1.173 1.207 2.96 2.96 0 0 1-.27 3.2 3.05 3.05 0 0 1-1.36.997V8.279a.52.52 0 0 0-.276-.445m1.36-2.015-.097-.057-3.226-1.855a.53.53 0 0 0-.53 0L6.249 6.153V4.598a.04.04 0 0 1 .019-.04L9.533 2.7a3.07 3.07 0 0 1 3.257.139c.474.325.843.778 1.066 1.303.223.526.289 1.103.191 1.664zM5.503 8.575 4.139 7.8a.05.05 0 0 1-.026-.037V4.049c0-.57.166-1.127.476-1.607s.752-.864 1.275-1.105a3.08 3.08 0 0 1 3.234.41l-.096.054-3.23 1.838a.53.53 0 0 0-.265.455zm.742-1.577 1.758-1 1.762 1v2l-1.755 1-1.762-1z"/></svg>`;
+    }
+
+    function companyIconMarkup(company, model) {
+      const c = (company || '').trim().toLowerCase();
+      const m = (model || '').trim().toLowerCase();
+      if (!c || c === 'openai') return openaiIconMarkup();
+      const inc = (s) => c.includes(s) || m.startsWith(`${s}/`) || m.includes(`/${s}`);
+      if (inc('deepseek')) return '<img class="org-icon" src="/web/img/deepseek-color.svg" alt="DeepSeek"/>';
+      if (inc('xai') || inc('grok')) return '<img class="org-icon" src="/web/img/xai.svg" alt="xAI"/>';
+      if (inc('anthropic')) return '<img class="org-icon" src="/web/img/anthropic.svg" alt="Anthropic"/>';
+      if (inc('meta') || inc('llama')) return '<img class="org-icon" src="/web/img/meta.svg" alt="Meta"/>';
+      if (inc('google') || inc('gemini')) return '<img class="org-icon" src="/web/img/google.svg" alt="Google"/>';
+      if (inc('mistral')) return '<img class="org-icon" src="/web/img/mistral.svg" alt="Mistral"/>';
+      if (inc('groq')) return '<img class="org-icon" src="/web/img/groq.svg" alt="Groq"/>';
+      if (inc('together')) return '<img class="org-icon" src="/web/img/together.svg" alt="Together"/>';
+      if (inc('perplexity')) return '<img class="org-icon" src="/web/img/perplexity.svg" alt="Perplexity"/>';
+      if (inc('azure')) return '<img class="org-icon" src="/web/img/azure.svg" alt="Azure"/>';
+      if (inc('openrouter')) return '<img class="org-icon" src="/web/img/openrouter.svg" alt="OpenRouter"/>';
+      if (inc('cohere')) return '<img class="org-icon" src="/web/img/cohere.svg" alt="Cohere"/>';
+      if (inc('fireworks')) return '<img class="org-icon" src="/web/img/fireworks.svg" alt="Fireworks"/>';
+      return '<span class="org-icon org-icon--dot" aria-hidden="true"></span>';
+    }
+
+    function createIconElement(markup) {
+      if (!markup) return null;
+      const tpl = document.createElement('template');
+      tpl.innerHTML = markup.trim();
+      return tpl.content.firstElementChild;
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
       highlightNav();
@@ -41,10 +90,26 @@
       const map = new Map();
       rows.forEach(r => {
         if (r.bot_id == null) return;
+        const model = (r.model || '').trim();
+        const company = canonicalCompany(r.company);
         let entry = map.get(r.bot_id);
         if (!entry) {
-          entry = { botId: r.bot_id, meta: { model: (r.model || '').trim(), company: r.company || '' }, pts: [] };
+          entry = {
+            botId: r.bot_id,
+            meta: {
+              model,
+              company,
+              companyKey: companyKey(company),
+              iconMarkup: companyIconMarkup(company, model)
+            },
+            pts: []
+          };
           map.set(r.bot_id, entry);
+        } else {
+          entry.meta.model = model || entry.meta.model;
+          entry.meta.company = company;
+          entry.meta.companyKey = companyKey(company);
+          entry.meta.iconMarkup = companyIconMarkup(company, model || entry.meta.model);
         }
         const when = new Date(r.when);
         if (Number.isNaN(when.getTime())) return;
@@ -54,36 +119,74 @@
       return Array.from(map.values());
     }
 
+    function buildCompanyIndex(series) {
+      const map = new Map();
+      series.forEach(entry => {
+        const key = entry.meta.companyKey || 'openai';
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            label: canonicalCompany(entry.meta.company),
+            iconMarkup: entry.meta.iconMarkup
+          });
+        }
+      });
+      return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+    }
+
     function draw(series) {
       const chartWrap = document.querySelector('.elo-chart');
+      if (!chartWrap) return;
       const svg = document.getElementById('chart');
       const tooltip = chartWrap.querySelector('.chart-tooltip');
       const tooltipTime = tooltip.querySelector('.chart-tooltip__time');
       const tooltipSeries = tooltip.querySelector('.chart-tooltip__series');
       const legend = document.getElementById('legend');
-      const { width: w, height: h } = state.dims;
-      const pad = state.pad;
+
+      state.currentSeries = Array.isArray(series) ? series.slice() : [];
 
       const mk = (tag) => document.createElementNS('http://www.w3.org/2000/svg', tag);
 
       svg.innerHTML = '';
-      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      legend.innerHTML = '';
+      tooltip.classList.remove('visible');
+
+      const rect = chartWrap.getBoundingClientRect();
+      const width = Math.max(720, rect.width || state.dims.width);
+      const height = Math.max(420, Math.min(width * 0.56, (window.innerHeight || 900) * 0.7));
+      state.dims.width = width;
+      state.dims.height = height;
+
+      const pad = { ...state.pad };
+      if (width < 980) {
+        pad.left = 70;
+        pad.right = 70;
+      }
+      if (width < 780) {
+        pad.left = 56;
+        pad.right = 56;
+        pad.bottom = 74;
+      }
+
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.style.cursor = 'crosshair';
 
       state.plots = [];
       state.flat = [];
-      legend.innerHTML = '';
-      tooltip.classList.remove('visible');
+      state.flatSorted = [];
+      state.lastHoverKey = null;
 
       const allPts = [];
       series.forEach(entry => entry.pts.forEach(p => allPts.push(p)));
       if (!allPts.length) {
         const msg = mk('text');
         msg.setAttribute('x', String(pad.left));
-        msg.setAttribute('y', String(h / 2));
+        msg.setAttribute('y', String(height / 2));
         msg.setAttribute('fill', '#5b7089');
         msg.setAttribute('font-size', '14');
-        msg.textContent = 'No duels logged yet.';
+        msg.textContent = state.selectedCompany !== 'all'
+          ? 'No duels logged yet for this company.'
+          : 'No duels logged yet.';
         svg.appendChild(msg);
         return;
       }
@@ -104,8 +207,8 @@
       }
       const baseValue = Math.min(Math.max(state.baseline, yMin), yMax);
 
-      const x = (time) => pad.left + ((time - tMin) * (w - pad.left - pad.right)) / (tMax - tMin);
-      const y = (val) => h - pad.bottom - ((val - yMin) * (h - pad.top - pad.bottom)) / (yMax - yMin);
+      const x = (time) => pad.left + ((time - tMin) * (width - pad.left - pad.right)) / (tMax - tMin);
+      const y = (val) => height - pad.bottom - ((val - yMin) * (height - pad.top - pad.bottom)) / (yMax - yMin);
 
       const defs = mk('defs');
       const bgGrad = mk('linearGradient');
@@ -123,8 +226,8 @@
       const bg = mk('rect');
       bg.setAttribute('x', '0');
       bg.setAttribute('y', '0');
-      bg.setAttribute('width', String(w));
-      bg.setAttribute('height', String(h));
+      bg.setAttribute('width', String(width));
+      bg.setAttribute('height', String(height));
       bg.setAttribute('fill', 'url(#chart-bg)');
       svg.appendChild(bg);
 
@@ -139,7 +242,7 @@
         const yy = y(value);
         const line = mk('line');
         line.setAttribute('x1', String(pad.left));
-        line.setAttribute('x2', String(w - pad.right));
+        line.setAttribute('x2', String(width - pad.right));
         line.setAttribute('y1', String(yy));
         line.setAttribute('y2', String(yy));
         line.setAttribute('opacity', i === yTicks ? '0.45' : '0.25');
@@ -163,13 +266,13 @@
         line.setAttribute('x1', String(xx));
         line.setAttribute('x2', String(xx));
         line.setAttribute('y1', String(pad.top));
-        line.setAttribute('y2', String(h - pad.bottom));
+        line.setAttribute('y2', String(height - pad.bottom));
         line.setAttribute('opacity', '0.22');
         grid.appendChild(line);
 
         const label = mk('text');
         label.setAttribute('x', String(xx));
-        label.setAttribute('y', String(h - pad.bottom + 20));
+        label.setAttribute('y', String(height - pad.bottom + 20));
         label.setAttribute('text-anchor', 'middle');
         label.setAttribute('fill', '#6f8099');
         label.setAttribute('font-size', '11');
@@ -180,7 +283,7 @@
       svg.appendChild(grid);
 
       const axis = mk('path');
-      axis.setAttribute('d', `M ${pad.left} ${pad.top} V ${h - pad.bottom} H ${w - pad.right}`);
+      axis.setAttribute('d', `M ${pad.left} ${pad.top} V ${height - pad.bottom} H ${width - pad.right}`);
       axis.setAttribute('stroke', 'rgba(255,255,255,.35)');
       axis.setAttribute('fill', 'none');
       axis.setAttribute('stroke-width', '1.2');
@@ -193,7 +296,7 @@
       const crosshair = mk('line');
       crosshair.classList.add('chart-crosshair');
       crosshair.setAttribute('y1', String(pad.top));
-      crosshair.setAttribute('y2', String(h - pad.bottom));
+      crosshair.setAttribute('y2', String(height - pad.bottom));
       crosshair.setAttribute('x1', String(pad.left));
       crosshair.setAttribute('x2', String(pad.left));
       crosshair.setAttribute('opacity', '0');
@@ -283,26 +386,54 @@
         markerGroup.appendChild(marker);
 
         const plot = { meta: entry.meta, color: stroke, points: pts, marker };
+        pts.forEach(p => {
+          p.plot = plot;
+          p.hoverKey = String(p.timeMs);
+        });
         plots.push(plot);
       });
 
       state.plots = plots;
-      state.flat = plots.flatMap(plot => plot.points.map(pt => ({ ...pt, plot })));
+      state.flat = plots.flatMap(plot => plot.points);
+      state.flatSorted = state.flat.slice().sort((a, b) => a.x - b.x);
 
       if (!plots.length) return;
 
       plots.forEach(plot => {
-        const pill = document.createElement('span');
-        pill.className = 'pill';
-        pill.style.background = plot.color;
-        pill.textContent = plot.meta.model || 'Unknown';
-        legend.appendChild(pill);
+        const item = document.createElement('div');
+        item.className = 'chart-legend__item';
+        item.style.setProperty('--legend-color', plot.color);
+
+        const swatch = document.createElement('span');
+        swatch.className = 'chart-legend__swatch';
+        item.appendChild(swatch);
+
+        const label = document.createElement('div');
+        label.className = 'chart-legend__label';
+        const iconEl = createIconElement(plot.meta.iconMarkup);
+        if (iconEl) label.appendChild(iconEl);
+
+        const textWrap = document.createElement('div');
+        textWrap.className = 'chart-legend__text';
+        const modelEl = document.createElement('span');
+        modelEl.className = 'chart-legend__model';
+        modelEl.textContent = plot.meta.model || 'Unknown';
+        const companyEl = document.createElement('span');
+        companyEl.className = 'chart-legend__company';
+        companyEl.textContent = canonicalCompany(plot.meta.company);
+        textWrap.appendChild(modelEl);
+        textWrap.appendChild(companyEl);
+
+        label.appendChild(textWrap);
+        item.appendChild(label);
+        legend.appendChild(item);
       });
 
       function hideHover() {
         tooltip.classList.remove('visible');
         crosshair.setAttribute('opacity', '0');
         plots.forEach(plot => (plot.marker.style.display = 'none'));
+        state.lastHoverKey = null;
       }
 
       function showAtPoint(point) {
@@ -340,9 +471,24 @@
           bullet.style.background = pt.color;
           label.appendChild(bullet);
 
-          const text = document.createElement('span');
-          text.textContent = pt.meta.model || 'Unknown';
-          label.appendChild(text);
+          const textWrap = document.createElement('div');
+          textWrap.className = 'chart-tooltip__text';
+          const iconEl = createIconElement(pt.meta.iconMarkup);
+          if (iconEl) textWrap.appendChild(iconEl);
+
+          const names = document.createElement('div');
+          names.className = 'chart-tooltip__names';
+          const modelEl = document.createElement('span');
+          modelEl.className = 'chart-tooltip__model';
+          modelEl.textContent = pt.meta.model || 'Unknown';
+          const companyEl = document.createElement('span');
+          companyEl.className = 'chart-tooltip__company';
+          companyEl.textContent = canonicalCompany(pt.meta.company);
+          names.appendChild(modelEl);
+          names.appendChild(companyEl);
+          textWrap.appendChild(names);
+
+          label.appendChild(textWrap);
 
           const value = document.createElement('div');
           value.className = 'chart-tooltip__value';
@@ -354,10 +500,10 @@
         });
 
         const chartRect = chartWrap.getBoundingClientRect();
-        const relX = (point.x / w) * chartRect.width;
-        const relY = (point.y / h) * chartRect.height;
-        const clampedX = Math.min(Math.max(relX, 80), chartRect.width - 80);
-        const clampedY = Math.min(Math.max(relY, 90), chartRect.height - 16);
+        const relX = (point.x / width) * chartRect.width;
+        const relY = (point.y / height) * chartRect.height;
+        const clampedX = Math.min(Math.max(relX, 96), chartRect.width - 96);
+        const clampedY = Math.min(Math.max(relY, 90), chartRect.height - 24);
 
         tooltip.style.left = `${clampedX}px`;
         tooltip.style.top = `${clampedY}px`;
@@ -371,33 +517,136 @@
         pt.x = evt.clientX;
         pt.y = evt.clientY;
         const svgPoint = pt.matrixTransform(ctm.inverse());
-        if (svgPoint.x < pad.left || svgPoint.x > w - pad.right || svgPoint.y < pad.top || svgPoint.y > h - pad.bottom) {
+        if (svgPoint.x < pad.left || svgPoint.x > width - pad.right || svgPoint.y < pad.top || svgPoint.y > height - pad.bottom) {
           hideHover();
           return;
         }
-        if (!state.flat.length) {
+        if (!state.flatSorted.length) {
           hideHover();
           return;
+        }
+        const sorted = state.flatSorted;
+        let lo = 0;
+        let hi = sorted.length - 1;
+        while (lo < hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          if (sorted[mid].x < svgPoint.x) {
+            lo = mid + 1;
+          } else {
+            hi = mid;
+          }
         }
         let best = null;
         let bestDist = Infinity;
-        state.flat.forEach(p => {
-          const dist = Math.abs(svgPoint.x - p.x);
+        const start = Math.max(0, lo - 6);
+        const end = Math.min(sorted.length - 1, lo + 6);
+        for (let i = start; i <= end; i++) {
+          const candidate = sorted[i];
+          const dx = svgPoint.x - candidate.x;
+          const dy = svgPoint.y - candidate.y;
+          const dist = Math.hypot(dx, dy);
           if (dist < bestDist) {
             bestDist = dist;
-            best = p;
+            best = candidate;
           }
-        });
+        }
         if (!best) {
           hideHover();
           return;
         }
+        const hoverKey = best.hoverKey || String(best.timeMs);
+        if (state.lastHoverKey === hoverKey) return;
+        state.lastHoverKey = hoverKey;
         showAtPoint(best);
       }
 
       svg.addEventListener('pointermove', handlePointer);
       svg.addEventListener('pointerdown', handlePointer);
+      svg.addEventListener('pointerenter', handlePointer);
       svg.addEventListener('pointerleave', hideHover);
+    }
+
+    function createFilterButton(key, label, iconMarkup) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'filter-chip';
+      btn.setAttribute('data-key', key);
+      const content = document.createElement('span');
+      content.className = 'filter-chip__content';
+      if (iconMarkup) {
+        const iconEl = createIconElement(iconMarkup);
+        if (iconEl) content.appendChild(iconEl);
+      } else {
+        const dot = document.createElement('span');
+        dot.className = 'filter-chip__dot';
+        content.appendChild(dot);
+      }
+      const textEl = document.createElement('span');
+      textEl.className = 'filter-chip__text';
+      textEl.textContent = label;
+      content.appendChild(textEl);
+      btn.appendChild(content);
+      return btn;
+    }
+
+    function updateFilterButtons() {
+      document.querySelectorAll('#companyFilters .filter-chip').forEach(btn => {
+        const key = btn.getAttribute('data-key');
+        const active = key === state.selectedCompany;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+
+    function renderCompanyFilters() {
+      const host = document.getElementById('companyFilters');
+      if (!host) return;
+      host.innerHTML = '';
+      host.appendChild(createFilterButton('all', 'All companies'));
+      state.companies.forEach(entry => {
+        host.appendChild(createFilterButton(entry.key, entry.label, entry.iconMarkup));
+      });
+      updateFilterButtons();
+    }
+
+    function applyFilters() {
+      const key = state.selectedCompany;
+      const filtered = key === 'all'
+        ? state.fullSeries
+        : state.fullSeries.filter(entry => entry.meta.companyKey === key);
+      const sorted = filtered.slice().sort((a, b) => {
+        const aLast = a.pts.length ? a.pts[a.pts.length - 1].elo : -Infinity;
+        const bLast = b.pts.length ? b.pts[b.pts.length - 1].elo : -Infinity;
+        return bLast - aLast;
+      });
+      draw(sorted);
+    }
+
+    function bindFilterEvents() {
+      const host = document.getElementById('companyFilters');
+      if (!host || host.dataset.bound === 'true') return;
+      host.addEventListener('click', evt => {
+        const btn = evt.target.closest('button.filter-chip');
+        if (!btn) return;
+        const key = btn.getAttribute('data-key');
+        if (!key || key === state.selectedCompany) return;
+        state.selectedCompany = key;
+        updateFilterButtons();
+        applyFilters();
+      });
+      host.dataset.bound = 'true';
+    }
+
+    function handleResize() {
+      clearTimeout(state.resizeTimer);
+      state.resizeTimer = setTimeout(() => {
+        if (state.currentSeries && state.currentSeries.length) {
+          draw(state.currentSeries);
+        } else {
+          draw(state.currentSeries || []);
+        }
+        state.lastHoverKey = null;
+      }, 150);
     }
 
     async function getJSON(url, fallback) {
@@ -423,17 +672,21 @@
         when: r.when,
         elo: r.elo
       }));
-      const grouped = groupByBot(rows).sort((a, b) => {
-        const aLast = a.pts.length ? a.pts[a.pts.length - 1].elo : -Infinity;
-        const bLast = b.pts.length ? b.pts[b.pts.length - 1].elo : -Infinity;
-        return bLast - aLast;
-      });
-      draw(grouped);
+      const grouped = groupByBot(rows);
+      state.fullSeries = grouped;
+      state.companies = buildCompanyIndex(grouped);
+      renderCompanyFilters();
+      bindFilterEvents();
+      if (!state.resizeBound) {
+        state.resizeBound = handleResize;
+        window.addEventListener('resize', state.resizeBound);
+      }
+      applyFilters();
     }
   </script>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap wrap--wide">
     <div class="topnav">
       <div class="brand">AI Poker Lab</div>
       <nav style="display:flex; gap:8px; align-items:center">
@@ -446,20 +699,26 @@
       </nav>
     </div>
 
-    <div class="card">
-      <h1>Elo Over Time</h1>
-      <div class="muted">End-of-match Elo per bot across all duels.</div>
-    </div>
-
     <div class="card elo-card">
-      <div class="elo-chart">
-        <svg id="chart"></svg>
-        <div class="chart-tooltip">
-          <div class="chart-tooltip__time"></div>
-          <div class="chart-tooltip__series"></div>
+      <div class="elo-card__header">
+        <div>
+          <h1>Elo Over Time</h1>
+          <div class="muted">End-of-match Elo per bot across all duels.</div>
+        </div>
+        <div class="elo-card__filters">
+          <div id="companyFilters" class="filter-chips"></div>
         </div>
       </div>
-      <div id="legend" class="chart-legend"></div>
+      <div class="elo-card__body">
+        <div class="elo-chart">
+          <svg id="chart"></svg>
+          <div class="chart-tooltip">
+            <div class="chart-tooltip__time"></div>
+            <div class="chart-tooltip__series"></div>
+          </div>
+        </div>
+        <div id="legend" class="chart-legend"></div>
+      </div>
     </div>
   </div>
 </body>
