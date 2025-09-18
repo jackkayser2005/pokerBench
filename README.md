@@ -1,57 +1,69 @@
 # PokerBench
 
-Deterministic heads‑up No‑Limit Texas Hold’em benchmarking for LLM poker agents.
+[![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker Compose](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.txt)
 
-Run seed‑mirrored duels, compute Elo & Glicko‑2, log every action, evaluate EV with a Monte‑Carlo judge, and visualize results in a lightweight web UI.
-
----
-
-## Tech Stack
-
-* **Language:** Go (1.21+)
-* **Database:** PostgreSQL (≥ 15)
-* **UI:** HTML + CSS + vanilla JS (no framework)
-* **Containers:** Docker & Docker Compose
-* **LLM Providers:** Any OpenAI‑compatible endpoint (OpenAI, Azure, OpenRouter, Together, Groq, etc.)
-* **Ratings:** Elo (custom) and Glicko‑2 (τ = 0.5) Glicko is still a work in progress at this moment. 
-* **EV Judge:** Monte‑Carlo evaluator
-
----
-
-## Features
-
-* **Mirrored pairs**: A/SB vs B/BB, then swap seats with the **exact same deck** for fair comparisons.
-* **Ratings**: Elo (per hand *or* per mirrored pair) and Glicko‑2 with sensible defaults.
-* **Full action logs**: legal actions, `to_call`, `min_to`/`max_to`, chosen amounts.
-* **Monte‑Carlo judge**: estimates EV‑correctness → displayed as **Acc** in the UI.
-* **Web UI**: Leaderboard, pairwise matrix, Elo timeline, replay/history.
-* **Pluggable LLMs**: configurable entirely via environment variables.
+Deterministic heads-up No-Limit Texas Hold'em benchmarking for LLM poker agents.
+Run mirrored-seed duels, compute Elo & Glicko-2, log every action, audit EV with a Monte-Carlo judge, and explore everything in a lightweight browser UI.
 
 ---
 
 ## Table of Contents
 
-* [Quick Start](#quick-start)
+- [Highlights](#highlights)
+- [Architecture at a Glance](#architecture-at-a-glance)
+- [Quick Start](#quick-start)
+  - [Option A — Docker Compose](#option-a--docker-compose)
+  - [Option B — Local Go](#option-b--local-go)
+- [Running Modes](#running-modes)
+  - [Server Mode (Web UI + API + DB)](#server-mode-web-ui--api--db)
+  - [Duel Mode](#duel-mode)
+  - [Duel Matrix Mode](#duel-matrix-mode)
+- [Configuration](#configuration)
+  - [Required Secrets & Environment](#required-secrets--environment)
+  - [Behavioral Knobs](#behavioral-knobs)
+- [Database & Persistence](#database--persistence)
+- [Web UI](#web-ui)
+- [APIs](#apis)
+- [Data & Ratings](#data--ratings)
+- [Development Notes](#development-notes)
+- [Troubleshooting](#troubleshooting)
+- [Security](#security)
+- [Acknowledgements](#acknowledgements)
+- [License (AGPL-3.0-or-later)](#license-agpl-30-or-later)
 
-  * [Option A — Docker Compose](#option-a--docker-compose)
-  * [Option B — Local Go](#option-b--local-go)
-* [Running Modes](#running-modes)
+---
 
-  * [Server mode (Web UI + API + DB)](#server-mode-web-ui--api--db)
-  * [Duel mode (CLI)](#duel-mode-cli)
-  * [Duel matrix (CLI)](#duel-matrix-cli)
-* [Configuration](#configuration)
+## Highlights
 
-  * [.env.example](#envexample)
-  * [Behavioral Knobs](#behavioral-knobs)
-* [Database](#database)
-* [Web UI](#web-ui)
-* [APIs](#apis)
-* [Data & Ratings](#data--ratings)
-* [Repository Layout](#repository-layout)
-* [Troubleshooting](#troubleshooting)
-* [Security](#security)
-* [License (AGPL-3.0)](#license-agpl-30)
+- **Mirrored pairs:** Each duel plays both seat assignments (SB/BB) with the exact same shuffled deck for fair comparisons.
+- **Ratings built in:** Live Elo (per hand or per mirrored pair) and a Glicko-2 implementation (τ = 0.5) with sensible defaults.
+- **Detailed telemetry:** Structured action logs capture legal actions, `to_call`, `min_to`/`max_to`, chosen amounts, stack states, and boards.
+- **Monte-Carlo EV judge:** Post-match rollouts estimate accuracy (displayed as **Acc** in the UI) to catch prompt regressions.
+- **Minimalistic UI:** Leaderboard, pairwise matrix, Elo timeline, replay/history, and drill-downs – no heavy JS framework required.
+- **Provider agnostic:** Works with any OpenAI-compatible endpoint (OpenAI, Azure, OpenRouter, Together, Groq, etc.).
+- **Container-friendly:** Docker Compose stack ships Postgres, migrator, duel runner, and the web server.
+
+## Architecture at a Glance
+
+```text
+.
+├─ server/
+│  ├─ main.go               # entrypoint, env handling, duel loop
+│  ├─ router.go             # HTTP routes (web + JSON APIs)
+│  ├─ agent/                # agent observation + contract structs
+│  ├─ engine/               # card utilities, heads-up logic
+│  ├─ judge/                # Monte-Carlo EV evaluator
+│  ├─ llm/                  # structured prompts + chat helpers
+│  ├─ store/                # PostgreSQL store + schema.sql
+│  └─ web/                  # static leaderboard / history UI
+├─ scripts/                 # helper PowerShell scripts for Windows
+├─ docker-compose.yml       # db + server + duel runner stack
+├─ Dockerfile               # multi-stage builder for the Go binary
+└─ compose.env.example      # sample environment configuration
+```
 
 ---
 
@@ -60,265 +72,213 @@ Run seed‑mirrored duels, compute Elo & Glicko‑2, log every action, evaluate 
 ### Option A — Docker Compose
 
 ```bash
-# 1) copy examples
+# 1) copy the sample envs (edit them with your models/keys)
 cp compose.env.example compose.env
-cp .env.example .env
+mkdir -p secrets
+printf 'sk-...' > secrets/openai_api_key.txt
 
-# 2) edit compose.env and .env with your keys/models
-#    - OPENAI_API_KEY=...
-#    - OPENAI_MODEL_A=...
-#    - OPENAI_MODEL_B=...
-
-# 3) up
+# 2) launch the stack
 docker compose up --build
 ```
 
-Open: [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html)
+The server becomes available at [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html).
+`docker compose` also spins up:
+
+- `app` – web UI + API + duel scheduler (server mode)
+- `duel` – continuous mirrored matches against configured models
+- `migrate` – one-shot database migrations
+- `db` – PostgreSQL 16 with persistent volume `pgdata`
 
 ### Option B — Local Go
 
-Prereqs: Go 1.21+, Postgres.
+Requirements: Go 1.21+, PostgreSQL 15+, and an OpenAI-compatible API key.
 
 ```bash
-# 1) deps
+# 1) install dependencies
 go mod download
 
-# 2) env
-cp .env.example .env
-# edit .env (OPENAI_API_KEY, DATABASE_URL, etc.)
+# 2) set environment (either export or place in a local .env)
+export OPENAI_API_KEY=sk-...
+export DATABASE_URL="postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
+export OPENAI_MODEL_A="gpt-4o-mini"
+export OPENAI_MODEL_B="gpt-4.1-mini"
 
-# 3) build & run server
-go build -o server ./server
-PORT=8080 AUTO_MIGRATE=1 ./server
+# 3) build & run the server
+cd server
+go build -o ../ai-thunderdome
+cd ..
+PORT=8080 AUTO_MIGRATE=1 ./ai-thunderdome
 ```
+
+Open [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html) once the binary is running.
 
 ---
 
 ## Running Modes
 
-### Server mode (Web UI + API + DB)
+### Server Mode (Web UI + API + DB)
 
-Serves static UI under `/web/*` and JSON under `/api/*`.
-Requires `DATABASE_URL` and `OPENAI_API_KEY`.
+Serve the leaderboard and JSON APIs while orchestrating duels (if enabled):
 
 ```bash
 PORT=8080 \
 AUTO_MIGRATE=1 \
 DATABASE_URL="postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable" \
-./server
+./ai-thunderdome
 # → http://localhost:8080/web/leaderboard.html
 ```
 
-### Duel mode (CLI)
+### Duel Mode
 
-Run a seed‑mirrored duel and print a full log. If DB is configured, ratings persist.
+Run a single mirrored duel and print the full log. Ratings persist if a database is configured.
 
 ```bash
 OPENAI_MODEL_A="gpt-4o-mini" \
 OPENAI_MODEL_B="gpt-4.1-mini" \
 SB=50 BB=100 START_STACK=10000 DUEL_SEEDS=5 \
-./server --duel
+./ai-thunderdome --duel
 ```
 
-### Duel matrix (CLI)
+### Duel Matrix Mode
 
-Round‑robin pairwise duels for a comma‑separated model list.
+Evaluate multiple model matchups across a matrix of seeds:
 
 ```bash
-OPENAI_MODELS="gpt-4o-mini,gpt-4.1-mini,meta-llama/llama-3.1-8b" \
-SB=50 BB=100 START_STACK=10000 DUEL_SEEDS=5 \
-./server --duel-matrix
+OPENAI_MODELS='gpt-4o-mini,gpt-4.1-mini,o4-mini' \
+DUEL_SEEDS=5 \
+./ai-thunderdome --duel-matrix
 ```
+
+Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` and `scripts/run-openai-matrix.ps1`.
 
 ---
 
 ## Configuration
 
-### `.env.example`
+### Required Secrets & Environment
 
-Copy to `.env` and fill in values as needed.
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` | Auth token for the LLM provider. | _(required)_ |
+| `DATABASE_URL` | PostgreSQL DSN (`postgres://user:pass@host:port/db?sslmode=`). | `postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable` |
+| `PORT` | HTTP port for the server mode. | `8080` |
+| `OPENAI_MODEL_A` / `OPENAI_MODEL_B` | Model identifiers for the A/B seats. | `OPENAI_MODEL` fallback |
+| `OPENAI_MODEL_SB` / `OPENAI_MODEL_BB` | Seat-specific overrides if you prefer SB/BB naming. | `OPENAI_MODEL` fallback |
+| `OPENAI_REASONING_EFFORT` | Attach provider-specific reasoning hint (e.g., `medium`, `high`). | unset |
+| `OPENAI_MAX_OUTPUT_TOKENS` | Hard cap on model responses. | provider default |
+| `LLM_COMPANY` | Label used in the UI (e.g., `OpenAI`, `Anthropic`). | derived |
+| `AUTO_MIGRATE` | Run database migrations on startup (recommended in dev). | `0` |
 
-```dotenv
-# Core
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4o-mini  # default if seat-specific not set
+Secrets can be provided via Docker secrets (`secrets/openai_api_key.txt`) or traditional env vars.
 
-# Server
-PORT=8080
-DATABASE_URL=postgres://poker:poker@db:5432/thunderdome?sslmode=disable
-AUTO_MIGRATE=1
+### Behavioral Knobs
 
-# Duel defaults
-SB=50
-BB=100
-START_STACK=10000
-DUEL_SEEDS=5
+Fine-tune duel behavior using environment variables:
 
-# Ratings
-ELO_START=1500
-ELO_K=24
-ELO_PER_HAND=0         # 1 = per hand; 0 = per mirrored pair
-ELO_WEIGHT_BY_POT=1
-
-# Behavior (min-raise/probe pressure)
-RAISE_ZERO_CALL_PROB=0.10
-RAISE_FIRST_ZERO_CALL=0
-DEBUG=0
-```
-
-**Seat-specific models (optional):**
-
-* `OPENAI_MODEL_A`, `OPENAI_MODEL_B` (preferred), or
-* `OPENAI_MODEL_SB`, `OPENAI_MODEL_BB`
-
-**Provider knobs (optional):**
-
-* `OPENAI_API_BASE` / `OPENAI_BASE_URL`, `OPENAI_ORG`
-* `OPENAI_TEMPERATURE`, `OPENAI_TOP_P`, `OPENAI_TOP_K`
-* `OPENAI_MAX_OUTPUT_TOKENS`, `OPENAI_REASONING_EFFORT=low|medium|high`
-* `LLM_COMPANY` label override (UI)
+| Variable | Description |
+| --- | --- |
+| `SB`, `BB`, `START_STACK` | Configure blind sizes and initial stack depth. |
+| `DUEL_SEEDS` | Number of mirrored pairs per duel. (`DUEL_HANDS` can also be supplied; it is converted to seeds.) |
+| `ELO_START`, `ELO_K`, `ELO_PER_HAND`, `ELO_WEIGHT_BY_POT` | Control Elo initialization and update cadence. |
+| `RAISE_ZERO_CALL_PROB` | Probability of probing when `to_call == 0` to reduce auto-check loops. |
+| `RAISE_FIRST_ZERO_CALL` | Force a raise on the first zero-to-call spot (0 disables). |
+| `FORCE_NONCHECK` | Encourage the bot away from checks when legal alternatives exist. |
+| `USE_TOOLS` | Toggle tool usage in multi-turn chat completions. |
+| `MAX_SECONDS`, `STOP_FILE`, `STOP_IMMEDIATE` | Graceful shutdown controls for long-running benchmarks. |
+| `NO_COLOR`, `USE_COLOR`, `DEBUG` | CLI output formatting and verbose state dumps. |
 
 ---
 
-## Behavioral Knobs
+## Database & Persistence
 
-These settings shape model tendencies when no bet is faced and help avoid min‑raise spam.
+PostgreSQL schema lives in [`server/store/schema.sql`](server/store/schema.sql) and includes:
 
-* `RAISE_ZERO_CALL_PROB` (0..1): chance to flip a **check** into a **min‑raise** when `to_call == 0`.
+- **`bots` / `bot_ratings`:** Persistent Elo + Glicko-2 state so each bot resumes from prior strength estimates.
+- **`matches`:** One row per duel run with stack, blind, seed, and rating configuration metadata.
+- **`match_participants`:** Final bankroll snapshot, win counters, and derived analytics per bot.
+- **`action_tallies` & `action_logs`:** Aggregated stats plus a full action stream (seat, action, amount, board, stacks) for replaying hands.
+- **`rating_history`:** Timeline of Elo/Glicko trajectories across each mirrored pair.
+- **Views (`v_match_action_mix`, `v_bot_summary`, `v_bot_career`):** Pre-joined material for the leaderboard and analytics dashboards.
 
-  * Recommended: `0.10` baseline (or `0.0` to disable for clean benchmarks).
-* `RAISE_FIRST_ZERO_CALL` (0/1): if `1`, list **raise** before **check** when `to_call == 0`.
-
-  * Recommended: `0`.
-* `ENCOURAGE_PROBE_ZERO` (legacy): adds a hint that probes are good when `to_call == 0`.
-
-  * Recommended: leave **unset**; the default prompt is already conservative.
-
----
-
-## Database
-
-* Schema: `server/store/schema.sql`
-* Store: `server/store/store.go`
-* Enable `AUTO_MIGRATE=1` in server mode to auto‑apply migrations.
-
-**Compose snippet (already included):**
-
-```yaml
-services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: poker
-      POSTGRES_PASSWORD: poker
-      POSTGRES_DB: thunderdome
-    ports: ["5432:5432"]
-    volumes: [dbdata:/var/lib/postgresql/data]
-
-  bench:
-    build: .
-    env_file:
-      - compose.env
-    ports: ["8080:8080"]
-    depends_on: [db]
-
-volumes:
-  dbdata:
-```
+Enable `AUTO_MIGRATE=1` to automatically run schema migrations on startup, or execute `./ai-thunderdome --migrate` when deploying manually.
 
 ---
 
 ## Web UI
 
-Static files live in `server/web/`:
+Static assets under [`server/web`](server/web) are embedded into the binary via `go:embed`. The UI offers:
 
-* `leaderboard.html` — Elo, hands, win%, **Acc**, net, updated timestamp
-* `matrix.html` — pairwise results
-* `elo.html` — rating timeline
-* `replay.html` / `history.html` — match & hand logs
-* `about.html`
+- **Leaderboard:** Aggregated Elo, win-rate confidence intervals, judge accuracy, and net chips.
+- **Pairwise matrix:** Compare head-to-head performance across bots.
+- **History timeline:** Scrollable list of recent matches with metadata snapshots.
+- **Match replays:** Inspect action mixes, reasoning effort tags, and rating deltas per mirrored pair.
 
-APIs consumed by the UI (subject to change during active development):
-
-* `GET /api/leaderboard`
-* `GET /api/judge-accuracy`
+No external framework is required—plain HTML, CSS, and vanilla JavaScript keep the footprint light.
 
 ---
 
 ## APIs
 
-High‑level summary of what the server exposes (not a formal spec):
+High-level JSON endpoints exposed by the server include:
 
-* `GET /api/leaderboard` — rows containing bot/model, Elo, career hands, win rate %, net chips, updated\_at.
-* `GET /api/judge-accuracy` — judge stats `{ bot_id, good, total, acc }` for “Acc” display.
+- `GET /api/leaderboard` — Rows containing bot/model metadata, Elo, career hands, win-rate %, net chips, and timestamps.
+- `GET /api/judge-accuracy` — Monte-Carlo judge stats `{ bot_id, good, total, acc }` for the **Acc** column.
+- `GET /api/matches` — Recent match history for the UI.
+- `GET /api/last-match` — Full bundle for the most recent duel (participants, action mix, rating timeline).
+- `GET /api/action-log?match_id=...` — Stream-friendly breakdown of actions per hand.
 
 ---
 
 ## Data & Ratings
 
-* **Mirrored pairs** ensure each agent plays each seat on the **same board** for fairness.
-* **Elo** can update per hand or per mirrored pair; optional pot‑weighted scoring.
-* **Glicko‑2** uses τ = 0.5; chip margin normalized by effective stack with `S = 0.5 + 0.5 * tanh(m)`.
-* **EV Judge** runs post‑match Monte‑Carlo evaluation; aggregated as **Acc** in the UI.
+- **Mirrored pairs** ensure each agent plays both seats on identical boards to remove deck bias.
+- **Elo updates** can occur per hand or once per mirrored pair, with optional pot-weighted scoring.
+- **Glicko-2** uses τ = 0.5 and normalizes chip margins by effective stack (`S = 0.5 + 0.5 * tanh(m)`).
+- **EV Judge** runs Monte-Carlo rollouts post-match; aggregated accuracy powers the UI’s regression guardrail.
+
+Use the leaderboard’s **Acc** column as a regression check whenever you tweak prompts or knob settings.
 
 ---
 
-## Repository Layout
+## Development Notes
 
-```text
-.
-├─ server/
-│  ├─ main.go                 # modes, envs, duel loop
-│  ├─ router.go               # HTTP routes (web + api)
-│  ├─ agent/                  # observation/contracts
-│  ├─ engine/                 # cards/hand engine
-│  ├─ judge/                  # Monte-Carlo EV judge
-│  ├─ llm/                    # structured outputs / chat API helpers
-│  ├─ store/                  # DB store + schema.sql
-│  ├─ web/                    # static UI
-│  ├─ elo_v2.go               # Elo
-│  └─ glicko2.go              # Glicko-2
-├─ scripts/                   # helper scripts
-├─ Dockerfile
-├─ docker-compose.yml
-├─ .dockerignore
-├─ .gitignore
-├─ .env.example
-└─ RUNS.md
-```
+- Build locally with `go build ./server` (binary defaults to `ai-thunderdome`).
+- Run unit tests with `go test ./...`.
+- When embedding new static assets run `go generate ./...` if you add `//go:generate` directives (none are required today).
+- Keep secrets out of git; `.dockerignore` and `.gitignore` already exclude common sensitive files.
 
 ---
 
 ## Troubleshooting
 
-* **Windows: “LF will be replaced by CRLF”** — harmless. Prefer LF?
-
+- **Missing env vars:** Double-check `.env`, `compose.env`, or exported variables before launching.
+- **Port 8080 busy:** Override with `PORT=...` or free the port.
+- **Windows line endings:** Disable autocrlf for cleaner diffs:
   ```powershell
   git config core.autocrlf false
   git add --renormalize .
   ```
-* **Missing env vars** — set them in `.env` or `compose.env`.
-* **Port 8080 busy** — change `PORT` or free the port.
-* **Quick Git push over HTTPS (Windows):**
-
-  ```powershell
-  git remote set-url origin https://github.com/<you>/pokerBench.git
-  git push -u origin main
-  ```
+- **Compose secret errors:** Ensure `secrets/openai_api_key.txt` exists or point `OPENAI_API_SECRET_FILE` at your key.
 
 ---
 
 ## Security
 
-* Do **not** commit real secrets (`.env`, API key files).
-* Keep a sanitized `.env.example` for collaborators.
-* `.dockerignore` excludes secrets from Docker build context.
+- Never commit real secrets—use environment variables or Docker secrets.
+- Keep a sanitized `compose.env.example` for collaborators.
+- `.dockerignore` prevents leaking local secrets into build contexts.
 
 ---
 
-## License (AGPL-3.0)
+## Acknowledgements
 
-This project is licensed under the **GNU Affero General Public License v3.0 or later (AGPL‑3.0‑or‑later)**.
+Huge thanks to Tyler for inspiring the project and to the open-source community for the libraries that power PokerBench. May it spark more game-specific evaluation suites.
+
+---
+
+## License (AGPL-3.0-or-later)
+
+This project is licensed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**.
 It ensures that if you deploy modified versions over a network, you must also make the source available.
 
 Add a `LICENSE` file with the following boilerplate:
@@ -355,16 +315,4 @@ Add SPDX headers to source files if you like:
 
 ---
 
-### Notes
-
-To reduce min‑raise spam while keeping realistic defense rates:
-
-```dotenv
-RAISE_ZERO_CALL_PROB=0.10
-RAISE_FIRST_ZERO_CALL=0
-```
-
-Use the leaderboard’s **Acc** as a regression check when you tweak prompts/knobs.
-
-# Thank you to my good friend Tyler for getting my addicted to gambling, leading to this brainchild of mine 
-# Shoutout to all of the open source libraries that aided the development of pokerBench, I hope this inspires others to make more benchmarks pertaining to games. 
+Use the **Acc** metric and mirrored duels as regression tests whenever you adjust prompts, reasoning effort, or raise heuristics. Happy benchmarking!
