@@ -147,14 +147,23 @@ func (db *DB) SyncJudgeAccuracy(ctx context.Context, botIDs ...int64) error {
 		return err
 	}
 	for _, id := range ids {
-		acc := res[id]
+		acc, ok := res[id]
+		if !ok {
+			// Nothing new for this bot — keep existing values.
+			continue
+		}
+		if acc.Total <= 0 {
+			if good, total, err := db.GetJudgeAccuracy(ctx, id); err == nil && total > 0 {
+				acc = JudgeAccuracy{Good: good, Total: total}
+			}
+		}
 		if _, err := db.Exec(ctx, `
-                        UPDATE bot_ratings
-                           SET judge_good = $2,
-                               judge_total = $3,
-                               updated_at = now()
-                         WHERE bot_id = $1
-                `, id, acc.Good, acc.Total); err != nil {
+                    UPDATE bot_ratings
+                       SET judge_good = $2,
+                           judge_total = $3,
+                           updated_at = now()
+                     WHERE bot_id = $1
+            `, id, acc.Good, acc.Total); err != nil {
 			return err
 		}
 	}
