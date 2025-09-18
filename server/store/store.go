@@ -97,12 +97,19 @@ type JudgeAccuracy struct {
 	Total int
 }
 
+func (ja JudgeAccuracy) Ratio() float64 {
+	if ja.Total <= 0 {
+		return 0
+	}
+	return float64(ja.Good) / float64(ja.Total)
+}
+
 func (db *DB) GetJudgeAccuracy(ctx context.Context, botID int64) (good, total int, err error) {
 	err = db.QueryRow(ctx, `
-		SELECT judge_good, judge_total
-		  FROM bot_ratings
-		 WHERE bot_id = $1
-	`, botID).Scan(&good, &total)
+                SELECT judge_good, judge_total
+                  FROM bot_ratings
+                 WHERE bot_id = $1
+        `, botID).Scan(&good, &total)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, nil
@@ -112,33 +119,126 @@ func (db *DB) GetJudgeAccuracy(ctx context.Context, botID int64) (good, total in
 	return
 }
 
-func (db *DB) MatchJudgeAccuracy(ctx context.Context, matchID int64) (map[string]JudgeAccuracy, error) {
-	rows, err := db.Query(ctx, `
-		SELECT a.actor_label,
-		       SUM(CASE WHEN e.is_top_action THEN 1 ELSE 0 END)::int AS good,
-		       COUNT(*)::int AS total
-		  FROM action_eval e
-		  JOIN action_logs a ON a.id = e.action_log_id
-		 WHERE a.match_id = $1 AND e.solver = 'MCJudge'
-		 GROUP BY a.actor_label
-	`, matchID)
+func (db *DB) MatchJudgeAccuracy(ctx context.Context, matchID int64) (map[int64]JudgeAccuracy, error) {
+	return db.judgeAccuracy(ctx, " AND a.match_id = $1", matchID)
+}
+
+func (db *DB) AllJudgeAccuracy(ctx context.Context) (map[int64]JudgeAccuracy, error) {
+	res, err := db.judgeAccuracy(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := db.fillJudgeAccuracyFromRatings(ctx, res, nil); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (db *DB) SyncJudgeAccuracy(ctx context.Context, botIDs ...int64) error {
+	ids := uniquePositiveInt64(botIDs)
+	if len(ids) == 0 {
+		return nil
+	}
+	res, err := db.judgeAccuracy(ctx, " AND p.bot_id = ANY($1)", ids)
+	if err != nil {
+		return err
+	}
+	if err := db.fillJudgeAccuracyFromRatings(ctx, res, ids); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		acc := res[id]
+		if _, err := db.Exec(ctx, `
+                        UPDATE bot_ratings
+                           SET judge_good = $2,
+                               judge_total = $3,
+                               updated_at = now()
+                         WHERE bot_id = $1
+                `, id, acc.Good, acc.Total); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *DB) judgeAccuracy(ctx context.Context, where string, args ...any) (map[int64]JudgeAccuracy, error) {
+	query := `
+                SELECT p.bot_id,
+                       SUM(CASE WHEN e.is_top_action THEN 1 ELSE 0 END)::int AS good,
+                       COUNT(*)::int AS total
+                  FROM action_eval e
+                  JOIN action_logs a ON a.id = e.action_log_id
+                  JOIN match_participants p ON p.match_id = a.match_id AND p.label = a.actor_label
+                 WHERE e.solver = 'MCJudge'` + where + `
+                 GROUP BY p.bot_id`
+
+	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[string]JudgeAccuracy, 2)
+	out := make(map[int64]JudgeAccuracy)
 	for rows.Next() {
-		var label string
+		var botID int64
 		var good, total int
-		if err := rows.Scan(&label, &good, &total); err != nil {
+		if err := rows.Scan(&botID, &good, &total); err != nil {
 			return nil, err
 		}
-		out[label] = JudgeAccuracy{Good: good, Total: total}
+		out[botID] = JudgeAccuracy{Good: good, Total: total}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (db *DB) fillJudgeAccuracyFromRatings(ctx context.Context, dest map[int64]JudgeAccuracy, filter []int64) error {
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if len(filter) == 0 {
+		rows, err = db.Query(ctx, `SELECT bot_id, judge_good, judge_total FROM bot_ratings`)
+	} else {
+		rows, err = db.Query(ctx, `SELECT bot_id, judge_good, judge_total FROM bot_ratings WHERE bot_id = ANY($1)`, filter)
+	}
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var good, total int
+		if err := rows.Scan(&id, &good, &total); err != nil {
+			return err
+		}
+		if total <= 0 {
+			continue
+		}
+		if existing, ok := dest[id]; !ok || existing.Total <= 0 {
+			dest[id] = JudgeAccuracy{Good: good, Total: total}
+		}
+	}
+	return rows.Err()
+}
+
+func uniquePositiveInt64(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // Create a match row and return the id.
