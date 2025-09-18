@@ -202,7 +202,7 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
 .center  { display:grid; place-items:center; }
 
 /* 3) Surfaces / Cards ------------------------------------------------- */
-.card {
+.card { 
   background:
     linear-gradient(180deg, hsl(240 15% 16% / .85), hsl(240 15% 14% / .9)),
     radial-gradient(800px 400px at 10% -10%, rgba(45,90,160,.08), transparent 55%);
@@ -216,6 +216,27 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
 .card.ghost { background: hsl(240 15% 14% / .55); backdrop-filter: blur(6px); }
 .card.tight { padding: 12px; }
 .card.spacious { padding: 26px; border-radius: var(--radius-3); }
+.card--compact {
+  padding: 16px 20px;
+  display: grid;
+  gap: 6px;
+  align-items: start;
+}
+.card--compact h1 {
+  margin: 0 0 4px;
+  font-size: clamp(1.4rem, 1.16rem + .8vw, 1.9rem);
+}
+.card--compact .muted {
+  font-size: var(--fs-1);
+  margin-top: 0;
+}
+.card--header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .card__header { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
 .card__header h2 { margin: 0; }
 .card__header .muted { font-size: var(--fs-1); }
@@ -477,6 +498,19 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   gap: 2px;
   min-width: 0;
 }
+.match-legend__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.match-legend__info .org-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .match-legend__slot {
   font-size: .72rem;
   font-weight: 700;
@@ -491,6 +525,13 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: min(220px, 32vw);
+}
+.match-legend__info .match-legend__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.match-legend__text--empty {
+  color: rgba(196, 216, 255, .55);
 }
 .match-legend[hidden] {
   display: none !important;
@@ -1561,15 +1602,54 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
 }
 .elo-card__header {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 24px;
+  gap: 28px;
   padding: 32px 40px 28px;
   background: linear-gradient(180deg, rgba(8, 16, 30, .9), rgba(8, 14, 26, .76));
   border-bottom: 1px solid rgba(123, 180, 255, .28);
   flex-wrap: wrap;
 }
 .elo-card__header h1 { margin-bottom: 8px; }
+.elo-card__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1 1 60%;
+  min-width: 0;
+}
+.elo-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.elo-card__logo {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(118, 177, 255, .25), rgba(77, 246, 180, .18));
+  border: 1px solid rgba(118, 177, 255, .32);
+  box-shadow: 0 18px 34px rgba(4, 12, 24, .45);
+  backdrop-filter: blur(6px);
+}
+.elo-card__logo img {
+  width: 38px;
+  height: auto;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,.4));
+}
+.elo-card__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.elo-card__legend {
+  align-self: flex-start;
+  max-width: min(440px, 100%);
+}
 .elo-card__filters {
   display: flex;
   justify-content: flex-end;
@@ -1882,6 +1962,9 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
   .elo-card__header { flex-direction: column; align-items: flex-start; }
   .elo-card__filters { width: 100%; }
   .filter-chips { width: 100%; justify-content: flex-start; }
+  .elo-card__intro { width: 100%; }
+  .elo-card__brand { align-items: flex-start; }
+  .elo-card__legend { width: 100%; }
 }
 
 /* Replay: prevent long model names from breaking layout */

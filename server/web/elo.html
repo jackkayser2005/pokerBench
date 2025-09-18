@@ -67,9 +67,104 @@
       return tpl.content.firstElementChild;
     }
 
+    function trimModelName(s = '') {
+      s = s.trim().replace(/^"+|"+$/g, '');
+      const parts = s.split(/[\/:@]/).filter(Boolean);
+      if (parts.length) s = parts[parts.length - 1];
+      if (s.length > 42) s = s.slice(0, 42) + '…';
+      return s;
+    }
+
+    function normalizeLegendMeta(entry) {
+      if (!entry) return { label: '', model: '', company: '' };
+      const label = String(entry.label || '').trim().toUpperCase();
+      const model = String(entry.model || '').trim();
+      const company = String(entry.company || '').trim();
+      return { label, model, company };
+    }
+
+    function buildLegendEntry(slot, meta) {
+      const host = document.createElement('div');
+      host.className = 'match-legend__item';
+      const color = slot === 'A' ? '#39d98a' : '#d6c29b';
+      host.style.setProperty('--legend-color', color);
+
+      const swatch = document.createElement('span');
+      swatch.className = 'match-legend__swatch';
+      swatch.style.background = color;
+      host.appendChild(swatch);
+
+      const details = document.createElement('div');
+      details.className = 'match-legend__details';
+
+      const slotEl = document.createElement('span');
+      slotEl.className = 'match-legend__slot';
+      slotEl.textContent = slot;
+      details.appendChild(slotEl);
+
+      const infoWrap = document.createElement('div');
+      infoWrap.className = 'match-legend__info';
+      const hasMeta = Boolean((meta.model || '').trim() || (meta.company || '').trim());
+      if (hasMeta) {
+        const iconMarkup = companyIconMarkup(meta.company, meta.model);
+        const iconEl = createIconElement(iconMarkup);
+        if (iconEl) infoWrap.appendChild(iconEl);
+      }
+
+      const textEl = document.createElement('span');
+      textEl.className = 'match-legend__text';
+      const trimmedModel = trimModelName(meta.model || '');
+      const pieces = [];
+      if (trimmedModel) pieces.push(trimmedModel);
+      const canonical = (meta.company || '').trim() ? canonicalCompany(meta.company) : '';
+      const company = canonical;
+      const lowerModel = trimmedModel.toLowerCase();
+      const lowerCompany = company.toLowerCase();
+      const includeCompany = Boolean(company) && !lowerModel.includes(lowerCompany);
+      if (includeCompany) pieces.push(company);
+      const hasInfo = pieces.length > 0;
+      textEl.textContent = hasInfo ? pieces.join(' · ') : 'Awaiting matchup';
+      if (!hasInfo) textEl.classList.add('match-legend__text--empty');
+      infoWrap.appendChild(textEl);
+
+      details.appendChild(infoWrap);
+      host.appendChild(details);
+
+      return { element: host, hasInfo };
+    }
+
+    async function loadMatchLegend() {
+      const host = document.getElementById('eloMatchLegend');
+      if (!host) return;
+      host.innerHTML = '';
+      host.hidden = true;
+      try {
+        const res = await fetch('/api/last-match');
+        if (!res.ok) return;
+        const data = await res.json();
+        const participants = Array.isArray(data?.participants) ? data.participants : [];
+        const map = new Map();
+        participants.forEach(p => {
+          const { label, model, company } = normalizeLegendMeta(p);
+          if (label) map.set(label, { label, model, company });
+        });
+        const slots = ['A', 'B'];
+        const entries = slots.map(slot => buildLegendEntry(slot, map.get(slot) || { label: slot, model: '', company: '' }));
+        const hasLegend = entries.some(entry => entry.hasInfo);
+        if (!hasLegend) return;
+        entries.forEach(entry => host.appendChild(entry.element));
+        host.hidden = false;
+      } catch (err) {
+        if (window.console && typeof window.console.debug === 'function') {
+          window.console.debug('legend load failed', err);
+        }
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       highlightNav();
       load();
+      loadMatchLegend();
     });
 
     function highlightNav() {
@@ -725,9 +820,17 @@
     <div class="wrap wrap--wide">
       <div class="card elo-card">
       <div class="elo-card__header">
-        <div>
-          <h1>Elo Over Time</h1>
-          <div class="muted">End-of-match Elo per bot across all duels.</div>
+        <div class="elo-card__intro">
+          <div class="elo-card__brand">
+            <span class="elo-card__logo">
+              <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+            </span>
+            <div class="elo-card__heading">
+              <h1>Elo Over Time</h1>
+              <div class="muted">End-of-match Elo per bot across all duels.</div>
+            </div>
+          </div>
+          <div class="match-legend elo-card__legend" id="eloMatchLegend" hidden aria-live="polite"></div>
         </div>
         <div class="elo-card__filters">
           <div id="companyFilters" class="filter-chips"></div>
