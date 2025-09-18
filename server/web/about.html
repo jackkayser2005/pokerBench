@@ -1,26 +1,27 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>AI Poker Lab — About</title>
+  <title>PokerBench — About</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="/web/app.css?v=5"/>
-  <link rel="icon" href="/web/img/PokerBenchlogo.svg" type="image/svg+xml"/>
+  <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script>
-    document.addEventListener('DOMContentLoaded', ()=>{
-      document.querySelectorAll('.topnav a').forEach(a=>{
-        try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){}
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.topnav a').forEach(a => {
+        try {
+          const last = a.getAttribute('href').split('/').pop();
+          if (location.pathname.endsWith(last)) a.classList.add('active');
+        } catch {}
       });
     });
   </script>
 </head>
 <body>
   <div class="wrap wrap--wide">
-
-    <!-- Top Nav -->
     <div class="topnav">
-      <a class="brand" href="/web/index.html">
-        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench logo">
+      <a class="brand" href="/web/index.html" aria-label="PokerBench home">
+        <img src="/web/img/PokerBenchNavLong.svg" alt="PokerBench"/>
       </a>
       <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
@@ -32,117 +33,161 @@
       </nav>
     </div>
 
-    <!-- Intro -->
-    <div class="card">
-      <h1>About AI Poker Lab</h1>
-      <div class="muted">
-        Heads-up No-Limit Hold’em between autonomous agents. Same decks, mirrored seats, full telemetry, and reproducible ratings.
-        This is a research sandbox: transparent rules, deterministic runs, and tools to inspect every decision.
+    <section class="card about-hero">
+      <div>
+        <div class="about-hero__eyebrow">About PokerBench</div>
+        <h1>Deterministic evaluation for heads-up LLM poker agents</h1>
+        <p class="about-hero__lede">
+          PokerBench is a laboratory for measuring autonomous No-Limit Hold'em decision making. Mirrored-seed duels, strict
+          legality checks, and exhaustive telemetry keep every experiment reproducible. Elo and Glicko-2 pipelines expose skill
+          progression, while a Monte-Carlo EV judge audits whether models understand the cards they are dealt.
+        </p>
+      </div>
+      <div class="about-hero__metrics">
+        <div class="about-metric">
+          <div class="about-metric__label">Mirrored Seeds</div>
+          <div class="about-metric__caption">Seat swaps neutralize position bias; identical shuffles isolate strategic strength.</div>
+        </div>
+        <div class="about-metric">
+          <div class="about-metric__label">Ratings Science</div>
+          <div class="about-metric__caption">Career Elo with a tanh chip model plus τ = 0.5 Glicko-2 uncertainty tracking.</div>
+        </div>
+        <div class="about-metric">
+          <div class="about-metric__label">Monte-Carlo Judge</div>
+          <div class="about-metric__caption">Post-match rollouts estimate EV accuracy so prompt regressions surface immediately.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card about-section">
+      <h2>Scientific pillars</h2>
+      <p class="muted">Every capability is designed to be audited, replayed, and repeated without hidden randomness.</p>
+      <ul class="about-list">
+        <li><strong>Mirrored pairs.</strong> Each seed plays both seats (SB/BB) with the same deck order so chip deltas reflect policy, not luck.</li>
+        <li><strong>Deterministic orchestration.</strong> Seeds drive pairings, deck shuffles, and evaluation windows, enabling byte-for-byte reruns.</li>
+        <li><strong>Strict legality enforcement.</strong> The engine validates <code>to_call</code>, minimum raises, and all-in bounds before any action is accepted.</li>
+        <li><strong>Telemetry-first logging.</strong> Structured action logs, stack snapshots, and board states back the Replay, History, and analytics views.</li>
+        <li><strong>Provider agnostic.</strong> Any OpenAI-compatible endpoint (OpenAI, Azure, OpenRouter, Together, Groq, &hellip;) can be slotted in.</li>
+      </ul>
+    </section>
+
+    <section class="card about-section">
+      <h2>System architecture at a glance</h2>
+      <p class="muted">A lean Go stack keeps the benchmark predictable and inspectable.</p>
+      <div class="about-grid about-grid--columns">
+        <article class="about-block">
+          <div class="about-block__title">engine/</div>
+          <h3>Heads-up logic</h3>
+          <p class="muted">Card utilities and betting flow for deterministic heads-up Hold'em, paired with <code>agent/</code> for structured observations.</p>
+        </article>
+        <article class="about-block">
+          <div class="about-block__title">main.go & router.go</div>
+          <h3>Scheduler + API</h3>
+          <p class="muted">Coordinates mirrored matches, exposes JSON APIs, and serves the static UI from <code>web/</code>.</p>
+        </article>
+        <article class="about-block">
+          <div class="about-block__title">judge/ & stats.go</div>
+          <h3>Ratings lab</h3>
+          <p class="muted">Monte-Carlo EV auditing plus Elo &amp; Glicko-2 updates that translate chip margins into interpretable skill ratings.</p>
+        </article>
+        <article class="about-block">
+          <div class="about-block__title">store/</div>
+          <h3>Postgres schema</h3>
+          <p class="muted">Normalized tables (<code>matches</code>, <code>action_logs</code>, <code>bot_ratings</code>, &hellip;) persist every hand, rating, and telemetry stream.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="card about-section">
+      <h2>Experimental modes</h2>
+      <div class="about-grid about-grid--columns">
+        <article class="about-block">
+          <div class="about-block__title">Server mode</div>
+          <h3>Always-on lab</h3>
+          <p class="muted">Run the web UI, JSON APIs, scheduler, and database together. Ideal for live rating updates and public dashboards.</p>
+        </article>
+        <article class="about-block">
+          <div class="about-block__title">Duel mode</div>
+          <h3>Single experiment</h3>
+          <p class="muted">Launch a mirrored duel from the CLI to interrogate a prompt or compare two agents under controlled blinds and stacks.</p>
+        </article>
+        <article class="about-block">
+          <div class="about-block__title">Duel matrix</div>
+          <h3>Bulk evaluation</h3>
+          <p class="muted">Schedule multiple model matchups across a grid of seeds to map the meta-game and stress test new strategies.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="card about-section">
+      <h2>Data fidelity &amp; observability</h2>
+      <p class="muted">Everything you see on the Leaderboard, Matrix, Elo, and History pages is backed by first-class telemetry.</p>
+      <div class="about-inline-kv">
+        <div class="about-inline-kv__item">
+          <div class="about-inline-kv__label">Action stream</div>
+          <div class="about-inline-kv__value">action_logs</div>
+          <p class="muted">Per-action snapshots containing actor, stacks, bounds, board cards, and the legal window.</p>
+        </div>
+        <div class="about-inline-kv__item">
+          <div class="about-inline-kv__label">Career views</div>
+          <div class="about-inline-kv__value">v_bot_career</div>
+          <p class="muted">Aggregates matches, net BB, hands played, judge accuracy, and update timestamps.</p>
+        </div>
+        <div class="about-inline-kv__item">
+          <div class="about-inline-kv__label">Rating history</div>
+          <div class="about-inline-kv__value">rating_history</div>
+          <p class="muted">Stores Elo and Glicko-2 checkpoints so uncertainty can be tracked over time.</p>
+        </div>
+      </div>
+      <p class="muted">Career Elo uses <code>E_A = 1 / (1 + 10^{(R_B - R_A)/400})</code> with a <code>tanh</code>-scaled chip score. Glicko-2 follows the 173.7178 scaling with volatility solving per rating period.</p>
+    </section>
+
+    <section class="card about-section">
+      <h2>Agent integration workflow</h2>
+      <ol class="about-steps">
+        <li><strong>Emit the contract.</strong> Implement the structured JSON schema (fold, check/call, raise with a legal size) and avoid prose.</li>
+        <li><strong>Validate legality.</strong> Run actions through the engine’s <code>to_call</code> and raise bounds locally before scheduling matches.</li>
+        <li><strong>Stress mirrored seeds.</strong> Use paired seats to confirm ranges hold up, then replay hands and inspect judge EV for regressions.</li>
+      </ol>
+    </section>
+
+    <section class="card about-section">
+      <h2>Operational playbook</h2>
+      <div class="about-inline-kv">
+        <div class="about-inline-kv__item">
+          <div class="about-inline-kv__label">Docker compose</div>
+          <div class="about-inline-kv__value">Option A</div>
+          <p class="muted">Copy <code>compose.env</code>, drop secrets in <code>secrets/</code>, and run <code>docker compose up --build</code> to launch Postgres, migrations, duel runner, and the web server.</p>
+        </div>
+        <div class="about-inline-kv__item">
+          <div class="about-inline-kv__label">Local Go</div>
+          <div class="about-inline-kv__value">Option B</div>
+          <p class="muted">Use Go 1.21+, export an OpenAI-compatible API key and Postgres URL, build <code>./ai-thunderdome</code>, and start the server with <code>AUTO_MIGRATE=1</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card about-section">
+      <h2>Governance &amp; openness</h2>
+      <ul class="about-list">
+        <li><strong>Reproducibility safeguards.</strong> Illegal or malformed agent output is rejected and logged; sampling tags surface provisional data.</li>
+        <li><strong>Security awareness.</strong> Secrets stay in <code>secrets/</code>, and the stack is ship-ready via Docker or local binaries.</li>
+        <li><strong>Open science.</strong> Released under AGPL-3.0-or-later with transparent schemas, logs, and UI so results can be audited end-to-end.</li>
+      </ul>
+    </section>
+  </div>
+
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <a class="site-footer__brand" href="/web/index.html">
+        <img src="/web/img/PokerBenchlogo.svg" alt="PokerBench emblem"/>
+        <span>PokerBench</span>
+      </a>
+      <div class="site-footer__links">
+        <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://twitter.com/PokerAIArena" target="_blank" rel="noopener">X: @PokerAIArena</a>
       </div>
     </div>
-
-    <!-- What makes it trustworthy -->
-    <div class="card">
-      <h2>Why this setup works</h2>
-      <ul class="list">
-        <li class="row">
-          <div>Mirrored HUNL</div>
-          <div class="muted">Each seed plays two hands with seats swapped and identical shuffles. This bleeds out seat bias and deck luck.</div>
-        </li>
-        <li class="row">
-          <div>Deterministic runs</div>
-          <div class="muted">Seeds drive deck order and pairing. Re-run a seed; get the same boards, streets, and evaluation windows.</div>
-        </li>
-        <li class="row">
-          <div>Strict legality</div>
-          <div class="muted">The engine enforces to-call, min-raise increments, and all-in bounds. Agents only pick legal actions.</div>
-        </li>
-        <li class="row">
-          <div>Full telemetry</div>
-          <div class="muted">Every applied action logs stacks, pot, bounds, board, and actor. You can replay, scrub, and audit decisions.</div>
-        </li>
-      </ul>
-    </div>
-
-    <!-- Match protocol -->
-    <div class="card">
-      <h2>Match protocol</h2>
-      <ul>
-        <li>Mode: mirrored heads-up NLH (two hands per seed: SB/BB swapped).</li>
-        <li>Stacks/blinds: configured via <code>START_STACK</code>, <code>SB</code>, <code>BB</code>.</li>
-        <li>Legality: engine validates <em>to-call</em>, min-raise, and all-in caps before accepting an action.</li>
-        <li>IO: agents return a structured JSON action; non-conforming output is rejected.</li>
-        <li>Logging: per-street snapshots + per-action records feed the <em>Replay</em> and <em>History</em> views.</li>
-      </ul>
-      <p class="muted">Tip: the <em>Replay</em> page is your microscope—watch ranges collapse, spot sizing strategies, and verify legality checks.</p>
-    </div>
-
-    <!-- Ratings -->
-    <div class="card">
-      <h2>Ratings</h2>
-
-      <h3>Elo (career)</h3>
-      <p class="muted">
-        Pair mode maps chip margin (in BB) to a soft score using <code>tanh</code>; <code>K</code> scales with pot, margin, and decays slowly across repeated pairs.
-        This yields stable career ratings that move more on meaningful wins than on coin flips.
-      </p>
-      <ul>
-        <li>Expectation: <code>E_A = 1 / (1 + 10^{(R_B - R_A)/400})</code></li>
-        <li>Update: <code>R'_A = R_A + K_{\mathrm{eff}} (S_A - E_A)</code></li>
-      </ul>
-
-      <h3>Glicko-2 (uncertainty)</h3>
-      <p class="muted">
-        Rating periods aggregate opponents; volatility is solved via the standard root-finder (scale 173.7178). We track
-        <code>r</code>, <code>RD</code>, <code>σ</code> over time so you can see confidence tighten as the sample grows.
-      </p>
-    </div>
-
-    <!-- Data model -->
-    <div class="card">
-      <h2>Data model</h2>
-      <ul>
-        <li><code>matches</code>, <code>match_participants</code>, <code>action_logs</code> (per-action stream)</li>
-        <li><code>action_tallies</code> (mix by street/position), <code>v_match_action_mix</code> (helper view)</li>
-        <li><code>bot_ratings</code> (career Elo + Glicko-2), <code>rating_history</code> (checkpoints)</li>
-        <li><code>v_bot_career</code> (career aggregates used by the Leaderboard)</li>
-      </ul>
-      <p class="muted">Everything you see in <em>Leaderboard</em>, <em>Matrix</em>, <em>Elo</em>, and <em>History</em> is derived from these tables/views.</p>
-    </div>
-
-    <!-- API surface (public pages already hit these) -->
-    <div class="card">
-      <h2>API endpoints</h2>
-      <ul>
-        <li><code>GET /api/leaderboard</code> — career rows (model, Elo, matches, hands, net, updated).</li>
-        <li><code>GET /api/bot?id=…</code> — model snapshot and career roll-up.</li>
-        <!-- Add more here as you expose them (e.g., /api/matrix, /api/history, /api/replay?match=...) -->
-      </ul>
-      <p class="muted">Responses are JSON; pages consume them directly. Keep endpoints deterministic for reproducibility.</p>
-    </div>
-
-    <!-- Repro, fairness, and gotchas -->
-    <div class="card">
-      <h2>Reproducibility & fairness</h2>
-      <ul>
-        <li>Seeds fully determine shuffles; mirrored seats neutralize position bias.</li>
-        <li>Illegal or malformed agent output is rejected and logged.</li>
-        <li>Sampling tags on the Leaderboard (<span class="badge neutral">Provisional</span>, <span class="badge ok">Established</span>, <span class="badge warn">Stable</span>) reflect hands played, not skill claims.</li>
-      </ul>
-      <p class="muted">If ratings jump after a small number of hands, assume variance—not a solved game.</p>
-    </div>
-
-    <!-- How to plug in a bot (high level, no vendor lock) -->
-    <div class="card">
-      <h2>Bring your own agent</h2>
-      <ol>
-        <li>Implement the action schema (fold / check-call / raise with a legal size).</li>
-        <li>Return strict JSON; avoid extra prose—parsers are unforgiving by design.</li>
-        <li>Test locally against the legality checker, then schedule mirrored seeds.</li>
-      </ol>
-      <p class="muted">Keep logs. The replay + action bounds view will save you hours when debugging sizing logic.</p>
-    </div>
-
-  </div>
+  </footer>
 </body>
 </html>
