@@ -408,6 +408,13 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   gap: 18px;
   padding: 12px 0;
 }
+.topnav__cluster {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
 .brand {
   display: inline-flex;
   align-items: center;
@@ -440,6 +447,56 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   letter-spacing: .04em;
   text-transform: none;
 }
+.elo-mini-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 8px 0 16px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(12, 20, 36, .68);
+  border: 1px solid rgba(118, 177, 255, .22);
+  font-size: var(--fs-1);
+  color: color-mix(in oklab, var(--muted) 82%, white 10%);
+}
+.elo-mini-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.elo-mini-legend__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .38);
+  background: var(--legend-color, rgba(118, 177, 255, .92));
+  flex-shrink: 0;
+}
+.elo-mini-legend__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.elo-mini-legend__slot {
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: rgba(224, 236, 255, .78);
+}
+.elo-mini-legend__text {
+  color: color-mix(in oklab, var(--text) 74%, white 6%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(240px, 46vw);
+}
+.elo-mini-legend[hidden] {
+  display: none !important;
+}
 .topnav nav {
   display: flex;
   gap: 8px;
@@ -459,6 +516,16 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
 }
 .topnav a:hover::after, .topnav a.active::after { transform: scaleX(1); }
 .topnav a:focus-visible { box-shadow: var(--ring); border-color: color-mix(in oklab, var(--accent-2) 30%, var(--border)); }
+
+@media (max-width: 640px) {
+  .elo-mini-legend {
+    padding: 8px 10px;
+    gap: 12px;
+  }
+  .elo-mini-legend__text {
+    max-width: min(200px, 60vw);
+  }
+}
 
 /* 4a) About page ----------------------------------------------------- */
 .about-hero {

@@ -15,12 +15,14 @@
 <body>
   <header class="site-header">
     <div class="topnav">
-      <a class="brand" href="/web/index.html" aria-label="PokerBench home">
-        <span class="brand__mark">
-          <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
-        </span>
-        <span class="brand__text">PokerBench</span>
-      </a>
+      <div class="topnav__cluster">
+        <a class="brand" href="/web/index.html" aria-label="PokerBench home">
+          <span class="brand__mark">
+            <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+          </span>
+          <span class="brand__text">PokerBench</span>
+        </a>
+      </div>
       <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
         <a class="pill" href="/web/matrix.html">Matrix</a>
@@ -110,6 +112,7 @@
             <h2>Elo Timeline</h2>
             <div class="muted">Includes start/end and per pair (after_pair).</div>
           </div>
+          <div class="elo-mini-legend" id="matchLegend" hidden aria-live="polite"></div>
           <svg id="eloChart" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
         </div>
       </div>
@@ -501,6 +504,50 @@
             icon: companyIconPath('', B.model),
           };
         }
+        const legendEl = $('#matchLegend');
+        if (legendEl) {
+          const legendItems = [
+            { slot: 'A', color: '#39d98a', meta: metaMap.A || null },
+            { slot: 'B', color: '#d6c29b', meta: metaMap.B || null },
+          ].map(entry => {
+            const meta = entry.meta || {};
+            const modelName = trimModelName(meta.model || '');
+            const companyName = (meta.company || '').trim();
+            const pieces = [];
+            if (modelName) pieces.push(safe(modelName));
+            if (companyName) {
+              const lowerModel = modelName.toLowerCase();
+              const lowerCompany = companyName.toLowerCase();
+              if (!lowerModel.includes(lowerCompany)) {
+                pieces.push(safe(companyName));
+              }
+            }
+            const hasInfo = pieces.length > 0;
+            const desc = hasInfo ? pieces.join(' · ') : 'Awaiting matchup';
+            return {
+              hasInfo,
+              html: `
+                <div class="elo-mini-legend__item">
+                  <span class="elo-mini-legend__swatch" style="--legend-color:${entry.color}"></span>
+                  <span class="elo-mini-legend__label">
+                    <span class="elo-mini-legend__slot">${entry.slot}</span>
+                    <span class="elo-mini-legend__text">${desc}</span>
+                  </span>
+                </div>
+              `,
+            };
+          });
+
+          const hasLegend = legendItems.some(item => item.hasInfo);
+          if (hasLegend) {
+            legendEl.hidden = false;
+            legendEl.innerHTML = legendItems.map(item => item.html).join('');
+          } else {
+            legendEl.hidden = true;
+            legendEl.innerHTML = '';
+          }
+        }
+
         drawElo(document.getElementById('eloChart'), ptsA, ptsB, metaMap);
 
         if (!match.ended_at) {
@@ -551,6 +598,11 @@
       $('#parts').innerHTML = `<div class="empty-state">Participants will show once a match has run.</div>`;
       $('#mix').innerHTML = `<div class="empty-state">Action mix will appear after the first duel.</div>`;
       document.getElementById('eloChart').innerHTML = '';
+      const legendEl = $('#matchLegend');
+      if (legendEl) {
+        legendEl.hidden = true;
+        legendEl.innerHTML = '';
+      }
     }
 
     load();
