@@ -408,6 +408,13 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   gap: 18px;
   padding: 12px 0;
 }
+.topnav__cluster {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
 .brand {
   display: inline-flex;
   align-items: center;
@@ -440,6 +447,60 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   letter-spacing: .04em;
   text-transform: none;
 }
+.match-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(12, 20, 36, .88), rgba(20, 30, 52, .88));
+  border: 1px solid rgba(118, 177, 255, .26);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .05),
+    0 12px 26px rgba(4, 12, 24, .45);
+  font-size: var(--fs-1);
+  color: color-mix(in oklab, var(--text) 88%, white 6%);
+  flex-wrap: wrap;
+  max-width: min(420px, 48vw);
+}
+.match-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+.match-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .4);
+  background: var(--legend-color, rgba(118, 177, 255, .92));
+}
+.match-legend__details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.match-legend__slot {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(232, 244, 255, .82);
+}
+.match-legend__text {
+  font-size: var(--fs-1);
+  color: color-mix(in oklab, var(--muted) 78%, white 8%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(220px, 32vw);
+}
+.match-legend[hidden] {
+  display: none !important;
+}
 .topnav nav {
   display: flex;
   gap: 8px;
@@ -459,6 +520,18 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
 }
 .topnav a:hover::after, .topnav a.active::after { transform: scaleX(1); }
 .topnav a:focus-visible { box-shadow: var(--ring); border-color: color-mix(in oklab, var(--accent-2) 30%, var(--border)); }
+
+@media (max-width: 1024px) {
+  .match-legend {
+    max-width: min(360px, 60vw);
+  }
+}
+
+@media (max-width: 860px) {
+  .match-legend {
+    display: none !important;
+  }
+}
 
 /* 4a) About page ----------------------------------------------------- */
 .about-hero {
