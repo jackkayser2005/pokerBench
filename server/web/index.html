@@ -149,6 +149,40 @@
       return s;
     }
 
+    function canonicalCompany(company = 'OpenAI') {
+      const trimmed = String(company ?? '').trim();
+      return trimmed ? trimmed : 'OpenAI';
+    }
+
+    function companyIconPath(company, model) {
+      const c = (company || '').trim().toLowerCase();
+      const m = (model || '').trim().toLowerCase();
+      const matches = (needle) => c.includes(needle) || m.startsWith(`${needle}/`) || m.includes(`/${needle}`);
+      if (!c || c === 'openai') return '/web/img/openai.svg';
+      if (matches('deepseek')) return '/web/img/deepseek-color.svg';
+      if (matches('xai') || matches('grok')) return '/web/img/xai.svg';
+      if (matches('anthropic')) return '/web/img/anthropic.svg';
+      if (matches('meta') || matches('llama')) return '/web/img/meta.svg';
+      if (matches('google') || matches('gemini')) return '/web/img/google.svg';
+      if (matches('mistral')) return '/web/img/mistral.svg';
+      if (matches('groq')) return '/web/img/groq.svg';
+      if (matches('together')) return '/web/img/together.svg';
+      if (matches('perplexity')) return '/web/img/perplexity.svg';
+      if (matches('azure')) return '/web/img/azure.svg';
+      if (matches('openrouter')) return '/web/img/openrouter.svg';
+      if (matches('cohere')) return '/web/img/cohere.svg';
+      if (matches('fireworks')) return '/web/img/fireworks.svg';
+      return null;
+    }
+
+    function iconTitle(meta) {
+      if (!meta) return '';
+      const parts = [];
+      if (meta.company) parts.push(meta.company);
+      if (meta.model) parts.push(meta.model);
+      return parts.join(' · ');
+    }
+
     function barRow(title, x) {
       const total = x.total_actions || (x.check_ct + x.call_ct + x.raise_ct + x.fold_ct);
       const c = x.check_pct ?? Math.round(100*x.check_ct/Math.max(1,total));
@@ -176,40 +210,161 @@
         </div>`;
     }
 
-    function drawElo(svg, ptsA, ptsB) {
+    function drawElo(svg, ptsA, ptsB, meta = {}) {
       const el = svg;
-      const w = 600, h = 140, pad = 8;
+      const w = 600;
+      const h = 140;
+      const pad = 8;
       el.innerHTML = '';
-      if (!ptsA.length) return;
+      if (!ptsA.length && !ptsB.length) return;
 
       const all = ptsA.concat(ptsB);
-      const minY = Math.min(...all.map(p=>p.y));
-      const maxY = Math.max(...all.map(p=>p.y));
-      const xScale = i => pad + (i*(w-2*pad))/Math.max(1,ptsA.length-1);
-      const yScale = y => h - pad - ((y - minY) * (h-2*pad)) / Math.max(1,(maxY-minY||1));
+      if (!all.length) return;
 
-      const path = (pts, cls) => {
-        let d = '';
-        pts.forEach((p,i)=>{
-          const X = xScale(i), Y = yScale(p.y);
-          d += (i?` L ${X} ${Y}`:`M ${X} ${Y}`);
-        });
-        const g = document.createElementNS('http://www.w3.org/2000/svg','path');
-        g.setAttribute('d', d);
-        g.setAttribute('fill','none');
-        g.setAttribute('stroke', cls);
-        g.setAttribute('stroke-width','2');
-        el.appendChild(g);
-      };
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const mk = (tag) => document.createElementNS(svgNS, tag);
 
-      // grid
-      const grid = document.createElementNS('http://www.w3.org/2000/svg','path');
-      grid.setAttribute('d', `M ${pad} ${pad} V ${h-pad} M ${w-pad} ${pad} V ${h-pad}`);
-      grid.setAttribute('stroke','#233042'); grid.setAttribute('fill','none');
+      let minY = Math.min(...all.map(p => p.y));
+      let maxY = Math.max(...all.map(p => p.y));
+      if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return;
+      const yPad = Math.max(10, (maxY - minY) * 0.05);
+      minY -= yPad;
+      maxY += yPad;
+      if (minY === maxY) {
+        minY -= 25;
+        maxY += 25;
+      }
+
+      const maxLen = Math.max(ptsA.length, ptsB.length);
+      const xScale = (i) => pad + (i * (w - 2 * pad)) / Math.max(1, maxLen - 1);
+      const yScale = (val) => h - pad - ((val - minY) * (h - 2 * pad)) / Math.max(1, maxY - minY);
+
+      const grid = mk('path');
+      grid.setAttribute('d', `M ${pad} ${pad} V ${h - pad} M ${w - pad} ${pad} V ${h - pad}`);
+      grid.setAttribute('stroke', '#233042');
+      grid.setAttribute('fill', 'none');
       el.appendChild(grid);
 
-      path(ptsA, '#39d98a'); // A
-      path(ptsB, '#d6c29b'); // B
+      const iconsGroup = mk('g');
+      iconsGroup.setAttribute('class', 'chart-icons');
+      iconsGroup.setAttribute('pointer-events', 'none');
+
+      const placeIcon = (anchor, info, color, vertical = 'top', horizontal = 'center') => {
+        if (!anchor || !info) return;
+        const size = 28;
+        const g = mk('g');
+        g.setAttribute('class', 'chart-icon');
+        g.setAttribute('data-label', info.label || '');
+        if (info.company || info.model) {
+          const title = mk('title');
+          title.textContent = iconTitle(info);
+          g.appendChild(title);
+        }
+
+        let x = anchor.x - size / 2;
+        if (horizontal === 'left') x = anchor.x - size - 10;
+        if (horizontal === 'right') x = anchor.x + 10;
+        x = Math.min(w - pad - size, Math.max(pad, x));
+
+        let y = vertical === 'bottom' ? anchor.y + 10 : anchor.y - size - 10;
+        if (vertical === 'middle') y = anchor.y - size / 2;
+        if (vertical === 'top' && y < pad) y = Math.min(anchor.y + 10, h - pad - size);
+        if (vertical === 'bottom' && y + size > h - pad) y = Math.max(anchor.y - size - 10, pad);
+        y = Math.min(h - pad - size, Math.max(pad, y));
+
+        const cx = x + size / 2;
+        const cy = y + size / 2;
+
+        const bg = mk('circle');
+        bg.setAttribute('cx', cx);
+        bg.setAttribute('cy', cy);
+        bg.setAttribute('r', size / 2 + 3);
+        bg.setAttribute('fill', 'rgba(10, 16, 28, 0.88)');
+        if (color) {
+          bg.setAttribute('stroke', color);
+          bg.setAttribute('stroke-width', '1.6');
+        }
+        g.appendChild(bg);
+
+        if (info.icon) {
+          const img = mk('image');
+          img.setAttribute('x', x);
+          img.setAttribute('y', y);
+          img.setAttribute('width', size);
+          img.setAttribute('height', size);
+          img.setAttribute('class', 'chart-icon__img');
+          img.setAttribute('href', info.icon);
+          img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', info.icon);
+          g.appendChild(img);
+        } else if (info.label) {
+          const text = mk('text');
+          text.setAttribute('x', cx);
+          text.setAttribute('y', cy + 1);
+          text.setAttribute('class', 'chart-icon__text');
+          text.textContent = info.label;
+          g.appendChild(text);
+        }
+
+        iconsGroup.appendChild(g);
+      };
+
+      const drawSeries = (pts, color, info, align) => {
+        if (!pts.length) return [];
+        const coords = pts.map((p, idx) => ({
+          x: xScale(idx),
+          y: yScale(p.y),
+          value: p,
+        }));
+
+        const pathData = coords.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ');
+
+        const glow = mk('path');
+        glow.setAttribute('d', pathData);
+        glow.setAttribute('fill', 'none');
+        glow.setAttribute('stroke', color);
+        glow.setAttribute('stroke-width', '6');
+        glow.setAttribute('stroke-linejoin', 'round');
+        glow.setAttribute('stroke-linecap', 'round');
+        glow.setAttribute('opacity', '.18');
+        el.appendChild(glow);
+
+        const line = mk('path');
+        line.setAttribute('d', pathData);
+        line.setAttribute('fill', 'none');
+        line.setAttribute('stroke', color);
+        line.setAttribute('stroke-width', '2.4');
+        line.setAttribute('stroke-linejoin', 'round');
+        line.setAttribute('stroke-linecap', 'round');
+        el.appendChild(line);
+
+        const dots = mk('g');
+        coords.forEach(pt => {
+          const circle = mk('circle');
+          circle.setAttribute('cx', pt.x);
+          circle.setAttribute('cy', pt.y);
+          circle.setAttribute('r', '2.8');
+          circle.setAttribute('fill', color);
+          circle.setAttribute('opacity', '0.85');
+          dots.appendChild(circle);
+        });
+        el.appendChild(dots);
+
+        placeIcon(coords[0], info, color, align, 'left');
+        if (coords.length > 1) {
+          placeIcon(coords[coords.length - 1], info, color, align, 'right');
+        }
+
+        return coords;
+      };
+
+      const coordsA = drawSeries(ptsA, '#39d98a', meta.A || null, 'top');
+      const coordsB = drawSeries(ptsB, '#d6c29b', meta.B || null, 'bottom');
+
+      if (iconsGroup.childNodes.length) {
+        el.appendChild(iconsGroup);
+      }
+
+      return { coordsA, coordsB };
     }
 
     async function load() {
@@ -250,11 +405,23 @@
           metaRow('Weight by pot', match.elo_weight_by_pot ? 'Yes' : 'No'),
         ].join('');
 
-        const participants = (d.participants || []).map(p => `
+        const participantMeta = {};
+        const participants = (d.participants || []).map(p => {
+          const label = String(p.label ?? '').trim();
+          const company = canonicalCompany(p.company);
+          if (label) {
+            participantMeta[label] = {
+              label,
+              company,
+              model: p.model || '',
+              icon: companyIconPath(p.company, p.model),
+            };
+          }
+          return `
           <div class="participant">
             <div class="participant__header">
-              <span class="participant__label">${p.label}</span>
-              <span class="participant__company muted">${p.company || 'bot'}</span>
+              <span class="participant__label">${safe(label || p.label || '')}</span>
+              <span class="participant__company muted">${safe(company || 'bot')}</span>
             </div>
             <div class="participant__model mono" title="${safe(p.model)}">${safe(trimModelName(p.model || ''))}</div>
             <div class="participant__meta">
@@ -264,7 +431,8 @@
             </div>
             ${p.reasoning_effort ? `<div class="participant__tag">${pill('reasoning: '+p.reasoning_effort)}</div>` : ''}
           </div>
-        `);
+        `;
+        });
         $('#parts').innerHTML = participants.length ? participants.join('') : `<div class="empty-state">Participants will show once a match has run.</div>`;
 
         const A = d.action_mix.find(x=>x.label==='A');
@@ -277,7 +445,27 @@
         const ordered = d.rating || [];
         const ptsA = ordered.map(r => ({ y: r.elo_a }));
         const ptsB = ordered.map(r => ({ y: r.elo_b }));
-        drawElo(document.getElementById('eloChart'), ptsA, ptsB);
+        const metaMap = {
+          A: participantMeta.A ? { ...participantMeta.A } : { label: 'A' },
+          B: participantMeta.B ? { ...participantMeta.B } : { label: 'B' },
+        };
+        if (!participantMeta.A && A) {
+          metaMap.A = {
+            label: 'A',
+            model: A.model || '',
+            company: '',
+            icon: companyIconPath('', A.model),
+          };
+        }
+        if (!participantMeta.B && B) {
+          metaMap.B = {
+            label: 'B',
+            model: B.model || '',
+            company: '',
+            icon: companyIconPath('', B.model),
+          };
+        }
+        drawElo(document.getElementById('eloChart'), ptsA, ptsB, metaMap);
 
         if (!match.ended_at) {
           setTimeout(load, 2000);

@@ -191,10 +191,10 @@
       }
 
       const times = allPts.map(p => p.t.getTime());
+      const uniqueTimes = Array.from(new Set(times)).sort((a, b) => a - b);
+      const indexByTime = new Map();
+      uniqueTimes.forEach((ms, idx) => indexByTime.set(ms, idx));
       const elos = allPts.map(p => p.elo);
-      const tMin = Math.min(...times);
-      let tMax = Math.max(...times);
-      if (tMax === tMin) tMax = tMin + 60 * 60 * 1000;
       const rawMin = Math.min(...elos);
       const rawMax = Math.max(...elos);
       const yPad = Math.max(10, (rawMax - rawMin) * 0.08);
@@ -204,7 +204,12 @@
         yMin -= 50;
         yMax += 50;
       }
-      const x = (time) => pad.left + ((time - tMin) * (width - pad.left - pad.right)) / (tMax - tMin);
+      const maxIndex = Math.max(1, uniqueTimes.length - 1);
+      const xForIndex = (idx) => pad.left + (idx * (width - pad.left - pad.right)) / maxIndex;
+      const x = (time) => {
+        const idx = indexByTime.get(time);
+        return xForIndex(idx == null ? 0 : idx);
+      };
       const y = (val) => height - pad.bottom - ((val - yMin) * (height - pad.top - pad.bottom)) / (yMax - yMin);
 
       const defs = mk('defs');
@@ -255,10 +260,26 @@
         svg.appendChild(label);
       }
 
-      const xTicks = Math.min(6, Math.max(2, series.reduce((max, entry) => Math.max(max, entry.pts.length), 0) - 1));
-      for (let i = 0; i <= xTicks; i++) {
-        const time = tMin + (i * (tMax - tMin)) / Math.max(1, xTicks);
-        const xx = x(time);
+      const tickCount = uniqueTimes.length > 1 ? Math.min(6, uniqueTimes.length - 1) : uniqueTimes.length;
+      const tickIndexes = [];
+      if (!uniqueTimes.length) {
+        // nothing to render
+      } else if (tickCount <= 1) {
+        tickIndexes.push(0);
+        if (uniqueTimes.length > 1) tickIndexes.push(uniqueTimes.length - 1);
+      } else {
+        for (let i = 0; i <= tickCount; i++) {
+          const idx = Math.round((i * (uniqueTimes.length - 1)) / Math.max(1, tickCount));
+          tickIndexes.push(Math.min(uniqueTimes.length - 1, Math.max(0, idx)));
+        }
+      }
+      const seenTick = new Set();
+      tickIndexes.sort((a, b) => a - b);
+      tickIndexes.forEach(idx => {
+        if (seenTick.has(idx)) return;
+        seenTick.add(idx);
+        const time = uniqueTimes[idx];
+        const xx = xForIndex(idx);
         const line = mk('line');
         line.setAttribute('x1', String(xx));
         line.setAttribute('x2', String(xx));
@@ -274,8 +295,11 @@
         label.setAttribute('fill', '#6f8099');
         label.setAttribute('font-size', '11');
         label.textContent = shortDate.format(new Date(time));
+        const labelTitle = mk('title');
+        labelTitle.textContent = `Run ${idx + 1} · ${dateFormatter.format(new Date(time))}`;
+        label.appendChild(labelTitle);
         svg.appendChild(label);
-      }
+      });
 
       svg.appendChild(grid);
 
@@ -315,15 +339,17 @@
         const pts = entry.pts.map((pt, idx) => {
           const prev = idx > 0 ? entry.pts[idx - 1] : null;
           const delta = prev ? pt.elo - prev.elo : null;
+          const timeMs = pt.t.getTime();
           return {
             time: pt.t,
-            timeMs: pt.t.getTime(),
+            timeMs,
             elo: pt.elo,
             delta,
-            x: x(pt.t.getTime()),
+            x: x(timeMs),
             y: y(pt.elo),
             meta: entry.meta,
-            color: stroke
+            color: stroke,
+            runIndex: (indexByTime.get(timeMs) ?? 0) + 1
           };
         });
 
@@ -437,7 +463,9 @@
           }
         });
 
-        tooltipTime.textContent = dateFormatter.format(point.time);
+        const runLabel = point.runIndex ? `Run ${point.runIndex}` : '';
+        const timeLabel = dateFormatter.format(point.time);
+        tooltipTime.textContent = runLabel ? `${runLabel} · ${timeLabel}` : timeLabel;
         tooltipSeries.innerHTML = '';
         sameTime.forEach(pt => {
           const row = document.createElement('div');
