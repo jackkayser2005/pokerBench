@@ -2036,10 +2036,10 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 				if accMap, err := db.MatchJudgeAccuracy(context.Background(), matchID); err != nil {
 					log.Printf("MatchJudgeAccuracy failed for match %d: %v", matchID, err)
 				} else {
-					if acc, ok := accMap["A"]; ok {
+					if acc, ok := accMap[botAID]; ok {
 						judgeGoodA, judgeTotalA = acc.Good, acc.Total
 					}
-					if acc, ok := accMap["B"]; ok {
+					if acc, ok := accMap[botBID]; ok {
 						judgeGoodB, judgeTotalB = acc.Good, acc.Total
 					}
 				}
@@ -2052,6 +2052,9 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		}
 		if err := db.UpdateBotRatings(context.Background(), botBID, elo.B, gB.Rating, gB.RD, gB.Volatility, 1, handsB, judgeGoodB, judgeTotalB); err != nil {
 			log.Printf("UpdateBotRatings(B) failed: %v", err)
+		}
+		if err := db.SyncJudgeAccuracy(context.Background(), botAID, botBID); err != nil {
+			log.Printf("SyncJudgeAccuracy failed: %v", err)
 		}
 
 		if err := db.CompleteMatch(context.Background(), matchID); err != nil {

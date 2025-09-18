@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -327,45 +328,51 @@ func Router(db *store.DB) http.Handler {
 			}
 			out = append(out, x)
 		}
+		if accMap, err := db.AllJudgeAccuracy(ctx); err == nil {
+			for i := range out {
+				if acc, ok := accMap[out[i].BotID]; ok {
+					out[i].Good = acc.Good
+					out[i].Total = acc.Total
+					if acc.Total > 0 {
+						out[i].Acc = acc.Ratio()
+					} else {
+						out[i].Acc = 0
+					}
+				}
+			}
+		}
+
 		writeJSON(w, map[string]any{"rows": out})
 	})
 
 	// Judge accuracy (MCJudge): good/total and accuracy per bot
 	mux.HandleFunc("/api/judge-accuracy", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		rows, err := db.Query(ctx, `
-			SELECT p.bot_id,
-			       SUM(CASE WHEN e.is_top_action THEN 1 ELSE 0 END)::int AS good,
-			       COUNT(*)::int AS total
-			  FROM action_eval e
-			  JOIN action_logs a ON a.id = e.action_log_id
-			  JOIN match_participants p ON p.match_id = a.match_id AND p.label = a.actor_label
-			 WHERE e.solver = 'MCJudge'
-			 GROUP BY p.bot_id
-		`)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		defer rows.Close()
 		type Row struct {
 			BotID int64   `json:"bot_id"`
 			Good  int     `json:"good"`
 			Total int     `json:"total"`
 			Acc   float64 `json:"acc"`
 		}
-		var out []Row
-		for rows.Next() {
-			var x Row
-			if err := rows.Scan(&x.BotID, &x.Good, &x.Total); err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-			if x.Total > 0 {
-				x.Acc = float64(x.Good) / float64(x.Total)
-			}
-			out = append(out, x)
+		accMap, err := db.AllJudgeAccuracy(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
 		}
+		out := make([]Row, 0, len(accMap))
+		for botID, acc := range accMap {
+			row := Row{BotID: botID, Good: acc.Good, Total: acc.Total}
+			if acc.Total > 0 {
+				row.Acc = acc.Ratio()
+			}
+			out = append(out, row)
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Total == out[j].Total {
+				return out[i].BotID < out[j].BotID
+			}
+			return out[i].Total > out[j].Total
+		})
 		writeJSON(w, map[string]any{"rows": out})
 	})
 
