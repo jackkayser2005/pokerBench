@@ -66,11 +66,11 @@
 
     async function load(){
       if (!id) {
-        document.body.innerHTML = '<div class="wrap"><div class="card">Missing id</div></div>';
+        document.body.innerHTML = '<div class="wrap wrap--wide"><div class="card">Missing id</div></div>';
         return;
       }
       const d = await getJSON(`/api/bot?id=${encodeURIComponent(id)}`, `/web/data/bot-${encodeURIComponent(id)}.json`);
-      if (!d) { document.body.innerHTML = '<div class="wrap"><div class="card">Bot not found</div></div>'; return; }
+      if (!d) { document.body.innerHTML = '<div class="wrap wrap--wide"><div class="card">Bot not found</div></div>'; return; }
       const c = d.career || {};
 
       // Header
@@ -221,10 +221,13 @@
   </script>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap wrap--wide">
     <div class="topnav">
-      <div class="brand">AI Poker Lab</div>
-      <nav style="display:flex; gap:8px; align-items:center">
+      <a class="brand" href="/web/index.html">
+        <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo">
+        <span class="brand__text">PokerBench</span>
+      </a>
+      <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
         <a class="pill" href="/web/matrix.html">Matrix</a>
         <a class="pill" href="/web/elo.html">Elo</a>

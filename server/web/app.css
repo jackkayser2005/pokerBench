@@ -214,9 +214,25 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   backdrop-filter: blur(6px);
   box-shadow: 0 6px 12px rgba(0,0,0,.35);
 }
-.brand { font-weight: 900; letter-spacing: .2px; }
-.brand .dot { display:inline-block; width:8px; height:8px; border-radius:999px; background: var(--accent); margin-left:6px; box-shadow: 0 0 0 2px rgba(255,107,53,.25); }
-.topnav nav { display: flex; gap: 8px; align-items: center; }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand img {
+  height: 40px;
+  width: auto;
+  display: block;
+}
+.brand__text {
+  font-size: var(--fs-4);
+  text-transform: none;
+}
+.topnav nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .topnav a {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 12px; border: 1px solid transparent; border-radius: 6px; color: var(--text);
