@@ -22,7 +22,6 @@
           </span>
           <span class="brand__text">PokerBench</span>
         </a>
-        <div class="match-legend" id="matchLegend" hidden aria-live="polite"></div>
       </div>
       <nav>
         <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
@@ -263,8 +262,9 @@
       iconsGroup.setAttribute('class', 'chart-icons');
       iconsGroup.setAttribute('pointer-events', 'none');
 
-      const placeIcon = (anchor, info, color, vertical = 'top', horizontal = 'center') => {
+      const placeIcon = (anchor, info, color, vertical = 'top', horizontal = 'center', options = {}) => {
         if (!anchor || !info) return;
+        const { forceLabel = false, forceIcon = false } = options || {};
         const size = 28;
         const g = mk('g');
         g.setAttribute('class', 'chart-icon');
@@ -300,22 +300,48 @@
         }
         g.appendChild(bg);
 
-        if (info.icon) {
+        const iconSrc = typeof info.icon === 'string' ? info.icon : '';
+        const labelText = (info.label || '').trim();
+        let rendered = false;
+        if (!forceLabel && iconSrc && (forceIcon || iconSrc)) {
           const img = mk('image');
           img.setAttribute('x', x);
           img.setAttribute('y', y);
           img.setAttribute('width', size);
           img.setAttribute('height', size);
           img.setAttribute('class', 'chart-icon__img');
-          img.setAttribute('href', info.icon);
-          img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', info.icon);
+          img.setAttribute('href', iconSrc);
+          img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', iconSrc);
           g.appendChild(img);
-        } else if (info.label) {
+          rendered = true;
+        }
+        if (!rendered && labelText) {
           const text = mk('text');
           text.setAttribute('x', cx);
           text.setAttribute('y', cy + 1);
           text.setAttribute('class', 'chart-icon__text');
-          text.textContent = info.label;
+          text.textContent = labelText;
+          g.appendChild(text);
+          rendered = true;
+        }
+        if (!rendered && iconSrc) {
+          const img = mk('image');
+          img.setAttribute('x', x);
+          img.setAttribute('y', y);
+          img.setAttribute('width', size);
+          img.setAttribute('height', size);
+          img.setAttribute('class', 'chart-icon__img');
+          img.setAttribute('href', iconSrc);
+          img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', iconSrc);
+          g.appendChild(img);
+          rendered = true;
+        }
+        if (!rendered && labelText) {
+          const text = mk('text');
+          text.setAttribute('x', cx);
+          text.setAttribute('y', cy + 1);
+          text.setAttribute('class', 'chart-icon__text');
+          text.textContent = labelText;
           g.appendChild(text);
         }
 
@@ -363,9 +389,9 @@
         });
         el.appendChild(dots);
 
-        placeIcon(coords[0], info, color, align, 'left');
+        placeIcon(coords[0], info, color, align, 'left', { forceIcon: true });
         if (coords.length > 1) {
-          placeIcon(coords[coords.length - 1], info, color, align, 'right');
+          placeIcon(coords[coords.length - 1], info, color, align, 'right', { forceLabel: true });
         }
 
         return coords;
