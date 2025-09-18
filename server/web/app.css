@@ -1822,6 +1822,27 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
   box-shadow: 0 0 0 2px rgba(0,0,0,.35);
   flex-shrink: 0;
 }
+
+#eloChart .chart-icon {
+  opacity: .98;
+}
+
+#eloChart .chart-icon circle {
+  fill: rgba(10, 16, 28, .88);
+}
+
+#eloChart .chart-icon__img {
+  clip-path: circle(50% at 50% 50%);
+}
+
+#eloChart .chart-icon__text {
+  font-size: .7rem;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: #f6fbff;
+  letter-spacing: .35px;
+}
 .chart-legend {
   display: grid;
   gap: 16px;
