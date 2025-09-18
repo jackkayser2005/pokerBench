@@ -1731,7 +1731,11 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	// Elo/Glicko defaults
 	eloStart := float64(atoiDef(os.Getenv("ELO_START"), 1500))
 	eloK := float64(atoiDef(os.Getenv("ELO_K"), 24))
-	eloPerHand := asBool(os.Getenv("ELO_PER_HAND"))
+	perHandEnv := asBool(os.Getenv("ELO_PER_HAND"))
+	if perHandEnv {
+		fmt.Println(dim("ELO_PER_HAND requested, but Elo now updates after mirrored pairs using aggregated signals."))
+	}
+	eloPerHand := false
 	eloWeightPot := asBool(os.Getenv("ELO_WEIGHT_BY_POT"))
 	elo := NewElo(eloStart, eloK)
 
@@ -1855,14 +1859,8 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		statsA.addNet(engine.SB, dSB1)
 		statsB.addNet(engine.BB, dBB1)
 		boardA := boardStr(h1.Board)
-
-		if eloPerHand {
-			sa1, sb1 := handScore(w1, true) // A sat SB
-			dA, dB := elo.UpdateHand(sa1, sb1, pot1, bb, eloWeightPot)
-			fmt.Printf("%s %sA → A:%.1f (%+.1f) | B:%.1f (%+.1f)\n",
-				mag("Elo (hand)"), bold(fmt.Sprintf("seed %d", i+1)),
-				elo.A, dA, elo.B, dB)
-		}
+		sa1, sb1 := handScore(w1, true) // A sat SB
+		foldA1, foldB1 := foldDecisionScores(h1, true)
 
 		// Hand 2: swap seats, same deck
 		deck2 := engine.NewDeck(seed)
@@ -1888,25 +1886,24 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		}
 
 		// optional hand-level Elo second hand
-		if eloPerHand {
-			sa2, sb2 := handScore(w2, false) // A sat BB here
-			dA, dB := elo.UpdateHand(sa2, sb2, pot2, bb, eloWeightPot)
-			fmt.Printf("%s %sB → A:%.1f (%+.1f) | B:%.1f (%+.1f)\n",
-				mag("Elo (hand)"), bold(fmt.Sprintf("seed %d", i+1)),
-				elo.A, dA, elo.B, dB)
-		}
+		sa2, sb2 := handScore(w2, false) // A sat BB here
+		foldA2, foldB2 := foldDecisionScores(h2, false)
 
 		// ----- pair-level updates
 		chipsA := dSB1 + dBB2
 		pairPot := pot1 + pot2
 
 		// Elo pair update (tempered)
-		if !eloPerHand {
-			dA, dB := elo.UpdateFromMirror(chipsA, pairPot, bb)
-			fmt.Printf("%s %s → chipsA=%+d potSum=%d  |  A:%.1f (%+.1f)  B:%.1f (%+.1f)\n",
-				mag("Elo (pair)"), bold(fmt.Sprintf("seed %d", i+1)),
-				chipsA, pairPot, elo.A, dA, elo.B, dB)
-		}
+		winsA := sa1 + sa2
+		winsB := sb1 + sb2
+		foldScoreA := foldA1 + foldA2
+		foldScoreB := foldB1 + foldB2
+
+		dA, dB := elo.UpdateFromMirror(chipsA, pairPot, bb, winsA, winsB, foldScoreA, foldScoreB)
+		fmt.Printf("%s %s → chipsA=%+d potSum=%d wins=%.1f-%.1f foldScore=%.1f-%.1f  |  A:%.1f (%+.1f)  B:%.1f (%+.1f)\n",
+			mag("Elo (pair)"), bold(fmt.Sprintf("seed %d", i+1)),
+			chipsA, pairPot, winsA, winsB, foldScoreA, foldScoreB,
+			elo.A, dA, elo.B, dB)
 
 		// Glicko-2 per pair (use normalized chip margin → S via tanh)
 		effStack := float64(cfg.StartStack)
@@ -2167,4 +2164,65 @@ func handScore(w engine.Seat, aWasSB bool) (sa, sb float64) {
 	default:
 		return 0.5, 0.5
 	}
+}
+
+func foldDecisionScores(h *engine.Hand, aWasSB bool) (scoreA, scoreB float64) {
+	board := finalBoardForHand(h)
+	if len(h.SB.Hole) != 2 || len(h.BB.Hole) != 2 || len(board) < 5 {
+		return 0, 0
+	}
+
+	finalWinner := simulateShowdown(h.SB.Hole, h.BB.Hole, board)
+
+	if h.SB.Folded {
+		delta := foldDelta(engine.SB, finalWinner)
+		if aWasSB {
+			scoreA += delta
+		} else {
+			scoreB += delta
+		}
+	}
+	if h.BB.Folded {
+		delta := foldDelta(engine.BB, finalWinner)
+		if aWasSB {
+			scoreB += delta
+		} else {
+			scoreA += delta
+		}
+	}
+	return
+}
+
+func finalBoardForHand(h *engine.Hand) []engine.Card {
+	board := make([]engine.Card, len(h.Board))
+	copy(board, h.Board)
+	need := 5 - len(board)
+	if need <= 0 {
+		return board
+	}
+	if need > len(h.Deck) {
+		need = len(h.Deck)
+	}
+	return append(board, h.Deck[:need]...)
+}
+
+func simulateShowdown(sbHole, bbHole, board []engine.Card) engine.Seat {
+	sb := &engine.Player{Seat: engine.SB, Hole: append([]engine.Card{}, sbHole...)}
+	bb := &engine.Player{Seat: engine.BB, Hole: append([]engine.Card{}, bbHole...)}
+	sim := &engine.Hand{
+		SB:    sb,
+		BB:    bb,
+		Board: append([]engine.Card{}, board...),
+	}
+	return sim.Showdown()
+}
+
+func foldDelta(folder, finalWinner engine.Seat) float64 {
+	if finalWinner == "" {
+		return 0
+	}
+	if folder == finalWinner {
+		return -1
+	}
+	return 1
 }
