@@ -29,76 +29,13 @@ func PingText(ctx context.Context, model, system, user string) (string, error) {
 
 // PingTextWithOpts lets you pass custom knobs (used by PingText via env).
 func PingTextWithOpts(ctx context.Context, model, system, user string, opts PingOptions) (string, error) {
-	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	usingOpenRouter := false
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-		if apiKey != "" {
-			usingOpenRouter = true
-		}
+	cfg, err := resolveAPIConfig(model)
+	if err != nil {
+		return "", err
 	}
-	if apiKey == "" {
-		return "", errors.New("API key missing: set OPENAI_API_KEY or OPENROUTER_API_KEY")
-	}
-	if model == "" {
-		model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
-	}
-	if model == "" {
-		model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
-		if model != "" {
-			usingOpenRouter = true
-		}
-	}
-	if model == "" {
-		return "", errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
-	}
-	if strings.Contains(strings.ToLower(model), "openrouter/") {
-		usingOpenRouter = true
-	}
-
-	base := strings.TrimSpace(os.Getenv("OPENAI_API_BASE"))
-	if base == "" {
-		base = strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
-	}
-	if base == "" {
-		base = strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE"))
-	}
-	if base == "" {
-		base = strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL"))
-	}
-	if base == "" {
-		if usingOpenRouter {
-			base = "https://openrouter.ai/api/v1"
-		} else {
-			base = "https://api.openai.com/v1"
-		}
-	}
-	base = strings.TrimRight(base, "/")
-	if strings.Contains(base, "openrouter.ai") {
-		usingOpenRouter = true
-		if v := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); v != "" {
-			apiKey = v
-		}
-	}
-
-	headerName := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_HEADER"))
-	if headerName == "" {
-		headerName = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_HEADER"))
-	}
-	if headerName == "" {
-		headerName = "Authorization"
-	}
-	prefix := os.Getenv("OPENAI_API_KEY_PREFIX")
-	if prefix == "" {
-		prefix = os.Getenv("OPENROUTER_API_KEY_PREFIX")
-	}
-	if headerName == "Authorization" && strings.TrimSpace(prefix) == "" {
-		prefix = "Bearer "
-	}
-	org := strings.TrimSpace(os.Getenv("OPENAI_ORG"))
 
 	payload := map[string]any{
-		"model": model,
+		"model": cfg.Model,
 		"messages": []map[string]string{
 			{"role": "system", "content": system},
 			{"role": "user", "content": user},
@@ -122,26 +59,25 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 	} else {
 		payload["response_format"] = map[string]any{"type": "json_object"}
 	}
-	applyTuningFromEnv(payload, usingOpenRouter)
+	applyTuningFromEnv(payload, cfg.Kind == providerOpenRouter)
 
 	b, _ := json.Marshal(payload)
-	url := base + "/chat/completions"
+	url := cfg.BaseURL + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set(headerName, prefix+apiKey)
-	if org != "" {
-		req.Header.Set("OpenAI-Organization", org)
+	req.Header.Set(cfg.HeaderName, cfg.HeaderPrefix+cfg.APIKey)
+	if cfg.Organization != "" {
+		req.Header.Set("OpenAI-Organization", cfg.Organization)
 	}
-	if v := strings.TrimSpace(os.Getenv("OPENROUTER_SITE_URL")); v != "" {
-		req.Header.Set("HTTP-Referer", v)
-		req.Header.Set("Referer", v)
-	}
-	if v := strings.TrimSpace(os.Getenv("OPENROUTER_TITLE")); v != "" {
-		req.Header.Set("X-Title", v)
+	for k, v := range cfg.ExtraHeaders {
+		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
 	}
 
 	client := &http.Client{Timeout: 45 * time.Second}
@@ -351,13 +287,31 @@ func envWithFallback(preferOpenRouter bool, openAIKey, openRouterKey string) str
 }
 
 func preferOpenRouterEnv() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))) {
+	case "openrouter":
+		return true
+	case "openai":
+		return false
+	}
 	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) != "" && strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) != "" || strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")) != "" {
 		return true
 	}
 	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL")) == "" {
 		return true
 	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) != "" || strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")) != "" {
+	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_A")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_A")) == "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_B")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_B")) == "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_SB")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_SB")) == "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_BB")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_BB")) == "" {
 		return true
 	}
 	if base := strings.TrimSpace(os.Getenv("OPENAI_API_BASE")); base != "" && strings.Contains(strings.ToLower(base), "openrouter") {
