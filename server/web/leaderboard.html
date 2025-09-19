@@ -194,8 +194,7 @@
 
     function orgCell(company, model){
       const label = escapeHtml(canonicalCompany(company, model));
-      const icon = companyIconMarkup(company, model);
-      return `<span class="lb-org">${icon}<span class="txt">${label}</span></span>`;
+      return `<span class="lb-org"><span class="txt">${label}</span></span>`;
     }
 
     function modelIcon(company, model){

@@ -8,7 +8,6 @@
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
     <script>
     const palette = ['#4df6b4', '#76b0ff', '#ffd166', '#f08cf0', '#ff6d6d', '#9de7ff', '#c4f98b', '#b59bff'];
-    const MATCH_LEGEND_COLORS = ['#39d98a', '#d6c29b', '#76b0ff', '#f08cf0'];
     const state = {
       dims: { width: 1100, height: 440 },
       pad: { top: 48, right: 70, bottom: 64, left: 78 },
@@ -157,99 +156,9 @@
       return s;
     }
 
-    function normalizeLegendMeta(entry) {
-      if (!entry) return { label: '', model: '', company: '' };
-      const label = String(entry.label || '').trim().toUpperCase();
-      const model = String(entry.model || '').trim();
-      const company = String(entry.company || '').trim();
-      return { label, model, company };
-    }
-
-    function buildLegendEntry(meta, color) {
-      const host = document.createElement('div');
-      host.className = 'match-legend__item';
-      const resolvedColor = color || MATCH_LEGEND_COLORS[0];
-      host.style.setProperty('--legend-color', resolvedColor);
-
-      const swatch = document.createElement('span');
-      swatch.className = 'match-legend__swatch';
-      swatch.style.background = resolvedColor;
-      host.appendChild(swatch);
-
-      const details = document.createElement('div');
-      details.className = 'match-legend__details';
-
-      const infoWrap = document.createElement('div');
-      infoWrap.className = 'match-legend__info';
-      const hasMeta = Boolean((meta.model || '').trim() || (meta.company || '').trim());
-      if (hasMeta) {
-        const iconMarkup = companyIconMarkup(meta.company, meta.model);
-        const iconEl = createIconElement(iconMarkup);
-        if (iconEl) infoWrap.appendChild(iconEl);
-      }
-
-      const textEl = document.createElement('span');
-      textEl.className = 'match-legend__text';
-      const trimmedModel = trimModelName(meta.model || '');
-      const pieces = [];
-      if (trimmedModel) pieces.push(trimmedModel);
-      let company = '';
-      if ((meta.company || '').trim() || (meta.model || '').trim()) {
-        company = canonicalCompany(meta.company, meta.model);
-      }
-      const lowerModel = trimmedModel.toLowerCase();
-      const lowerCompany = company.toLowerCase();
-      const includeCompany = Boolean(company) && !lowerModel.includes(lowerCompany);
-      if (includeCompany) pieces.push(company);
-      const hasInfo = pieces.length > 0;
-      textEl.textContent = hasInfo ? pieces.join(' · ') : 'Awaiting matchup';
-      if (!hasInfo) textEl.classList.add('match-legend__text--empty');
-      infoWrap.appendChild(textEl);
-
-      details.appendChild(infoWrap);
-      host.appendChild(details);
-
-      return { element: host, hasInfo };
-    }
-
-    async function loadMatchLegend() {
-      const host = document.getElementById('eloMatchLegend');
-      if (!host) return;
-      host.innerHTML = '';
-      host.hidden = true;
-      try {
-        const res = await fetch('/api/last-match');
-        if (!res.ok) return;
-        const data = await res.json();
-        const participants = data && Array.isArray(data.participants) ? data.participants : [];
-        const built = [];
-        const seen = new Set();
-        participants.forEach(participant => {
-          const meta = normalizeLegendMeta(participant);
-          const hasDetails = (meta.model || '').trim() || (meta.company || '').trim();
-          if (!hasDetails) return;
-          const key = `${meta.model}::${meta.company}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          const color = MATCH_LEGEND_COLORS[built.length % MATCH_LEGEND_COLORS.length];
-          built.push(buildLegendEntry(meta, color));
-        });
-        const entries = built;
-        const hasLegend = entries.some(entry => entry.hasInfo);
-        if (!hasLegend) return;
-        entries.forEach(entry => host.appendChild(entry.element));
-        host.hidden = false;
-      } catch (err) {
-        if (window.console && typeof window.console.debug === 'function') {
-          window.console.debug('legend load failed', err);
-        }
-      }
-    }
-
     document.addEventListener('DOMContentLoaded', () => {
       highlightNav();
       load();
-      loadMatchLegend();
     });
 
     function highlightNav() {
@@ -917,7 +826,6 @@
               <div class="muted">End-of-match Elo per bot across all duels.</div>
             </div>
           </div>
-          <div class="match-legend elo-card__legend" id="eloMatchLegend" hidden aria-live="polite"></div>
         </div>
         <div class="elo-card__filters">
           <div id="companyFilters" class="filter-chips"></div>
