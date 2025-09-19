@@ -152,6 +152,11 @@
       const vendor = lowerModel.includes('openrouter') ? extractOpenRouterVendor(modelStr) : '';
 
       const candidateStrings = [rawCompany, vendor];
+      if (modelStr) {
+        modelStr.split(/[^A-Za-z0-9]+/).forEach(part => {
+          if (part) candidateStrings.push(part);
+        });
+      }
       if (vendor) {
         vendor.split(/[^A-Za-z0-9]+/).forEach(part => {
           if (part) candidateStrings.push(part);
