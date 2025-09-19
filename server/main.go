@@ -210,7 +210,7 @@ func loadAPIKeyFromSecret() {
 		}
 	}
 
-	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" {
+	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" && strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
 		os.Setenv("OPENAI_API_KEY", key)
 	}
 }
