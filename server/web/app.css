@@ -1686,14 +1686,52 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
 .elo-card__filters {
   display: flex;
   justify-content: flex-end;
-  align-items: flex-start;
+  align-items: center;
   flex: 1;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 .filter-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+  flex: 0 1 auto;
+}
+.sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 184, 166, .28);
+  background: rgba(10, 24, 42, .7);
+  color: rgba(198, 210, 230, .92);
+  font-weight: 600;
+  letter-spacing: .2px;
+  flex: 0 0 auto;
+}
+.sort-control__label {
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: rgba(148, 172, 198, .88);
+}
+.sort-control__select {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 168px;
+  padding: 0;
+}
+.sort-control__select:focus {
+  outline: none;
+  box-shadow: none;
+}
+.sort-control__select option {
+  color: #04141e;
 }
 .filter-chip {
   display: inline-flex;
@@ -1986,8 +2024,9 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
 }
 
 @media (max-width: 1024px) {
-  .elo-card__filters { justify-content: flex-start; }
+  .elo-card__filters { justify-content: flex-start; gap: 12px; }
   .filter-chips { justify-content: flex-start; }
+  .sort-control { order: -1; }
 }
 @media (max-width: 820px) {
   .elo-card__body { padding: 24px; }
@@ -1997,7 +2036,9 @@ kbd { background: var(--slate-5); border:1px solid var(--border); border-bottom-
 }
 @media (max-width: 640px) {
   .elo-card__header { flex-direction: column; align-items: flex-start; }
-  .elo-card__filters { width: 100%; }
+  .elo-card__filters { width: 100%; gap: 12px; }
+  .sort-control { width: 100%; justify-content: space-between; }
+  .sort-control__select { width: auto; }
   .filter-chips { width: 100%; justify-content: flex-start; }
   .elo-card__intro { width: 100%; }
   .elo-card__brand { align-items: flex-start; }

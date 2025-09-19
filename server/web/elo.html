@@ -18,6 +18,7 @@
       currentSeries: [],
       companies: [],
       selectedCompany: 'all',
+      sortMode: 'elo-desc',
       resizeTimer: null,
       resizeBound: null,
       lastHoverKey: null
@@ -47,10 +48,30 @@
     const COMPANY_ALIAS = {
       llama: 'meta',
       llamaii: 'meta',
+      metallama: 'meta',
+      metallamai: 'meta',
+      metaai: 'meta',
       grok: 'xai',
       'xai': 'xai',
       'x.ai': 'xai',
+      xaiai: 'xai',
+      xaiinc: 'xai',
       gemini: 'google',
+      googledeepmind: 'google',
+      deepmind: 'google',
+      mistralai: 'mistral',
+      mixtral: 'mistral',
+      perplexityai: 'perplexity',
+      perplexitylabs: 'perplexity',
+      deepseekai: 'deepseek',
+      azureopenai: 'azure',
+      openaiazure: 'azure',
+      anthropicai: 'anthropic',
+      fireworksai: 'fireworks',
+      qwenai: 'qwen',
+      togetherai: 'together',
+      togethercomputer: 'together',
+      nousresearch: 'together',
     };
 
     const COMPANY_LABELS = {
@@ -71,11 +92,62 @@
       qwen: 'Qwen',
     };
 
+    const COMPANY_SUFFIXES = ['ai', 'labs', 'lab', 'research', 'inc', 'llc', 'corp', 'corporation', 'company', 'platform', 'systems', 'org'];
+
+    const COMPANY_KEYWORDS = [
+      { test: /claude|anthropic/, slug: 'anthropic' },
+      { test: /gpt|openai|o[034]|chatgpt|omni/, slug: 'openai' },
+      { test: /llama|metallama|meta\b/, slug: 'meta' },
+      { test: /grok|xai|x\.ai/, slug: 'xai' },
+      { test: /mistral|mixtral/, slug: 'mistral' },
+      { test: /gemini|google|deepmind|palm/, slug: 'google' },
+      { test: /perplexity/, slug: 'perplexity' },
+      { test: /deepseek/, slug: 'deepseek' },
+      { test: /together|nous/, slug: 'together' },
+      { test: /groq/, slug: 'groq' },
+      { test: /fireworks/, slug: 'fireworks' },
+      { test: /cohere/, slug: 'cohere' },
+      { test: /qwen|ali(?:baba)?/, slug: 'qwen' },
+      { test: /azure|microsoft/, slug: 'azure' }
+    ];
+
     function slugifyCompany(value) {
       return String(value || '')
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '');
+    }
+
+    function mapToKnownCompany(value) {
+      const slug = slugifyCompany(value);
+      if (!slug) return '';
+      const seen = new Set();
+      const queue = [slug];
+      while (queue.length) {
+        const current = queue.shift();
+        if (!current || seen.has(current)) continue;
+        seen.add(current);
+        if (COMPANY_ALIAS[current]) {
+          queue.push(COMPANY_ALIAS[current]);
+          continue;
+        }
+        if (COMPANY_LABELS[current]) return current;
+        for (const suffix of COMPANY_SUFFIXES) {
+          if (current.endsWith(suffix) && current.length > suffix.length) {
+            queue.push(current.slice(0, -suffix.length));
+          }
+        }
+      }
+      return '';
+    }
+
+    function guessCompanyFromModel(model) {
+      const lower = String(model || '').toLowerCase();
+      if (!lower) return '';
+      for (const entry of COMPANY_KEYWORDS) {
+        if (entry.test.test(lower)) return entry.slug;
+      }
+      return '';
     }
 
     function prettyCompanyName(value) {
@@ -113,14 +185,22 @@
       const lowerModel = modelStr.toLowerCase();
       let vendor = '';
       if (!rawCompany || lowerCompany === 'openrouter') {
-        vendor = extractOpenRouterVendor(modelStr);
+        vendor = extractOpenRouterVendor(modelStr) || extractOpenRouterVendor(rawCompany);
       }
       const fallback = lowerModel.includes('openrouter') ? 'OpenRouter' : 'OpenAI';
       const primary = vendor || rawCompany || fallback;
-      let slug = slugifyCompany(primary);
-      if (slug === 'openrouter' && vendor) {
-        slug = slugifyCompany(vendor);
+      let slug = mapToKnownCompany(primary);
+      if (!slug && vendor) {
+        slug = mapToKnownCompany(vendor);
       }
+      if (!slug && rawCompany) {
+        slug = mapToKnownCompany(rawCompany);
+      }
+      if (!slug) {
+        const guessed = guessCompanyFromModel(modelStr) || guessCompanyFromModel(primary);
+        if (guessed) slug = mapToKnownCompany(guessed) || slugifyCompany(guessed);
+      }
+      if (!slug) slug = slugifyCompany(primary) || 'openai';
       if (COMPANY_ALIAS[slug]) slug = COMPANY_ALIAS[slug];
       if (!slug) slug = 'openai';
       const labelSource = vendor || rawCompany || primary;
@@ -716,17 +796,62 @@
       updateFilterButtons();
     }
 
+    function seriesLatestElo(entry) {
+      if (!entry || !entry.pts || !entry.pts.length) return -Infinity;
+      const last = entry.pts[entry.pts.length - 1];
+      return Number(last.elo) || -Infinity;
+    }
+
+    function sortSeries(series) {
+      const mode = state.sortMode;
+      const arr = Array.isArray(series) ? series.slice() : [];
+      if (mode === 'company') {
+        arr.sort((a, b) => {
+          const aCompany = (a.meta.company || '').toLowerCase();
+          const bCompany = (b.meta.company || '').toLowerCase();
+          if (aCompany !== bCompany) return aCompany.localeCompare(bCompany);
+          return seriesLatestElo(b) - seriesLatestElo(a);
+        });
+      } else if (mode === 'model') {
+        arr.sort((a, b) => {
+          const aModel = (a.meta.model || '').toLowerCase();
+          const bModel = (b.meta.model || '').toLowerCase();
+          if (aModel !== bModel) return aModel.localeCompare(bModel);
+          return seriesLatestElo(b) - seriesLatestElo(a);
+        });
+      } else {
+        arr.sort((a, b) => seriesLatestElo(b) - seriesLatestElo(a));
+      }
+      return arr;
+    }
+
     function applyFilters() {
       const key = state.selectedCompany;
       const filtered = key === 'all'
         ? state.fullSeries
         : state.fullSeries.filter(entry => entry.meta.companyKey === key);
-      const sorted = filtered.slice().sort((a, b) => {
-        const aLast = a.pts.length ? a.pts[a.pts.length - 1].elo : -Infinity;
-        const bLast = b.pts.length ? b.pts[b.pts.length - 1].elo : -Infinity;
-        return bLast - aLast;
-      });
+      const sorted = sortSeries(filtered);
       draw(sorted);
+    }
+
+    function syncSortModeControl() {
+      const select = document.getElementById('sortMode');
+      if (!select) return;
+      if (select.value !== state.sortMode) {
+        select.value = state.sortMode;
+      }
+    }
+
+    function bindSortEvents() {
+      const select = document.getElementById('sortMode');
+      if (!select || select.dataset.bound === 'true') return;
+      select.addEventListener('change', () => {
+        const value = select.value || 'elo-desc';
+        if (state.sortMode === value) return;
+        state.sortMode = value;
+        applyFilters();
+      });
+      select.dataset.bound = 'true';
     }
 
     function bindFilterEvents() {
@@ -771,6 +896,8 @@
     }
 
     async function load() {
+      bindSortEvents();
+      syncSortModeControl();
       const data = await getJSON('/api/elo-history', '/web/data/elo-history.json');
       const rows = (data.rows || []).map(r => ({
         bot_id: r.bot_id,
@@ -828,6 +955,14 @@
           </div>
         </div>
         <div class="elo-card__filters">
+          <label class="sort-control" for="sortMode">
+            <span class="sort-control__label">Sort by</span>
+            <select id="sortMode" class="sort-control__select" aria-label="Sort Elo series">
+              <option value="elo-desc">Latest Elo (high → low)</option>
+              <option value="company">Company (A → Z)</option>
+              <option value="model">Model (A → Z)</option>
+            </select>
+          </label>
           <div id="companyFilters" class="filter-chips"></div>
         </div>
       </div>
