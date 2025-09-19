@@ -18,7 +18,6 @@
       currentSeries: [],
       companies: [],
       selectedCompany: 'all',
-      sortMode: 'latest',
       colorAssignments: new Map(),
       nextColorIndex: 0,
       resizeTimer: null,
@@ -161,6 +160,11 @@
       const vendor = lowerModel.includes('openrouter') ? extractOpenRouterVendor(modelStr) : '';
 
       const candidateStrings = [rawCompany, vendor];
+      if (modelStr) {
+        modelStr.split(/[^A-Za-z0-9]+/).forEach(part => {
+          if (part) candidateStrings.push(part);
+        });
+      }
       if (vendor) {
         vendor.split(/[^A-Za-z0-9]+/).forEach(part => {
           if (part) candidateStrings.push(part);
@@ -837,48 +841,26 @@
 
     function sortSeries(list) {
       const items = Array.isArray(list) ? list.slice() : [];
-      if (state.sortMode === 'company') {
-        return items.sort((a, b) => {
-          const aCompany = compareStrings(a.meta.company, b.meta.company);
-          if (aCompany !== 0) return aCompany;
-          const aModel = compareStrings(a.meta.model, b.meta.model);
-          if (aModel !== 0) return aModel;
-          return (a.botId || 0) - (b.botId || 0);
-        });
-      }
-      if (state.sortMode === 'model') {
-        return items.sort((a, b) => {
-          const aModel = compareStrings(a.meta.model, b.meta.model);
-          if (aModel !== 0) return aModel;
-          const aCompany = compareStrings(a.meta.company, b.meta.company);
-          if (aCompany !== 0) return aCompany;
-          return (a.botId || 0) - (b.botId || 0);
-        });
-      }
       return items.sort((a, b) => {
-        const aLast = a.pts.length ? a.pts[a.pts.length - 1].elo : -Infinity;
-        const bLast = b.pts.length ? b.pts[b.pts.length - 1].elo : -Infinity;
-        if (bLast !== aLast) return bLast - aLast;
-        return compareStrings(a.meta.model, b.meta.model);
+        const aCompany = compareStrings(a.meta.company, b.meta.company);
+        if (aCompany !== 0) return aCompany;
+        const aModel = compareStrings(a.meta.model, b.meta.model);
+        if (aModel !== 0) return aModel;
+        return (a.botId || 0) - (b.botId || 0);
       });
     }
 
     function bindSortControl() {
       const select = document.getElementById('sortMode');
       if (!select || select.dataset.bound === 'true') return;
-      select.addEventListener('change', () => {
-        const value = select.value || 'latest';
-        if (value === state.sortMode) return;
-        state.sortMode = value;
-        applyFilters();
-      });
+      select.value = 'company';
       select.dataset.bound = 'true';
     }
 
     function updateSortControl() {
       const select = document.getElementById('sortMode');
       if (!select) return;
-      if (select.value !== state.sortMode) select.value = state.sortMode;
+      if (select.value !== 'company') select.value = 'company';
     }
 
     function handleResize() {
@@ -975,9 +957,7 @@
           <label class="sort-control" for="sortMode">
             <span class="sort-control__label">Sort by</span>
             <select id="sortMode" name="sortMode" aria-label="Sort Elo series">
-              <option value="latest">Latest Elo</option>
               <option value="company">Company (A → Z)</option>
-              <option value="model">Model (A → Z)</option>
             </select>
           </label>
         </div>
