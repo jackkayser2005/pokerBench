@@ -156,6 +156,8 @@ DUEL_SEEDS=5 \
 ./ai-thunderdome --duel-matrix
 ```
 
+When routing through OpenRouter, set `LLM_PROVIDER=openrouter` and provide `OPENROUTER_MODELS` instead of `OPENAI_MODELS`.
+
 Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` and `scripts/run-openai-matrix.ps1`.
 
 ---
@@ -170,8 +172,12 @@ Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` an
 | `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` | Alternative secret for OpenRouter users (mirrors into `OPENAI_API_KEY`). | _(optional)_ |
 | `DATABASE_URL` | PostgreSQL DSN (`postgres://user:pass@host:port/db?sslmode=`). | `postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable` |
 | `PORT` | HTTP port for the server mode. | `8080` |
+| `LLM_PROVIDER` | Force provider precedence (`openai` or `openrouter`). | derived |
 | `OPENAI_MODEL_A` / `OPENAI_MODEL_B` | Model identifiers for the A/B seats. | `OPENAI_MODEL` fallback |
 | `OPENAI_MODEL_SB` / `OPENAI_MODEL_BB` | Seat-specific overrides if you prefer SB/BB naming. | `OPENAI_MODEL` fallback |
+| `OPENROUTER_MODEL` | Shared OpenRouter identifier when routing via OpenRouter. | _(optional)_ |
+| `OPENROUTER_MODEL_A` / `OPENROUTER_MODEL_B` | Seat models for OpenRouter runs. | `OPENROUTER_MODEL` fallback |
+| `OPENROUTER_MODEL_SB` / `OPENROUTER_MODEL_BB` | SB/BB naming for OpenRouter-specific configs. | `OPENROUTER_MODEL` fallback |
 | `OPENAI_REASONING_EFFORT` | Attach provider-specific reasoning hint (e.g., `medium`, `high`). | unset |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Hard cap on model responses. | provider default |
 | `LLM_COMPANY` | Label used in the UI (e.g., `OpenAI`, `Anthropic`). | derived |

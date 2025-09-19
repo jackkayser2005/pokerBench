@@ -106,11 +106,26 @@ func sub(title string)      { fmt.Printf("%s %s\n", dim("•"), bold(title)) }
 // OPENAI_API_KEY so downstream clients keep working).
 func loadAPIKeyFromSecret() {
 	preferOpenRouter := func() bool {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))) {
+		case "openrouter":
+			return true
+		case "openai":
+			return false
+		}
 		base := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_API_BASE")))
 		if base == "" {
 			base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")))
 		}
-		return strings.Contains(base, "openrouter")
+		if base == "" {
+			base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")))
+		}
+		if base == "" {
+			base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")))
+		}
+		if base != "" {
+			return strings.Contains(base, "openrouter")
+		}
+		return llm.PreferOpenRouter()
 	}()
 
 	setKey := func(raw string) bool {
@@ -375,14 +390,38 @@ type Player struct {
 }
 
 func loadPlayers(startStack int) (a, b Player) {
-	ma := os.Getenv("OPENAI_MODEL_A")
-	mb := os.Getenv("OPENAI_MODEL_B")
-	if ma == "" || mb == "" {
-		ma = getenv("OPENAI_MODEL_SB", getenv("OPENAI_MODEL", ""))
-		mb = getenv("OPENAI_MODEL_BB", getenv("OPENAI_MODEL", ""))
+	useOpenRouter := llm.PreferOpenRouter()
+	var ma, mb string
+	if useOpenRouter {
+		shared := strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
+		ma = firstNonEmpty(
+			os.Getenv("OPENROUTER_MODEL_A"),
+			os.Getenv("OPENROUTER_MODEL_SB"),
+			shared,
+		)
+		mb = firstNonEmpty(
+			os.Getenv("OPENROUTER_MODEL_B"),
+			os.Getenv("OPENROUTER_MODEL_BB"),
+			shared,
+		)
+	}
+	sharedOpenAI := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+	if strings.TrimSpace(ma) == "" {
+		ma = firstNonEmpty(
+			os.Getenv("OPENAI_MODEL_A"),
+			os.Getenv("OPENAI_MODEL_SB"),
+			sharedOpenAI,
+		)
+	}
+	if strings.TrimSpace(mb) == "" {
+		mb = firstNonEmpty(
+			os.Getenv("OPENAI_MODEL_B"),
+			os.Getenv("OPENAI_MODEL_BB"),
+			sharedOpenAI,
+		)
 	}
 	if ma == "" || mb == "" {
-		log.Fatal("Provide OPENAI_MODEL_A and OPENAI_MODEL_B (or OPENAI_MODEL_SB/OPENAI_MODEL_BB)")
+		log.Fatal("Provide model identifiers for both seats via OPENAI_MODEL_* or OPENROUTER_MODEL_*")
 	}
 	a = Player{Label: "A", Name: "A", Model: ma, Bank: startStack}
 	b = Player{Label: "B", Name: "B", Model: mb, Bank: startStack}
@@ -1507,6 +1546,16 @@ func strptr(s string) *string {
 	return &s
 }
 
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		t := strings.TrimSpace(v)
+		if t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 // companyLabel returns a descriptive vendor label for the current LLM base.
 func companyLabel() string {
 	if v := strings.TrimSpace(os.Getenv("LLM_COMPANY")); v != "" {
@@ -2136,9 +2185,17 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 // runDuelMatrix runs pairwise duels for all models listed in OPENAI_MODELS (comma-separated).
 // Example: OPENAI_MODELS="gpt-4o-mini,gpt-5-mini,gpt-4.1-mini-2025-04-14"
 func runDuelMatrix(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
+	useOpenRouter := llm.PreferOpenRouter()
 	raw := strings.TrimSpace(os.Getenv("OPENAI_MODELS"))
+	if raw == "" && useOpenRouter {
+		raw = strings.TrimSpace(os.Getenv("OPENROUTER_MODELS"))
+	}
 	if raw == "" {
-		log.Println("OPENAI_MODELS is empty; supply a comma-separated list to use --duel-matrix.")
+		if useOpenRouter {
+			log.Println("OPENROUTER_MODELS (or OPENAI_MODELS) is empty; supply a comma-separated list to use --duel-matrix.")
+		} else {
+			log.Println("OPENAI_MODELS is empty; supply a comma-separated list to use --duel-matrix.")
+		}
 		return
 	}
 	parts := []string{}
@@ -2163,8 +2220,13 @@ func runDuelMatrix(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			b := parts[j]
 			log.Printf("Matrix duel: A=%s vs B=%s\n", a, b)
 			// Set envs for this duel run
-			os.Setenv("OPENAI_MODEL_A", a)
-			os.Setenv("OPENAI_MODEL_B", b)
+			if useOpenRouter {
+				os.Setenv("OPENROUTER_MODEL_A", a)
+				os.Setenv("OPENROUTER_MODEL_B", b)
+			} else {
+				os.Setenv("OPENAI_MODEL_A", a)
+				os.Setenv("OPENAI_MODEL_B", b)
+			}
 			runDuel(checkStop, gracefulOnly, db)
 		}
 	}
