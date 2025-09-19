@@ -44,13 +44,53 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 		provider = hintedKind
 	}
 
-	if override := strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))); override != "" {
-		switch override {
+	provider = detectProviderFromModel(provider, cfg.Model)
+
+	overrideValue := strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER")))
+	providerOverridden := false
+	if overrideValue != "" {
+		switch overrideValue {
 		case "openrouter":
 			provider = providerOpenRouter
+			providerOverridden = true
 		case "openai":
 			provider = providerOpenAI
+			providerOverridden = true
 		}
+	}
+
+	if cfg.Model == "" {
+		if provider == providerOpenRouter {
+			cfg.Model = firstNonEmpty(
+				os.Getenv("OPENROUTER_MODEL"),
+				os.Getenv("OPENROUTER_MODEL_A"),
+				os.Getenv("OPENROUTER_MODEL_B"),
+				os.Getenv("OPENROUTER_MODEL_SB"),
+				os.Getenv("OPENROUTER_MODEL_BB"),
+			)
+		}
+		if cfg.Model == "" {
+			cfg.Model = firstNonEmpty(
+				os.Getenv("OPENAI_MODEL"),
+				os.Getenv("OPENAI_MODEL_A"),
+				os.Getenv("OPENAI_MODEL_B"),
+				os.Getenv("OPENAI_MODEL_SB"),
+				os.Getenv("OPENAI_MODEL_BB"),
+			)
+		}
+		if cfg.Model == "" {
+			cfg.Model = firstNonEmpty(
+				os.Getenv("OPENROUTER_MODEL"),
+				os.Getenv("OPENROUTER_MODEL_A"),
+				os.Getenv("OPENROUTER_MODEL_B"),
+				os.Getenv("OPENROUTER_MODEL_SB"),
+				os.Getenv("OPENROUTER_MODEL_BB"),
+			)
+		}
+	}
+
+	if !providerOverridden {
+		provider = detectProviderFromModel(provider, cfg.Model)
 	}
 
 	base := baseForProvider(provider)
@@ -61,6 +101,10 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 
 	cfg.Kind = provider
 	cfg.BaseURL = base
+
+	if cfg.Model == "" {
+		return apiConfig{}, errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
+	}
 
 	openAIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	openRouterKey := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
@@ -115,31 +159,18 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 		}
 	}
 
-	if cfg.Model == "" {
-		if provider == providerOpenRouter {
-			cfg.Model = firstNonEmpty(
-				os.Getenv("OPENROUTER_MODEL"),
-				os.Getenv("OPENROUTER_MODEL_A"),
-				os.Getenv("OPENROUTER_MODEL_B"),
-				os.Getenv("OPENROUTER_MODEL_SB"),
-				os.Getenv("OPENROUTER_MODEL_BB"),
-			)
-		}
-		if cfg.Model == "" {
-			cfg.Model = firstNonEmpty(
-				os.Getenv("OPENAI_MODEL"),
-				os.Getenv("OPENAI_MODEL_A"),
-				os.Getenv("OPENAI_MODEL_B"),
-				os.Getenv("OPENAI_MODEL_SB"),
-				os.Getenv("OPENAI_MODEL_BB"),
-			)
-		}
-	}
-	if cfg.Model == "" {
-		return apiConfig{}, errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
-	}
-
 	return cfg, nil
+}
+
+func detectProviderFromModel(current providerKind, model string) providerKind {
+	lower := strings.ToLower(strings.TrimSpace(model))
+	if lower == "" {
+		return current
+	}
+	if strings.Contains(lower, "openrouter/") {
+		return providerOpenRouter
+	}
+	return current
 }
 
 func parseModelSpec(raw string) (string, providerKind, bool) {
