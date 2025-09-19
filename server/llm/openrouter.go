@@ -129,12 +129,27 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 	cfg.Organization = strings.TrimSpace(os.Getenv("OPENAI_ORG"))
 
 	if cfg.Kind == providerOpenRouter {
-		if v := strings.TrimSpace(os.Getenv("OPENROUTER_SITE_URL")); v != "" {
-			cfg.ExtraHeaders["HTTP-Referer"] = v
-			cfg.ExtraHeaders["Referer"] = v
+		siteURL := strings.TrimSpace(os.Getenv("OPENROUTER_SITE_URL"))
+		if siteURL == "" {
+			siteURL = strings.TrimSpace(os.Getenv("SITE_URL"))
 		}
-		if v := strings.TrimSpace(os.Getenv("OPENROUTER_TITLE")); v != "" {
-			cfg.ExtraHeaders["X-Title"] = v
+		if siteURL == "" {
+			siteURL = "https://pokerbench.ai"
+		}
+		if siteURL != "" {
+			cfg.ExtraHeaders["HTTP-Referer"] = siteURL
+			cfg.ExtraHeaders["Referer"] = siteURL
+		}
+
+		title := strings.TrimSpace(os.Getenv("OPENROUTER_TITLE"))
+		if title == "" {
+			title = strings.TrimSpace(os.Getenv("APP_NAME"))
+		}
+		if title == "" {
+			title = "PokerBench"
+		}
+		if title != "" {
+			cfg.ExtraHeaders["X-Title"] = title
 		}
 	}
 
