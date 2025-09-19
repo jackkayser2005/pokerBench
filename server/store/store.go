@@ -139,9 +139,15 @@ func (db *DB) SyncJudgeAccuracy(ctx context.Context, botIDs ...int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	res, err := db.judgeAccuracy(ctx, " AND p.bot_id = ANY($1)", ids)
-	if err != nil {
-		return err
+	res := make(map[int64]JudgeAccuracy, len(ids))
+	for _, id := range ids {
+		m, err := db.judgeAccuracy(ctx, " AND p.bot_id = $1", id)
+		if err != nil {
+			return err
+		}
+		for k, v := range m {
+			res[k] = v
+		}
 	}
 	if err := db.fillJudgeAccuracyFromRatings(ctx, res, ids); err != nil {
 		return err
@@ -208,17 +214,35 @@ func (db *DB) fillJudgeAccuracyFromRatings(ctx context.Context, dest map[int64]J
 	)
 	if len(filter) == 0 {
 		rows, err = db.Query(ctx, `SELECT bot_id, judge_good, judge_total FROM bot_ratings`)
-	} else {
-		rows, err = db.Query(ctx, `SELECT bot_id, judge_good, judge_total FROM bot_ratings WHERE bot_id = ANY($1)`, filter)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			var good, total int
+			if err := rows.Scan(&id, &good, &total); err != nil {
+				return err
+			}
+			if total <= 0 {
+				continue
+			}
+			if existing, ok := dest[id]; !ok || existing.Total <= 0 {
+				dest[id] = JudgeAccuracy{Good: good, Total: total}
+			}
+		}
+		return rows.Err()
 	}
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id int64
+
+	for _, id := range filter {
+		if id <= 0 {
+			continue
+		}
 		var good, total int
-		if err := rows.Scan(&id, &good, &total); err != nil {
+		if err := db.QueryRow(ctx, `SELECT judge_good, judge_total FROM bot_ratings WHERE bot_id = $1`, id).Scan(&good, &total); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue
+			}
 			return err
 		}
 		if total <= 0 {
@@ -228,7 +252,7 @@ func (db *DB) fillJudgeAccuracyFromRatings(ctx context.Context, dest map[int64]J
 			dest[id] = JudgeAccuracy{Good: good, Total: total}
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func uniquePositiveInt64(ids []int64) []int64 {
