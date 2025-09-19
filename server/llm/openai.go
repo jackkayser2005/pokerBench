@@ -30,14 +30,30 @@ func PingText(ctx context.Context, model, system, user string) (string, error) {
 // PingTextWithOpts lets you pass custom knobs (used by PingText via env).
 func PingTextWithOpts(ctx context.Context, model, system, user string, opts PingOptions) (string, error) {
 	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	usingOpenRouter := false
 	if apiKey == "" {
-		return "", errors.New("OPENAI_API_KEY missing")
+		apiKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+		if apiKey != "" {
+			usingOpenRouter = true
+		}
+	}
+	if apiKey == "" {
+		return "", errors.New("API key missing: set OPENAI_API_KEY or OPENROUTER_API_KEY")
 	}
 	if model == "" {
 		model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
 	}
 	if model == "" {
-		return "", errors.New("OPENAI_MODEL missing: set env or pass a value")
+		model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
+		if model != "" {
+			usingOpenRouter = true
+		}
+	}
+	if model == "" {
+		return "", errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
+	}
+	if strings.Contains(strings.ToLower(model), "openrouter/") {
+		usingOpenRouter = true
 	}
 
 	base := strings.TrimSpace(os.Getenv("OPENAI_API_BASE"))
@@ -45,15 +61,37 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 		base = strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
 	}
 	if base == "" {
-		base = "https://api.openai.com/v1"
+		base = strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE"))
+	}
+	if base == "" {
+		base = strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL"))
+	}
+	if base == "" {
+		if usingOpenRouter {
+			base = "https://openrouter.ai/api/v1"
+		} else {
+			base = "https://api.openai.com/v1"
+		}
 	}
 	base = strings.TrimRight(base, "/")
+	if strings.Contains(base, "openrouter.ai") {
+		usingOpenRouter = true
+		if v := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); v != "" {
+			apiKey = v
+		}
+	}
 
 	headerName := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_HEADER"))
+	if headerName == "" {
+		headerName = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_HEADER"))
+	}
 	if headerName == "" {
 		headerName = "Authorization"
 	}
 	prefix := os.Getenv("OPENAI_API_KEY_PREFIX")
+	if prefix == "" {
+		prefix = os.Getenv("OPENROUTER_API_KEY_PREFIX")
+	}
 	if headerName == "Authorization" && strings.TrimSpace(prefix) == "" {
 		prefix = "Bearer "
 	}
@@ -69,6 +107,9 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 	if opts.MaxOutputTokens != nil && *opts.MaxOutputTokens > 0 {
 		payload["max_tokens"] = *opts.MaxOutputTokens
 	}
+	if strings.TrimSpace(opts.ReasoningEffort) != "" {
+		payload["reasoning"] = map[string]any{"effort": opts.ReasoningEffort}
+	}
 	if opts.StructuredSchema != nil {
 		payload["response_format"] = map[string]any{
 			"type": "json_schema",
@@ -81,7 +122,7 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 	} else {
 		payload["response_format"] = map[string]any{"type": "json_object"}
 	}
-	applyTuningFromEnv(payload)
+	applyTuningFromEnv(payload, usingOpenRouter)
 
 	b, _ := json.Marshal(payload)
 	url := base + "/chat/completions"
@@ -184,18 +225,18 @@ func PingChooseAction(ctx context.Context, model, system, user string, legal []s
 	return act, amt, raw, nil
 }
 
-func applyTuningFromEnv(m map[string]any) {
-	if v := strings.TrimSpace(os.Getenv("OPENAI_TEMPERATURE")); v != "" {
+func applyTuningFromEnv(m map[string]any, preferOpenRouter bool) {
+	if v := envWithFallback(preferOpenRouter, "OPENAI_TEMPERATURE", "OPENROUTER_TEMPERATURE"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["temperature"] = f
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_TOP_P")); v != "" {
+	if v := envWithFallback(preferOpenRouter, "OPENAI_TOP_P", "OPENROUTER_TOP_P"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["top_p"] = f
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_TOP_K")); v != "" {
+	if v := envWithFallback(preferOpenRouter, "OPENAI_TOP_K", "OPENROUTER_TOP_K"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			m["top_k"] = n
 		}
@@ -284,13 +325,46 @@ func coerceActionMap(parsed map[string]any, legal []string, minRaiseTo, maxRaise
 
 func envPingOptions() PingOptions {
 	opts := PingOptions{}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_REASONING_EFFORT")); v != "" {
+	preferOpenRouter := preferOpenRouterEnv()
+	if v := envWithFallback(preferOpenRouter, "OPENAI_REASONING_EFFORT", "OPENROUTER_REASONING_EFFORT"); v != "" {
 		opts.ReasoningEffort = v
 	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_MAX_OUTPUT_TOKENS")); v != "" {
+	if v := envWithFallback(preferOpenRouter, "OPENAI_MAX_OUTPUT_TOKENS", "OPENROUTER_MAX_OUTPUT_TOKENS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			opts.MaxOutputTokens = &n
 		}
 	}
 	return opts
+}
+
+func envWithFallback(preferOpenRouter bool, openAIKey, openRouterKey string) string {
+	keys := []string{openAIKey, openRouterKey}
+	if preferOpenRouter {
+		keys[0], keys[1] = keys[1], keys[0]
+	}
+	for _, key := range keys {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func preferOpenRouterEnv() bool {
+	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) != "" && strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL")) == "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) != "" || strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")) != "" {
+		return true
+	}
+	if base := strings.TrimSpace(os.Getenv("OPENAI_API_BASE")); base != "" && strings.Contains(strings.ToLower(base), "openrouter") {
+		return true
+	}
+	if base := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); base != "" && strings.Contains(strings.ToLower(base), "openrouter") {
+		return true
+	}
+	return false
 }
