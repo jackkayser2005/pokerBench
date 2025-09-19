@@ -88,7 +88,7 @@
       // Judge accuracy (best-effort) + polling
       async function refreshAcc(){
         try {
-          const ja = await getJSON('/api/judge-accuracy');
+          const ja = await getJSON('/api/judge-accuracy', '/web/data/judge-accuracy.json');
           if (ja && ja.rows) {
             const row = (ja.rows||[]).find(x => String(x.bot_id) === String(c.bot_id || id));
             const el = document.getElementById('meta-acc');
