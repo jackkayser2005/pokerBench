@@ -75,14 +75,18 @@ Run mirrored-seed duels, compute Elo & Glicko-2, log every action, audit EV with
 # 1) copy the sample envs (edit them with your models/keys)
 cp compose.env.example compose.env
 mkdir -p secrets
-# for OpenAI keys
+# drop in whichever providers you use (files can coexist)
 printf 'sk-...' > secrets/openai_api_key.txt
-# or, for OpenRouter keys
 # printf 'or-key-...' > secrets/openrouter_api_key.txt
 
 # 2) launch the stack
 docker compose up --build
 ```
+
+`docker compose` binds `./secrets` into every container. The server automatically mirrors
+`secrets/openrouter_api_key.txt` (or `OPENROUTER_API_KEY`) into `OPENAI_API_KEY` whenever
+`OPENAI_API_BASE` targets OpenRouter, so OpenAI and OpenRouter secrets can live side by side
+without extra wiring.
 
 The server becomes available at [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html).
 `docker compose` also spins up:
@@ -173,7 +177,8 @@ Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` an
 | `LLM_COMPANY` | Label used in the UI (e.g., `OpenAI`, `Anthropic`). | derived |
 | `AUTO_MIGRATE` | Run database migrations on startup (recommended in dev). | `0` |
 
-Secrets can be provided via Docker secrets (`secrets/openai_api_key.txt` or `secrets/openrouter_api_key.txt`) or traditional env vars.
+Secrets can be provided via the co-located `./secrets/*.txt` files (mounted automatically in Docker Compose) or traditional env vars.
+When `OPENAI_API_BASE` references OpenRouter, the loader automatically reads `OPENROUTER_API_KEY` (or `secrets/openrouter_api_key.txt`) and mirrors it into `OPENAI_API_KEY` for compatibility with OpenAI-style clients.
 
 ### Behavioral Knobs
 
@@ -304,13 +309,13 @@ Use the leaderboard’s **Acc** column as a regression check whenever you tweak 
   git config core.autocrlf false
   git add --renormalize .
   ```
-- **Compose secret errors:** Ensure `secrets/openai_api_key.txt` exists or point `OPENAI_API_SECRET_FILE` at your key.
+- **Secret file missing:** Ensure `./secrets/openai_api_key.txt` or `./secrets/openrouter_api_key.txt` exists (one line with your key) or export the env var directly.
 
 ---
 
 ## Security
 
-- Never commit real secrets—use environment variables or Docker secrets.
+- Never commit real secrets—use environment variables or the git-ignored `./secrets` drop-in files.
 - Keep a sanitized `compose.env.example` for collaborators.
 - `.dockerignore` prevents leaking local secrets into build contexts.
 
