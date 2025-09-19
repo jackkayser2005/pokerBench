@@ -100,17 +100,40 @@ func sub(title string)      { fmt.Printf("%s %s\n", dim("•"), bold(title)) }
 // ===== bootstrap =====
 //
 
-// Tries: env var file, ./secrets/openai_api_key.txt, ./server/openai_api_key.txt,
-// ./openai_api_key.txt, /app/server/openai_api_key.txt (in container), and /run/secrets/openai_api_key.
+// Tries, in order:
+//  1. OPENAI_API_KEY (already exported)
+//  2. OPENROUTER_API_KEY (copies into OPENAI_API_KEY for compatibility)
+//  3. OPENAI_API_KEY_FILE or common OpenAI file paths
+//  4. OPENROUTER_API_KEY_FILE or common OpenRouter file paths
+//
+// This lets OpenRouter keys live alongside OpenAI keys without extra wiring.
 func loadAPIKeyFromSecret() {
-	if os.Getenv("OPENAI_API_KEY") != "" {
+	if key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); key != "" {
+		os.Setenv("OPENAI_API_KEY", key)
 		return
 	}
-	var candidates []string
-	if p := os.Getenv("OPENAI_API_KEY_FILE"); strings.TrimSpace(p) != "" {
-		candidates = append(candidates, p)
+	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" {
+		os.Setenv("OPENAI_API_KEY", key)
+		return
 	}
-	candidates = append(candidates,
+
+	tryPaths := func(paths []string) bool {
+		for _, path := range paths {
+			if b, err := os.ReadFile(path); err == nil {
+				if key := strings.TrimSpace(string(b)); key != "" {
+					os.Setenv("OPENAI_API_KEY", key)
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	var openaiPaths []string
+	if p := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_FILE")); p != "" {
+		openaiPaths = append(openaiPaths, p)
+	}
+	openaiPaths = append(openaiPaths,
 		"./secrets/openai_api_key.txt",
 		"server/openai_api_key.txt",
 		"./server/openai_api_key.txt",
@@ -118,14 +141,28 @@ func loadAPIKeyFromSecret() {
 		"/app/server/openai_api_key.txt",
 		"/run/secrets/openai_api_key",
 	)
-	for _, path := range candidates {
-		if b, err := os.ReadFile(path); err == nil {
-			key := strings.TrimSpace(string(b))
-			if key != "" {
-				os.Setenv("OPENAI_API_KEY", key)
-				return
-			}
-		}
+	if tryPaths(openaiPaths) {
+		return
+	}
+
+	var openrouterPaths []string
+	if p := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_FILE")); p != "" {
+		openrouterPaths = append(openrouterPaths, p)
+	}
+	openrouterPaths = append(openrouterPaths,
+		"./secrets/openrouter_api_key.txt",
+		"server/openrouter_api_key.txt",
+		"./server/openrouter_api_key.txt",
+		"./openrouter_api_key.txt",
+		"/app/server/openrouter_api_key.txt",
+		"/run/secrets/openrouter_api_key",
+	)
+	if tryPaths(openrouterPaths) {
+		return
+	}
+
+	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" {
+		os.Setenv("OPENAI_API_KEY", key)
 	}
 }
 
