@@ -17,7 +17,7 @@
     <div class="topnav">
       <div class="topnav__cluster">
         <a class="brand" href="/web/index.html" aria-label="PokerBench home">
-          <span class="brand__mark">
+          <span class="brand__mark logo-badge logo-badge--sm">
             <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
           </span>
           <span class="brand__text">PokerBench</span>
@@ -40,7 +40,9 @@
         <div class="hero__grid">
           <div class="hero__intro">
             <div class="hero__brand">
-              <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo">
+              <span class="logo-badge logo-badge--lg">
+                <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+              </span>
               <div>
                 <div class="hero__eyebrow">AI Poker Benchmark</div>
                 <h1 class="hero__title">PokerBench</h1>
@@ -121,7 +123,9 @@
   <footer class="site-footer">
     <div class="site-footer__inner">
       <a class="site-footer__brand" href="/web/index.html">
-        <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+        <span class="logo-badge logo-badge--sm">
+          <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+        </span>
         <span>PokerBench</span>
       </a>
       <nav class="site-footer__nav" aria-label="Footer">
@@ -162,30 +166,116 @@
       return s;
     }
 
-    function canonicalCompany(company = 'OpenAI') {
-      const trimmed = String(company ?? '').trim();
-      return trimmed ? trimmed : 'OpenAI';
+    const COMPANY_ICON_DATA = {
+      openai:      { path: '/web/img/openai.svg', alt: 'OpenAI' },
+      deepseek:    { path: '/web/img/deepseek-color.svg', alt: 'DeepSeek' },
+      xai:         { path: '/web/img/xai.svg', alt: 'xAI' },
+      anthropic:   { path: '/web/img/anthropic.svg', alt: 'Anthropic' },
+      meta:        { path: '/web/img/meta.svg', alt: 'Meta' },
+      google:      { path: '/web/img/google.svg', alt: 'Google' },
+      mistral:     { path: '/web/img/mistral.svg', alt: 'Mistral' },
+      groq:        { path: '/web/img/groq.svg', alt: 'Groq' },
+      together:    { path: '/web/img/together.svg', alt: 'Together' },
+      perplexity:  { path: '/web/img/perplexity.svg', alt: 'Perplexity' },
+      azure:       { path: '/web/img/azure.svg', alt: 'Azure' },
+      openrouter:  { path: '/web/img/openrouter.svg', alt: 'OpenRouter' },
+      cohere:      { path: '/web/img/cohere.svg', alt: 'Cohere' },
+      fireworks:   { path: '/web/img/fireworks.svg', alt: 'Fireworks' },
+      qwen:        { path: '/web/img/qwen.svg', alt: 'Qwen' },
+    };
+
+    const COMPANY_ALIAS = {
+      llama: 'meta',
+      llamaii: 'meta',
+      grok: 'xai',
+      'xai': 'xai',
+      'x.ai': 'xai',
+      gemini: 'google',
+    };
+
+    const COMPANY_LABELS = {
+      openai: 'OpenAI',
+      deepseek: 'DeepSeek',
+      xai: 'xAI',
+      anthropic: 'Anthropic',
+      meta: 'Meta',
+      google: 'Google',
+      mistral: 'Mistral',
+      groq: 'Groq',
+      together: 'Together',
+      perplexity: 'Perplexity',
+      azure: 'Azure',
+      openrouter: 'OpenRouter',
+      cohere: 'Cohere',
+      fireworks: 'Fireworks',
+      qwen: 'Qwen',
+    };
+
+    function slugifyCompany(value) {
+      return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+    }
+
+    function prettyCompanyName(value) {
+      const slug = slugifyCompany(value);
+      if (COMPANY_LABELS[slug]) return COMPANY_LABELS[slug];
+      if (!value) return '';
+      return String(value)
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, ch => ch.toUpperCase());
+    }
+
+    function extractOpenRouterVendor(model) {
+      if (!model) return '';
+      const match = String(model).match(/openrouter[\\/:|-]+([A-Za-z0-9_.-]+)/i);
+      if (match && match[1]) return match[1];
+      const parts = String(model)
+        .split(/[\\/:]/)
+        .map(part => part.trim())
+        .filter(Boolean);
+      if (!parts.length) return '';
+      const idx = parts.findIndex(part => part.toLowerCase() === 'openrouter');
+      if (idx >= 0) {
+        if (parts[idx + 1]) return parts[idx + 1];
+        if (idx > 0) return parts[idx - 1];
+      }
+      return '';
+    }
+
+    function resolveCompanyMeta(company, model) {
+      const rawCompany = String(company || '').trim();
+      const lowerCompany = rawCompany.toLowerCase();
+      const modelStr = String(model || '').trim();
+      const lowerModel = modelStr.toLowerCase();
+      let vendor = '';
+      if (!rawCompany || lowerCompany === 'openrouter') {
+        vendor = extractOpenRouterVendor(modelStr);
+      }
+      const fallback = lowerModel.includes('openrouter') ? 'OpenRouter' : 'OpenAI';
+      const primary = vendor || rawCompany || fallback;
+      let slug = slugifyCompany(primary);
+      if (slug === 'openrouter' && vendor) {
+        slug = slugifyCompany(vendor);
+      }
+      if (COMPANY_ALIAS[slug]) slug = COMPANY_ALIAS[slug];
+      if (!slug) slug = 'openai';
+      const labelSource = vendor || rawCompany || primary;
+      const label = COMPANY_LABELS[slug] || prettyCompanyName(labelSource) || 'OpenAI';
+      return { slug, label };
+    }
+
+    function canonicalCompany(company, model) {
+      return resolveCompanyMeta(company, model).label;
     }
 
     function companyIconPath(company, model) {
-      const c = (company || '').trim().toLowerCase();
-      const m = (model || '').trim().toLowerCase();
-      const matches = (needle) => c.includes(needle) || m.startsWith(`${needle}/`) || m.includes(`/${needle}`);
-      if (!c || c === 'openai') return '/web/img/openai.svg';
-      if (matches('deepseek')) return '/web/img/deepseek-color.svg';
-      if (matches('xai') || matches('grok')) return '/web/img/xai.svg';
-      if (matches('anthropic')) return '/web/img/anthropic.svg';
-      if (matches('meta') || matches('llama')) return '/web/img/meta.svg';
-      if (matches('google') || matches('gemini')) return '/web/img/google.svg';
-      if (matches('mistral')) return '/web/img/mistral.svg';
-      if (matches('groq')) return '/web/img/groq.svg';
-      if (matches('together')) return '/web/img/together.svg';
-      if (matches('perplexity')) return '/web/img/perplexity.svg';
-      if (matches('azure')) return '/web/img/azure.svg';
-      if (matches('openrouter')) return '/web/img/openrouter.svg';
-      if (matches('cohere')) return '/web/img/cohere.svg';
-      if (matches('fireworks')) return '/web/img/fireworks.svg';
-      return null;
+      const meta = resolveCompanyMeta(company, model);
+      const icon = COMPANY_ICON_DATA[meta.slug];
+      return icon ? icon.path : null;
     }
 
     function iconTitle(meta) {
@@ -448,7 +538,7 @@
         const participantMeta = {};
         const participants = (d.participants || []).map(p => {
           const label = String(p.label ?? '').trim();
-          const company = canonicalCompany(p.company);
+          const company = canonicalCompany(p.company, p.model);
           if (label) {
             participantMeta[label] = {
               label,
@@ -493,7 +583,7 @@
           metaMap.A = {
             label: 'A',
             model: A.model || '',
-            company: '',
+            company: canonicalCompany('', A.model),
             icon: companyIconPath('', A.model),
           };
         }
@@ -501,7 +591,7 @@
           metaMap.B = {
             label: 'B',
             model: B.model || '',
-            company: '',
+            company: canonicalCompany('', B.model),
             icon: companyIconPath('', B.model),
           };
         }
