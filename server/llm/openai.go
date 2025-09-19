@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/textproto"
 	"os"
 	"strconv"
 	"strings"
@@ -74,10 +75,7 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 		req.Header.Set("OpenAI-Organization", cfg.Organization)
 	}
 	for k, v := range cfg.ExtraHeaders {
-		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
-			continue
-		}
-		req.Header.Set(k, v)
+		setHeaderPreserveCase(req.Header, k, v)
 	}
 
 	client := &http.Client{Timeout: 45 * time.Second}
@@ -284,6 +282,22 @@ func envWithFallback(preferOpenRouter bool, openAIKey, openRouterKey string) str
 		}
 	}
 	return ""
+}
+
+func setHeaderPreserveCase(h http.Header, key, value string) {
+	k := strings.TrimSpace(key)
+	v := strings.TrimSpace(value)
+	if k == "" || v == "" {
+		return
+	}
+	canonical := textproto.CanonicalMIMEHeaderKey(k)
+	if canonical == k {
+		h.Set(k, v)
+		return
+	}
+	h.Del(canonical)
+	h.Del(k)
+	h[k] = []string{v}
 }
 
 func preferOpenRouterEnv() bool {
