@@ -192,6 +192,15 @@
       'xai': 'xai',
       'x.ai': 'xai',
       gemini: 'google',
+      mistralai: 'mistral',
+      metallama: 'meta',
+      googledeepmind: 'google',
+      perplexityai: 'perplexity',
+      togetherai: 'together',
+      togethercomputer: 'together',
+      fireworksai: 'fireworks',
+      claude: 'anthropic',
+      claude35: 'anthropic',
     };
 
     const COMPANY_LABELS = {
@@ -247,24 +256,68 @@
       return '';
     }
 
+    function normalizeCompanySlug(value) {
+      const slug = slugifyCompany(value);
+      if (!slug || slug === 'openrouter') return '';
+      if (COMPANY_ALIAS[slug]) return COMPANY_ALIAS[slug];
+      const prefixMap = [
+        ['openai', 'openai'],
+        ['gpt', 'openai'],
+        ['chatgpt', 'openai'],
+        ['claude', 'anthropic'],
+        ['anthropic', 'anthropic'],
+        ['meta', 'meta'],
+        ['llama', 'meta'],
+        ['metallama', 'meta'],
+        ['mistral', 'mistral'],
+        ['mistralai', 'mistral'],
+        ['google', 'google'],
+        ['deepmind', 'google'],
+        ['gemini', 'google'],
+        ['gemma', 'google'],
+        ['perplexity', 'perplexity'],
+        ['together', 'together'],
+        ['cohere', 'cohere'],
+        ['fireworks', 'fireworks'],
+        ['qwen', 'qwen'],
+        ['deepseek', 'deepseek'],
+        ['groq', 'groq'],
+        ['azure', 'azure'],
+        ['xai', 'xai'],
+        ['grok', 'xai'],
+      ];
+      for (const [prefix, target] of prefixMap) {
+        if (slug.startsWith(prefix)) return target;
+      }
+      return slug;
+    }
+
     function resolveCompanyMeta(company, model) {
       const rawCompany = String(company || '').trim();
-      const lowerCompany = rawCompany.toLowerCase();
       const modelStr = String(model || '').trim();
       const lowerModel = modelStr.toLowerCase();
-      let vendor = '';
-      if (!rawCompany || lowerCompany === 'openrouter') {
-        vendor = extractOpenRouterVendor(modelStr);
+      const vendor = lowerModel.includes('openrouter') ? extractOpenRouterVendor(modelStr) : '';
+
+      const candidateStrings = [rawCompany, vendor];
+      if (vendor) {
+        vendor.split(/[^A-Za-z0-9]+/).forEach(part => {
+          if (part) candidateStrings.push(part);
+        });
       }
-      const fallback = lowerModel.includes('openrouter') ? 'OpenRouter' : 'OpenAI';
-      const primary = vendor || rawCompany || fallback;
-      let slug = slugifyCompany(primary);
-      if (slug === 'openrouter' && vendor) {
-        slug = slugifyCompany(vendor);
+      if (lowerModel.includes('openrouter')) {
+        modelStr.split(/[\/:@-]/).forEach(part => {
+          if (part) candidateStrings.push(part);
+        });
       }
-      if (COMPANY_ALIAS[slug]) slug = COMPANY_ALIAS[slug];
+
+      const candidateSlugs = candidateStrings
+        .map(normalizeCompanySlug)
+        .filter(Boolean);
+
+      let slug = candidateSlugs.find(s => COMPANY_ICON_DATA[s]) || candidateSlugs[0] || '';
       if (!slug) slug = 'openai';
-      const labelSource = vendor || rawCompany || primary;
+
+      const labelSource = vendor || rawCompany || slug;
       const label = COMPANY_LABELS[slug] || prettyCompanyName(labelSource) || 'OpenAI';
       return { slug, label };
     }
