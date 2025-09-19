@@ -24,10 +24,11 @@ function SaveJson($Endpoint, $Path){
 }
 
 # Core pages
-SaveJson '/api/leaderboard' (Join-Path $OutDir 'leaderboard.json')
-SaveJson '/api/matrix'      (Join-Path $OutDir 'matrix.json')
-SaveJson '/api/elo-history' (Join-Path $OutDir 'elo-history.json')
-SaveJson '/api/matches'     (Join-Path $OutDir 'matches.json')
+SaveJson '/api/leaderboard'    (Join-Path $OutDir 'leaderboard.json')
+SaveJson '/api/judge-accuracy' (Join-Path $OutDir 'judge-accuracy.json')
+SaveJson '/api/matrix'         (Join-Path $OutDir 'matrix.json')
+SaveJson '/api/elo-history'    (Join-Path $OutDir 'elo-history.json')
+SaveJson '/api/matches'        (Join-Path $OutDir 'matches.json')
 
 # Per-bot pages
 try {

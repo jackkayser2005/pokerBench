@@ -305,7 +305,7 @@ function rowHTML(i, r){
 
       // Load judge accuracy (best-effort)
       try {
-        const ja = await getJSON('/api/judge-accuracy');
+        const ja = await getJSON('/api/judge-accuracy', '/web/data/judge-accuracy.json');
         if (ja && ja.rows) {
           judgeMap.clear();
           (ja.rows||[]).forEach(x => judgeMap.set(x.bot_id, x));
@@ -365,7 +365,7 @@ function rowHTML(i, r){
 
       async function refreshJudgeAccuracy(){
         try{
-          const ja = await getJSON('/api/judge-accuracy');
+        const ja = await getJSON('/api/judge-accuracy', '/web/data/judge-accuracy.json');
           if (!ja || !ja.rows) return;
           judgeMap.clear();
           (ja.rows||[]).forEach(x => judgeMap.set(x.bot_id, x));

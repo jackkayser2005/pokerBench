@@ -218,7 +218,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				var b7 [7]poker.Card
 				copy(b7[:], vAllPH)
 				vScore := poker.Eval7(&b7)
-				if heroScore < vScore { // lower is better
+				if heroScore > vScore {
 					win++
 				} else if heroScore == vScore {
 					tie++

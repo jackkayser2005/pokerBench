@@ -2144,6 +2144,14 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			log.Printf("InsertParticipantsAndTallies failed: %v", err)
 		}
 
+		accString := func(good, total int) string {
+			if total <= 0 {
+				return "n/a"
+			}
+			pct := 100 * float64(good) / float64(total)
+			return fmt.Sprintf("%d/%d (%.1f%%)", good, total, pct)
+		}
+
 		var judgeGoodA, judgeTotalA, judgeGoodB, judgeTotalB int
 		if db != nil && matchID != 0 {
 			if err := judge.EvaluateMatchMC(context.Background(), db, matchID); err != nil {
@@ -2163,6 +2171,10 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			}
 		}
 
+		fmt.Println(bold("MCJudge accuracy (this match):"))
+		fmt.Printf("  %s %s %s\n", bold("A"), a.Model, accString(judgeGoodA, judgeTotalA))
+		fmt.Printf("  %s %s %s\n", bold("B"), b.Model, accString(judgeGoodB, judgeTotalB))
+
 		// persist career ratings, hands, and judge accuracy
 		if err := db.UpdateBotRatings(context.Background(), botAID, elo.A, gA.Rating, gA.RD, gA.Volatility, 1, handsA, judgeGoodA, judgeTotalA); err != nil {
 			log.Printf("UpdateBotRatings(A) failed: %v", err)
@@ -2172,6 +2184,25 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		}
 		if err := db.SyncJudgeAccuracy(context.Background(), botAID, botBID); err != nil {
 			log.Printf("SyncJudgeAccuracy failed: %v", err)
+		} else {
+			careerParts := make([]string, 0, 2)
+			if botAID != 0 {
+				if good, total, err := db.GetJudgeAccuracy(context.Background(), botAID); err != nil {
+					log.Printf("GetJudgeAccuracy(A) failed: %v", err)
+				} else {
+					careerParts = append(careerParts, fmt.Sprintf("%s %s %s", bold("A"), a.Model, accString(good, total)))
+				}
+			}
+			if botBID != 0 {
+				if good, total, err := db.GetJudgeAccuracy(context.Background(), botBID); err != nil {
+					log.Printf("GetJudgeAccuracy(B) failed: %v", err)
+				} else {
+					careerParts = append(careerParts, fmt.Sprintf("%s %s %s", bold("B"), b.Model, accString(good, total)))
+				}
+			}
+			if len(careerParts) > 0 {
+				fmt.Printf("%s accuracy totals → %s\n", bold("Career"), strings.Join(careerParts, " | "))
+			}
 		}
 
 		if err := db.CompleteMatch(context.Background(), matchID); err != nil {
