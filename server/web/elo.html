@@ -18,6 +18,9 @@
       currentSeries: [],
       companies: [],
       selectedCompany: 'all',
+      sortMode: 'latest',
+      colorAssignments: new Map(),
+      nextColorIndex: 0,
       resizeTimer: null,
       resizeBound: null,
       lastHoverKey: null
@@ -225,6 +228,40 @@
 
     function color(idx) {
       return palette[idx % palette.length];
+    }
+
+    function colorWithAlpha(hex, alpha) {
+      if (typeof hex !== 'string') return hex;
+      const match = hex.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (!match) return hex;
+      let value = match[1];
+      if (value.length === 3) {
+        value = value.split('').map(ch => ch + ch).join('');
+      }
+      const intVal = parseInt(value, 16);
+      const r = (intVal >> 16) & 0xff;
+      const g = (intVal >> 8) & 0xff;
+      const b = intVal & 0xff;
+      const clamped = Math.max(0, Math.min(1, Number(alpha)));
+      return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+    }
+
+    function resetColorAssignments() {
+      if (state.colorAssignments && typeof state.colorAssignments.clear === 'function') {
+        state.colorAssignments.clear();
+      }
+      state.nextColorIndex = 0;
+    }
+
+    function getSeriesColor(entry, fallbackIdx = 0) {
+      const key = entry.botId != null
+        ? `bot:${entry.botId}`
+        : `${entry.meta.companyKey || 'company'}::${entry.meta.model || fallbackIdx}`;
+      if (!state.colorAssignments.has(key)) {
+        const assigned = color(state.nextColorIndex++);
+        state.colorAssignments.set(key, assigned);
+      }
+      return state.colorAssignments.get(key);
     }
 
     function groupByBot(rows) {
@@ -471,11 +508,9 @@
       overlayGroup.appendChild(markerGroup);
 
       const plots = [];
-      let colorIndex = 0;
-
-      series.forEach(entry => {
+      series.forEach((entry, seriesIndex) => {
         if (!entry.pts.length) return;
-        const stroke = color(colorIndex++);
+        const stroke = getSeriesColor(entry, seriesIndex);
 
         const group = mk('g');
         svg.appendChild(group);
@@ -568,9 +603,11 @@
         const modelEl = document.createElement('span');
         modelEl.className = 'chart-legend__model';
         modelEl.textContent = plot.meta.model || 'Unknown';
+        modelEl.style.color = plot.color;
         const companyEl = document.createElement('span');
         companyEl.className = 'chart-legend__company';
         companyEl.textContent = plot.meta.company || 'Unknown';
+        companyEl.style.color = colorWithAlpha(plot.color, 0.7);
         textWrap.appendChild(modelEl);
         textWrap.appendChild(companyEl);
 
@@ -626,6 +663,7 @@
           const modelEl = document.createElement('span');
           modelEl.className = 'chart-tooltip__model';
           modelEl.textContent = pt.meta.model || 'Unknown';
+          modelEl.style.color = pt.color;
           label.appendChild(modelEl);
 
           const value = document.createElement('div');
@@ -774,11 +812,7 @@
       const filtered = key === 'all'
         ? state.fullSeries
         : state.fullSeries.filter(entry => entry.meta.companyKey === key);
-      const sorted = filtered.slice().sort((a, b) => {
-        const aLast = a.pts.length ? a.pts[a.pts.length - 1].elo : -Infinity;
-        const bLast = b.pts.length ? b.pts[b.pts.length - 1].elo : -Infinity;
-        return bLast - aLast;
-      });
+      const sorted = sortSeries(filtered);
       draw(sorted);
     }
 
@@ -795,6 +829,56 @@
         applyFilters();
       });
       host.dataset.bound = 'true';
+    }
+
+    function compareStrings(a, b) {
+      return String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
+    }
+
+    function sortSeries(list) {
+      const items = Array.isArray(list) ? list.slice() : [];
+      if (state.sortMode === 'company') {
+        return items.sort((a, b) => {
+          const aCompany = compareStrings(a.meta.company, b.meta.company);
+          if (aCompany !== 0) return aCompany;
+          const aModel = compareStrings(a.meta.model, b.meta.model);
+          if (aModel !== 0) return aModel;
+          return (a.botId || 0) - (b.botId || 0);
+        });
+      }
+      if (state.sortMode === 'model') {
+        return items.sort((a, b) => {
+          const aModel = compareStrings(a.meta.model, b.meta.model);
+          if (aModel !== 0) return aModel;
+          const aCompany = compareStrings(a.meta.company, b.meta.company);
+          if (aCompany !== 0) return aCompany;
+          return (a.botId || 0) - (b.botId || 0);
+        });
+      }
+      return items.sort((a, b) => {
+        const aLast = a.pts.length ? a.pts[a.pts.length - 1].elo : -Infinity;
+        const bLast = b.pts.length ? b.pts[b.pts.length - 1].elo : -Infinity;
+        if (bLast !== aLast) return bLast - aLast;
+        return compareStrings(a.meta.model, b.meta.model);
+      });
+    }
+
+    function bindSortControl() {
+      const select = document.getElementById('sortMode');
+      if (!select || select.dataset.bound === 'true') return;
+      select.addEventListener('change', () => {
+        const value = select.value || 'latest';
+        if (value === state.sortMode) return;
+        state.sortMode = value;
+        applyFilters();
+      });
+      select.dataset.bound = 'true';
+    }
+
+    function updateSortControl() {
+      const select = document.getElementById('sortMode');
+      if (!select) return;
+      if (select.value !== state.sortMode) select.value = state.sortMode;
     }
 
     function handleResize() {
@@ -834,9 +918,15 @@
       }));
       const grouped = groupByBot(rows);
       state.fullSeries = grouped;
+      resetColorAssignments();
+      grouped.forEach((entry, idx) => {
+        getSeriesColor(entry, idx);
+      });
       state.companies = buildCompanyIndex(grouped);
       renderCompanyFilters();
       bindFilterEvents();
+      bindSortControl();
+      updateSortControl();
       if (!state.resizeBound) {
         state.resizeBound = handleResize;
         window.addEventListener('resize', state.resizeBound);
@@ -882,6 +972,14 @@
         </div>
         <div class="elo-card__filters">
           <div id="companyFilters" class="filter-chips"></div>
+          <label class="sort-control" for="sortMode">
+            <span class="sort-control__label">Sort by</span>
+            <select id="sortMode" name="sortMode" aria-label="Sort Elo series">
+              <option value="latest">Latest Elo</option>
+              <option value="company">Company (A → Z)</option>
+              <option value="model">Model (A → Z)</option>
+            </select>
+          </label>
         </div>
       </div>
       <div class="elo-card__body">
