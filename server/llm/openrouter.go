@@ -30,18 +30,44 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 		ExtraHeaders: map[string]string{},
 	}
 
-	if preferOpenRouterEnv() {
+	preferOpenRouter := preferOpenRouterEnv()
+	if preferOpenRouter {
 		cfg.Kind = providerOpenRouter
 	} else {
 		cfg.Kind = providerOpenAI
 	}
 
+	if provider, ok := detectProviderFromModel(cfg.Model); ok {
+		cfg.Kind = provider
+	}
+
+	manualOverride := false
 	if override := strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))); override != "" {
 		switch override {
 		case "openrouter":
 			cfg.Kind = providerOpenRouter
+			manualOverride = true
 		case "openai":
 			cfg.Kind = providerOpenAI
+			manualOverride = true
+		}
+	}
+
+	if cfg.Model == "" {
+		if cfg.Kind == providerOpenRouter {
+			cfg.Model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
+		}
+		if cfg.Model == "" {
+			cfg.Model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+		}
+	}
+	if cfg.Model == "" {
+		return apiConfig{}, errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
+	}
+
+	if !manualOverride {
+		if provider, ok := detectProviderFromModel(cfg.Model); ok {
+			cfg.Kind = provider
 		}
 	}
 
@@ -60,7 +86,7 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 		}
 	}
 	cfg.BaseURL = strings.TrimRight(base, "/")
-	if strings.Contains(strings.ToLower(cfg.BaseURL), "openrouter") {
+	if !manualOverride && strings.Contains(strings.ToLower(cfg.BaseURL), "openrouter") {
 		cfg.Kind = providerOpenRouter
 	}
 
@@ -70,17 +96,15 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 	case providerOpenRouter:
 		if openRouterKey != "" {
 			cfg.APIKey = openRouterKey
-		} else {
+		} else if openAIKey != "" {
 			cfg.APIKey = openAIKey
 		}
 	default:
-		cfg.APIKey = openAIKey
-	}
-	if cfg.Kind == providerOpenRouter && openRouterKey != "" {
-		cfg.APIKey = openRouterKey
-	}
-	if cfg.APIKey == "" {
-		cfg.APIKey = openRouterKey
+		if openAIKey != "" {
+			cfg.APIKey = openAIKey
+		} else if openRouterKey != "" {
+			cfg.APIKey = openRouterKey
+		}
 	}
 	if cfg.APIKey == "" {
 		return apiConfig{}, errors.New("API key missing: set OPENAI_API_KEY or OPENROUTER_API_KEY")
@@ -114,18 +138,6 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 		}
 	}
 
-	if cfg.Model == "" {
-		if cfg.Kind == providerOpenRouter {
-			cfg.Model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
-		}
-		if cfg.Model == "" {
-			cfg.Model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
-		}
-	}
-	if cfg.Model == "" {
-		return apiConfig{}, errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
-	}
-
 	return cfg, nil
 }
 
@@ -140,4 +152,15 @@ func firstNonEmpty(values ...string) string {
 
 func PreferOpenRouter() bool {
 	return preferOpenRouterEnv()
+}
+
+func detectProviderFromModel(model string) (providerKind, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	if normalized == "" {
+		return providerOpenAI, false
+	}
+	if strings.Contains(normalized, "openrouter/") {
+		return providerOpenRouter, true
+	}
+	return providerOpenAI, false
 }
