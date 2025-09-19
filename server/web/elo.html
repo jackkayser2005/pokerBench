@@ -8,6 +8,7 @@
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
     <script>
     const palette = ['#4df6b4', '#76b0ff', '#ffd166', '#f08cf0', '#ff6d6d', '#9de7ff', '#c4f98b', '#b59bff'];
+    const MATCH_LEGEND_COLORS = ['#39d98a', '#d6c29b', '#76b0ff', '#f08cf0'];
     const state = {
       dims: { width: 1100, height: 440 },
       pad: { top: 48, right: 70, bottom: 64, left: 78 },
@@ -164,24 +165,19 @@
       return { label, model, company };
     }
 
-    function buildLegendEntry(slot, meta) {
+    function buildLegendEntry(meta, color) {
       const host = document.createElement('div');
       host.className = 'match-legend__item';
-      const color = slot === 'A' ? '#39d98a' : '#d6c29b';
-      host.style.setProperty('--legend-color', color);
+      const resolvedColor = color || MATCH_LEGEND_COLORS[0];
+      host.style.setProperty('--legend-color', resolvedColor);
 
       const swatch = document.createElement('span');
       swatch.className = 'match-legend__swatch';
-      swatch.style.background = color;
+      swatch.style.background = resolvedColor;
       host.appendChild(swatch);
 
       const details = document.createElement('div');
       details.className = 'match-legend__details';
-
-      const slotEl = document.createElement('span');
-      slotEl.className = 'match-legend__slot';
-      slotEl.textContent = slot;
-      details.appendChild(slotEl);
 
       const infoWrap = document.createElement('div');
       infoWrap.className = 'match-legend__info';
@@ -225,14 +221,20 @@
         const res = await fetch('/api/last-match');
         if (!res.ok) return;
         const data = await res.json();
-        const participants = Array.isArray(data?.participants) ? data.participants : [];
-        const map = new Map();
-        participants.forEach(p => {
-          const { label, model, company } = normalizeLegendMeta(p);
-          if (label) map.set(label, { label, model, company });
+        const participants = data && Array.isArray(data.participants) ? data.participants : [];
+        const built = [];
+        const seen = new Set();
+        participants.forEach(participant => {
+          const meta = normalizeLegendMeta(participant);
+          const hasDetails = (meta.model || '').trim() || (meta.company || '').trim();
+          if (!hasDetails) return;
+          const key = `${meta.model}::${meta.company}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          const color = MATCH_LEGEND_COLORS[built.length % MATCH_LEGEND_COLORS.length];
+          built.push(buildLegendEntry(meta, color));
         });
-        const slots = ['A', 'B'];
-        const entries = slots.map(slot => buildLegendEntry(slot, map.get(slot) || { label: slot, model: '', company: '' }));
+        const entries = built;
         const hasLegend = entries.some(entry => entry.hasInfo);
         if (!hasLegend) return;
         entries.forEach(entry => host.appendChild(entry.element));
@@ -881,7 +883,7 @@
     }
   </script>
 </head>
-<body>
+<body class="page-elo">
   <header class="site-header">
     <div class="topnav">
       <a class="brand" href="/web/index.html" aria-label="PokerBench home">

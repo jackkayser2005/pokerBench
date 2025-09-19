@@ -491,6 +491,13 @@ pre { background: var(--slate-3); border: 1px solid var(--border); border-radius
   justify-content: center;
 }
 .brand__mark.logo-badge { --logo-badge-size: clamp(36px, 2.6vw, 44px); }
+.page-elo .topnav .logo-badge img,
+.page-elo .site-footer__brand .logo-badge img {
+  width: 88%;
+}
+.page-elo .site-footer__brand .logo-badge img {
+  width: 92%;
+}
 .brand__text {
   font-size: clamp(1.05rem, 0.95rem + .4vw, 1.35rem);
   letter-spacing: .04em;
@@ -1209,11 +1216,13 @@ svg text { fill: color-mix(in oklab, var(--muted) 82%, transparent); font-family
 .cardx .back{
   border:6px solid #fff;   /* standard frame */
   transform: rotateY(0deg);
-  background: conic-gradient(
-    var(--card-darkBg) 25%, var(--card-lightBg) 25%,
-    var(--card-lightBg) 50%, var(--card-darkBg) 50%,
-    var(--card-darkBg) 75%, var(--card-lightBg) 75%);
-  background-size:20px 20px; border-radius:10px;
+  background-color:#0f5e2a;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,.92) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.92) 75%, rgba(255,255,255,.92)),
+    linear-gradient(45deg, rgba(255,255,255,.92) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.92) 75%, rgba(255,255,255,.92));
+  background-position: 0 0, 12px 12px;
+  background-size:24px 24px;
+  border-radius:10px;
 }
 
 /* JS toggles .flip to reveal */
@@ -1230,14 +1239,15 @@ svg text { fill: color-mix(in oklab, var(--muted) 82%, transparent); font-family
 .suit.main::after{ content:""; color:transparent; -webkit-background-clip:text; background-clip:text; }
 
 /* Suit colors + glyphs */
-.spade,.club{ color: var(--card-darkBlk); }
+.spade{ color:#111d2f; }
+.club{ color:#0f6b3d; }
 .heart,.diamond{ color: var(--card-darkRed); }
 .spade .suit::after{ content:'\2660'; } .heart .suit::after{ content:'\2665'; }
 .diamond .suit::after{ content:'\2666'; } .club .suit::after{ content:'\2663'; }
 
 /* Center suit gradients */
-.spade .suit.main::after{   background-image: linear-gradient(135deg, var(--card-darkBlk) 50%, var(--card-lightBlk) 50%); }
-.club  .suit.main::after{   background-image: linear-gradient(135deg, var(--card-darkBlk) 50%, var(--card-lightBlk) 50%); }
+.spade .suit.main::after{   background-image: linear-gradient(135deg, #0b1220 50%, #1f3148 50%); }
+.club  .suit.main::after{   background-image: linear-gradient(135deg, #10a95c 50%, #0b5033 50%); }
 .heart .suit.main::after{   background-image: linear-gradient(135deg, var(--card-darkRed) 50%, var(--card-lightRed) 50%); }
 .diamond .suit.main::after{ background-image: linear-gradient(135deg, var(--card-darkRed) 50%, var(--card-lightRed) 50%); }
 
