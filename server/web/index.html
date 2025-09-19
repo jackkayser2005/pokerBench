@@ -143,6 +143,7 @@
     const $ = sel => document.querySelector(sel);
     const fmt = n => n.toLocaleString();
     const pct = n => `${Math.max(0, Math.round(n))}%`;
+    const MAX_LEADERBOARD_PREVIEW = 5;
     const safe = s => String(s ?? '').replace(/[&<>"']/g, ch => ({
       "&": "&amp;",
       "<": "&lt;",
@@ -657,7 +658,8 @@
         const res = await fetch('/api/leaderboard');
         if (!res.ok) throw new Error('bad status');
         const data = await res.json();
-        const rows = ((data && data.rows) || data || []).slice(0, 5);
+        const rawRows = Array.isArray(data && data.rows) ? data.rows : Array.isArray(data) ? data : [];
+        const rows = rawRows.slice(0, MAX_LEADERBOARD_PREVIEW);
         if (!rows.length) {
           empty.hidden = false;
           return;
