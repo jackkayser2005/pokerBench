@@ -75,11 +75,18 @@ Run mirrored-seed duels, compute Elo & Glicko-2, log every action, audit EV with
 # 1) copy the sample envs (edit them with your models/keys)
 cp compose.env.example compose.env
 mkdir -p secrets
+# for OpenAI keys
 printf 'sk-...' > secrets/openai_api_key.txt
+# optionally drop an OpenRouter key alongside it
+# printf 'or-key-...' > secrets/openrouter_api_key.txt
 
 # 2) launch the stack
 docker compose up --build
 ```
+
+Both files can live side by side – the bootstrapper looks at `OPENAI_API_BASE` and automatically
+chooses the matching secret, copying an OpenRouter key into `OPENAI_API_KEY` when you target
+`https://openrouter.ai/api/v1`.
 
 The server becomes available at [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html).
 `docker compose` also spins up:
@@ -160,6 +167,7 @@ Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` an
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` | Auth token for the LLM provider. | _(required)_ |
+| `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` | Alternative secret for OpenRouter users. Detected automatically when `OPENAI_API_BASE` targets OpenRouter. | _(optional)_ |
 | `DATABASE_URL` | PostgreSQL DSN (`postgres://user:pass@host:port/db?sslmode=`). | `postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable` |
 | `PORT` | HTTP port for the server mode. | `8080` |
 | `OPENAI_MODEL_A` / `OPENAI_MODEL_B` | Model identifiers for the A/B seats. | `OPENAI_MODEL` fallback |
@@ -169,7 +177,7 @@ Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` an
 | `LLM_COMPANY` | Label used in the UI (e.g., `OpenAI`, `Anthropic`). | derived |
 | `AUTO_MIGRATE` | Run database migrations on startup (recommended in dev). | `0` |
 
-Secrets can be provided via Docker secrets (`secrets/openai_api_key.txt`) or traditional env vars.
+Secrets can be provided via Docker secrets (`secrets/openai_api_key.txt` or `secrets/openrouter_api_key.txt`) or traditional env vars.
 
 ### Behavioral Knobs
 

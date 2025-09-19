@@ -24,7 +24,8 @@ services:
       context: .
       dockerfile: Dockerfile
     secrets:
-      - openai_api_key
+      - source: openai_api_key
+        target: openai_api_key
     env_file:
       - ${ENV_FILE:-compose.env}        # set ENV_FILE to choose a different env
     environment:
@@ -33,6 +34,8 @@ services:
       db:
         condition: service_healthy
     ports: ["8080:8080"]
+    volumes:
+      - ./secrets:/app/secrets:ro
     command: ["/app/ai-thunderdome"]    # server mode
     restart: unless-stopped
 
@@ -41,7 +44,8 @@ services:
       context: .
       dockerfile: Dockerfile
     secrets:
-      - openai_api_key
+      - source: openai_api_key
+        target: openai_api_key
     env_file:
       - ${ENV_FILE:-compose.env}
     environment:
@@ -50,13 +54,16 @@ services:
       db:
         condition: service_healthy
     command: ["/app/ai-thunderdome", "--duel"]
+    volumes:
+      - ./secrets:/app/secrets:ro
 
   migrate:
     build:
       context: .
       dockerfile: Dockerfile
     secrets:
-      - openai_api_key
+      - source: openai_api_key
+        target: openai_api_key
     env_file:
       - ${ENV_FILE:-compose.env}
     environment:
@@ -66,6 +73,8 @@ services:
         condition: service_healthy
     command: ["/app/ai-thunderdome", "--migrate"]
     restart: "no"
+    volumes:
+      - ./secrets:/app/secrets:ro
 
 volumes:
   pgdata:
