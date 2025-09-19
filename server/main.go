@@ -122,10 +122,6 @@ func loadAPIKeyFromSecret() {
 		return true
 	}
 
-	if setKey(os.Getenv("OPENAI_API_KEY")) {
-		return
-	}
-
 	tryEnv := func(names ...string) bool {
 		for _, name := range names {
 			if setKey(os.Getenv(name)) {
@@ -174,15 +170,19 @@ func loadAPIKeyFromSecret() {
 		"/run/secrets/openrouter_api_key",
 	)
 
+	openAIEnvCheck := func() bool { return setKey(os.Getenv("OPENAI_API_KEY")) }
+
 	var checks []func() bool
 	if preferOpenRouter {
 		checks = append(checks,
 			func() bool { return tryEnv("OPENROUTER_API_KEY") },
 			func() bool { return tryPaths(openrouterPaths) },
+			openAIEnvCheck,
 			func() bool { return tryPaths(openaiPaths) },
 		)
 	} else {
 		checks = append(checks,
+			openAIEnvCheck,
 			func() bool { return tryPaths(openaiPaths) },
 			func() bool { return tryEnv("OPENROUTER_API_KEY") },
 			func() bool { return tryPaths(openrouterPaths) },
