@@ -15,7 +15,7 @@
 
     // nav active state
     document.addEventListener('DOMContentLoaded', ()=>{
-      document.querySelectorAll('.topnav a').forEach(a=>{
+      document.querySelectorAll('.topnav__links a').forEach(a=>{
         try{
           if(location.pathname.endsWith(a.getAttribute('href').split('/').pop()))
             a.classList.add('active');
@@ -225,20 +225,96 @@
 <body>
   <header class="site-header">
     <div class="topnav">
-      <a class="brand" href="/web/index.html" aria-label="PokerBench home">
+      <a class="brand" href="/web/live.html" aria-label="PokerBench latest match">
         <span class="brand__mark logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>
         <span class="brand__text">PokerBench</span>
       </a>
-      <nav>
-        <a class="pill" href="/web/leaderboard.html">Leaderboard</a>
-        <a class="pill" href="/web/matrix.html">Matrix</a>
-        <a class="pill" href="/web/elo.html">Elo</a>
-        <a class="pill" href="/web/replay.html">Replay</a>
-        <a class="pill" href="/web/history.html">History</a>
-        <a class="pill" href="/web/about.html">About</a>
+      <nav class="topnav__links" aria-label="Primary navigation">
+        <a class="pill nav-link" href="/web/leaderboard.html">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M16 21H8m4-4v4m0-4a4 4 0 0 0 4-4V4H8v9a4 4 0 0 0 4 4ZM5 4H4a2 2 0 0 0-2 2v1a5 5 0 0 0 5 5h.5M19 4h1a2 2 0 0 1 2 2v1a5 5 0 0 1-5 5h-.5"></path>
+            </svg>
+          </span>
+          <span class="nav-link__label">Leaderboard</span>
+        </a>
+        <a class="pill nav-link" href="/web/matrix.html">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" fill="none"></rect>
+              <rect x="14" y="3" width="7" height="7" rx="1.5" fill="none"></rect>
+              <rect x="3" y="14" width="7" height="7" rx="1.5" fill="none"></rect>
+              <rect x="14" y="14" width="7" height="7" rx="1.5" fill="none"></rect>
+            </svg>
+          </span>
+          <span class="nav-link__label">Matrix</span>
+        </a>
+        <a class="pill nav-link" href="/web/elo.html">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M4 19h16"></path>
+              <path d="M4 16.5 8.5 11l4 3.5L20 6.5"></path>
+            </svg>
+          </span>
+          <span class="nav-link__label">Elo</span>
+        </a>
+        <a class="pill nav-link" href="/web/replay.html">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M14.752 11.168 11.1 8.64A1 1 0 0 0 9.5 9.64v4.72a1 1 0 0 0 1.6.8l3.652-2.528a1 1 0 0 0 0-1.664ZM21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"></path>
+            </svg>
+          </span>
+          <span class="nav-link__label">Replay</span>
+        </a>
+        <a class="pill nav-link" href="/web/history.html">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M12 6v6h4.5"></path>
+              <path d="M21.75 12a9.75 9.75 0 1 1-19.5 0 9.75 9.75 0 0 1 19.5 0Z"></path>
+            </svg>
+          </span>
+          <span class="nav-link__label">History</span>
+        </a>
+        <a class="pill nav-link" href="/web/about.html">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <circle cx="12" cy="12" r="9" fill="none"></circle>
+              <path d="M12 10v6"></path>
+              <path d="M12 7h.01"></path>
+            </svg>
+          </span>
+          <span class="nav-link__label">About</span>
+        </a>
       </nav>
+      <div class="topnav__actions">
+        <button class="pill nav-link nav-settings" type="button" aria-expanded="false" aria-controls="navSettingsPanel">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M10.5 3.5 9.8 5.7a1 1 0 0 1-.7.7L6.9 6.9a1 1 0 0 0-.5 1.6l1.6 1.6a1 1 0 0 1 .3.9l-.4 2.3a1 1 0 0 0 1 1.2h2.2a1 1 0 0 1 .9.6l1 2.1a1 1 0 0 0 1.8 0l1-2.1a1 1 0 0 1 .9-.6h2.2a1 1 0 0 0 1-1.2l-.4-2.3a1 1 0 0 1 .3-.9l1.6-1.6a1 1 0 0 0-.5-1.6l-2.2-.5a1 1 0 0 1-.7-.7l-.7-2.2a1 1 0 0 0-1-.7h-2.4a1 1 0 0 0-1 .7Z"></path>
+              <circle cx="12" cy="12" r="2.5"></circle>
+            </svg>
+          </span>
+          <span class="nav-link__label">Settings</span>
+        </button>
+        <div class="nav-settings__panel" id="navSettingsPanel" hidden tabindex="-1">
+          <div class="nav-settings__section">
+            <h3>Display</h3>
+            <button class="nav-settings__row" type="button" disabled>
+              <span class="nav-settings__label">Theme</span>
+              <span class="nav-settings__hint">Auto (coming soon)</span>
+            </button>
+          </div>
+          <div class="nav-settings__section">
+            <h3>Notifications</h3>
+            <button class="nav-settings__row" type="button" disabled>
+              <span class="nav-settings__label">Match alerts</span>
+              <span class="nav-settings__hint">Not yet available</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -288,7 +364,7 @@
 
   <footer class="site-footer">
     <div class="site-footer__inner">
-      <a class="site-footer__brand" href="/web/index.html">
+      <a class="site-footer__brand" href="/web/live.html">
         <span class="logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>

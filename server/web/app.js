@@ -40,7 +40,7 @@
       applyScrollState();
     }
 
-    const navLinks = document.querySelectorAll('.topnav nav a[href]');
+    const navLinks = document.querySelectorAll('.topnav__links a[href]');
     if (navLinks.length) {
       const pathParts = location.pathname.split('/');
       const currentSlug = (pathParts[pathParts.length - 1] || '').toLowerCase();
@@ -57,6 +57,50 @@
           link.removeAttribute('aria-current');
         }
       });
+    }
+
+    const settingsToggle = document.querySelector('.nav-settings');
+    const settingsPanel = document.getElementById('navSettingsPanel');
+    const actionsHost = settingsToggle?.closest('.topnav__actions');
+    if (settingsToggle && settingsPanel && actionsHost) {
+      const closePanel = () => {
+        actionsHost.classList.remove('is-open');
+        settingsToggle.setAttribute('aria-expanded', 'false');
+        settingsPanel.hidden = true;
+      };
+
+      const openPanel = () => {
+        actionsHost.classList.add('is-open');
+        settingsToggle.setAttribute('aria-expanded', 'true');
+        settingsPanel.hidden = false;
+      };
+
+      const togglePanel = () => {
+        const isOpen = actionsHost.classList.contains('is-open');
+        if (isOpen) {
+          closePanel();
+        } else {
+          openPanel();
+          settingsPanel.focus?.({ preventScroll: true });
+        }
+      };
+
+      settingsToggle.addEventListener('click', event => {
+        event.preventDefault();
+        togglePanel();
+      });
+
+      document.addEventListener('click', event => {
+        if (!actionsHost.contains(event.target)) {
+          closePanel();
+        }
+      });
+
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closePanel();
+      });
+
+      closePanel();
     }
   };
 
