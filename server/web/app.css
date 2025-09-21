@@ -2159,6 +2159,7 @@ turn-pill {
   --card-front-color: #0f172a;
   --card-back-bg: radial-gradient(circle at 25% 25%, #16213a 0%, #0b1226 70%, #020617 100%);
   --card-back-pattern: rgba(255, 255, 255, 0.08);
+  --card-glyph: '';
   width: var(--card-w);
   height: var(--card-h);
   border-radius: 18px;
@@ -2237,14 +2238,15 @@ turn-pill {
   display: block;
   font-size: 0.65em;
   margin-top: 2px;
+  content: var(--card-glyph, '');
 }
 
 .cardx .suit {
   font-size: var(--glyph-size);
 }
 
-.cardx .suit.main::after {
-  content: '';
+.cardx .suit::after {
+  content: var(--card-glyph, '');
 }
 
 .spade {
@@ -2260,32 +2262,13 @@ turn-pill {
   color: #0f766e;
 }
 
-.spade .suit::after,
-.spade .num-box.suit::after {
-  content: '\2660';
-}
-
-.heart .suit::after,
-.heart .num-box.suit::after {
-  content: '\2665';
-}
-
-.diamond .suit::after,
-.diamond .num-box.suit::after {
-  content: '\2666';
-}
-
-.club .suit::after,
-.club .num-box.suit::after {
-  content: '\2663';
-}
-
 .cardx.spade {
   --card-front-bg: radial-gradient(circle at 25% 25%, #f8fafc 0%, #e2e8f0 100%);
   --card-front-border: rgba(15, 23, 42, 0.18);
   --card-front-color: #0f172a;
   --card-back-bg: radial-gradient(circle at 25% 25%, #1e293b 0%, #0f172a 65%, #020617 100%);
   --card-back-pattern: rgba(148, 163, 184, 0.22);
+  --card-glyph: '\2660';
 }
 
 .cardx.heart {
@@ -2294,6 +2277,7 @@ turn-pill {
   --card-front-color: #b91c1c;
   --card-back-bg: linear-gradient(130deg, #7f1d1d 0%, #be123c 55%, #9f1239 100%);
   --card-back-pattern: rgba(254, 226, 226, 0.25);
+  --card-glyph: '\2665';
 }
 
 .cardx.diamond {
@@ -2302,6 +2286,7 @@ turn-pill {
   --card-front-color: #b91c1c;
   --card-back-bg: linear-gradient(135deg, #9d174d 0%, #be185d 55%, #831843 100%);
   --card-back-pattern: rgba(255, 228, 230, 0.28);
+  --card-glyph: '\2666';
 }
 
 .cardx.club {
@@ -2310,6 +2295,7 @@ turn-pill {
   --card-front-color: #065f46;
   --card-back-bg: linear-gradient(135deg, #064e3b 0%, #047857 55%, #065f46 100%);
   --card-back-pattern: rgba(187, 247, 208, 0.32);
+  --card-glyph: '\2663';
 }
 
 @media (max-width: 1080px) {
