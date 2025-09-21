@@ -66,7 +66,20 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 	url := cfg.BaseURL + "/chat/completions"
 	removed := map[string]bool{}
 
-	for attempts := 0; attempts < 3; attempts++ {
+	maxAttempts := 3
+	if cfg.Kind == providerOpenRouter {
+		removalCandidates := 0
+		for _, key := range []string{"response_format", "reasoning", "max_tokens"} {
+			if _, exists := payload[key]; exists {
+				removalCandidates++
+			}
+		}
+		if attemptBudget := 1 + removalCandidates; attemptBudget > maxAttempts {
+			maxAttempts = attemptBudget
+		}
+	}
+
+	for attempts := 0; attempts < maxAttempts; attempts++ {
 		b, _ := json.Marshal(payload)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 		if err != nil {
