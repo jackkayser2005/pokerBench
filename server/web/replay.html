@@ -4,431 +4,12 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab - Replay</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=8"/>
+  <link rel="stylesheet" href="/web/app.css?v=9"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
-  <script>
-    // ------- helpers
-    const $ = (s) => document.querySelector(s);
-    const q = new URLSearchParams(location.search);
-    const fmtChips = (n) => (n == null ? '0' : Number(n).toLocaleString());
-
-    // ------- state
-    let matchId = q.get('match_id');
-    let modelA = 'A', modelB = 'B';
-    let rows = [];
-    let i = 0;
-    let timer = null;
-    let playing = false;
-    const introHoldFactor = 1.8; // extra delay between first and second action
-    const speedBase = 1500; // ms for v=1
-    let speed = speedBase;
-    let prevHandId = null;
-    let prevBoardKey = '';
-    let dealerOnSB = true;
-    let dealerEl = null;
-    let winnerSeat = null; // 'SB' | 'BB' | null
-
-    const SUIT_INFO = {
-      club: { name: 'club', glyph: '♣', aria: 'clubs' },
-      diamond: { name: 'diamond', glyph: '♦', aria: 'diamonds' },
-      heart: { name: 'heart', glyph: '♥', aria: 'hearts' },
-      spade: { name: 'spade', glyph: '♠', aria: 'spades' }
-    };
-    const SUIT_ALIASES = new Map([
-      ['c', 'club'], ['club', 'club'], ['clubs', 'club'], ['♣', 'club'], ['♣️', 'club'], ['♧', 'club'],
-      ['d', 'diamond'], ['diamond', 'diamond'], ['diamonds', 'diamond'], ['♦', 'diamond'], ['♦️', 'diamond'], ['♢', 'diamond'],
-      ['h', 'heart'], ['heart', 'heart'], ['hearts', 'heart'], ['♥', 'heart'], ['♥️', 'heart'], ['♡', 'heart'],
-      ['s', 'spade'], ['spade', 'spade'], ['spades', 'spade'], ['♠', 'spade'], ['♠️', 'spade'], ['♤', 'spade']
-    ]);
-    const NUMBER_WORDS = {
-      2: 'two',
-      3: 'three',
-      4: 'four',
-      5: 'five',
-      6: 'six',
-      7: 'seven',
-      8: 'eight',
-      9: 'nine',
-      10: 'ten'
-    };
-    const rankLookup = new Map();
-    const registerRank = (text, aria, ...keys) => {
-      const info = { text, aria };
-      keys.forEach(key => {
-        if (key != null) rankLookup.set(String(key).toUpperCase(), info);
-      });
-    };
-    registerRank('A', 'ace', 'A', 'ACE', '1', '14');
-    registerRank('K', 'king', 'K', 'KING', '13');
-    registerRank('Q', 'queen', 'Q', 'QUEEN', '12');
-    registerRank('J', 'jack', 'J', 'JACK', '11');
-    registerRank('10', 'ten', 'T', '10', 'TEN', '0');
-    for (let n = 2; n <= 9; n++) {
-      registerRank(String(n), NUMBER_WORDS[n], String(n));
-    }
-
-    function normalizeRank(value) {
-      if (value == null) return { text: '', aria: '' };
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        const info = rankLookup.get(String(Math.trunc(value)));
-        if (info) return { ...info };
-      }
-      const raw = String(value).trim();
-      if (!raw) return { text: '', aria: '' };
-      const direct = rankLookup.get(raw.toUpperCase());
-      if (direct) return { ...direct };
-      return { text: raw.toUpperCase(), aria: raw.toLowerCase() };
-    }
-
-    function normalizeSuit(value) {
-      if (value == null) return { name: '', glyph: '', aria: '' };
-      const raw = String(value).trim();
-      if (!raw) return { name: '', glyph: '', aria: '' };
-      const lowered = raw.toLowerCase().replace(/\ufe0f/g, '');
-      const direct = SUIT_ALIASES.get(lowered)
-        || SUIT_ALIASES.get(lowered.slice(-1))
-        || SUIT_ALIASES.get(lowered.charAt(0));
-      const info = direct ? SUIT_INFO[direct] : null;
-      return info ? { ...info } : { name: '', glyph: '', aria: '' };
-    }
-
-    function cardParts(card) {
-      if (card == null) {
-        return { rank: '', suitName: '', suitGlyph: '', label: '', aria: '' };
-      }
-      let raw = '';
-      if (typeof card === 'string' || typeof card === 'number') {
-        raw = String(card).trim();
-      } else if (typeof card === 'object') {
-        const rawFields = ['raw', 'code', 'card'];
-        for (const key of rawFields) {
-          if (typeof card[key] === 'string') {
-            raw = card[key].trim();
-            break;
-          }
-        }
-      }
-
-      let rankSrc = '';
-      let suitSrc = '';
-      if (typeof card === 'object' && card) {
-        rankSrc = card.rank ?? card.r ?? card.value ?? card.face ?? '';
-        suitSrc = card.suit ?? card.s ?? card.suit_key ?? card.suitName ?? '';
-      }
-
-      if (!rankSrc || !suitSrc) {
-        const candidate = (raw || '').replace(/\s+/g, '');
-        const match = candidate.match(/^(.+?)([cdhsCDHS♣♦♥♠])$/);
-        if (match) {
-          if (!rankSrc) rankSrc = match[1];
-          if (!suitSrc) suitSrc = match[2];
-        } else if (!rankSrc && candidate.length >= 2) {
-          rankSrc = candidate.slice(0, -1);
-          suitSrc = suitSrc || candidate.slice(-1);
-        }
-      }
-
-      const fallbackRaw = raw ? raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
-      const rankInfo = normalizeRank(rankSrc || fallbackRaw);
-      const suitInfo = normalizeSuit(suitSrc);
-      const rankText = rankInfo.text || (fallbackRaw ? fallbackRaw.slice(0, 2) : '');
-      const glyph = suitInfo.glyph;
-      const label = rankText ? (glyph ? `${rankText}${glyph}` : rankText) : (raw || fallbackRaw);
-      const ariaParts = [];
-      if (rankInfo.aria) {
-        ariaParts.push(rankInfo.aria.charAt(0).toUpperCase() + rankInfo.aria.slice(1));
-      }
-      if (suitInfo.aria) {
-        ariaParts.push(`of ${suitInfo.aria}`);
-      }
-      const aria = ariaParts.join(' ').trim();
-      return {
-        rank: rankText,
-        suitName: suitInfo.name,
-        suitGlyph: glyph,
-        label: label || '',
-        aria: aria || (label ? `Card ${label}` : '')
-      };
-    }
-
-    // Render cards into a slot; reveal by toggling .flip post-insert
-    function setCards(el, arr, reveal) {
-      if (!el) return;
-      el.innerHTML = '';
-      const list = Array.isArray(arr) ? arr : (arr != null ? [arr] : []);
-      list.forEach((entry, idx) => {
-        const { rank, suitName, suitGlyph, label, aria } = cardParts(entry);
-        const card = document.createElement('div');
-        card.className = 'cardx deal';
-        if (suitName) card.classList.add(suitName);
-        if (label) card.setAttribute('title', label);
-        if (aria) {
-          card.setAttribute('role', 'img');
-          card.setAttribute('aria-label', aria);
-        }
-        card.style.animationDelay = `${idx * 100}ms`;
-        if (suitGlyph) {
-          card.style.setProperty('--card-glyph', "'" + suitGlyph + "'");
-        } else {
-          card.style.removeProperty('--card-glyph');
-          if (!suitName && label) {
-            card.style.setProperty('--card-glyph', "'?'");
-          }
-        }
-
-        const back = document.createElement('div');
-        back.className = 'face back';
-        const front = document.createElement('div');
-        front.className = 'face front';
-
-        const top = document.createElement('div');
-        top.className = 'num-box top suit';
-        top.textContent = (rank || label || '').slice(0, 3);
-        const bottom = document.createElement('div');
-        bottom.className = 'num-box bottom suit';
-        bottom.textContent = (rank || label || '').slice(0, 3);
-        const center = document.createElement('div');
-        center.className = 'suit main';
-
-        front.appendChild(top);
-        front.appendChild(bottom);
-        front.appendChild(center);
-        card.appendChild(back);
-        card.appendChild(front);
-        el.appendChild(card);
-        if (reveal && (rank || label)) card.classList.add('flip');
-      });
-    }
-
-    function dateShort(iso) {
-      const d = new Date(iso);
-      return d.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-    }
-
-    function draw() {
-      if (!rows.length) return;
-      const r = rows[i];
-
-      // Hand header "<hand> — <street>"
-      const handEl = $('#hand');
-      if (handEl) handEl.textContent = `${r.hand_id} \u2014 ${r.street}`;
-      const potEl = $('#pot');
-      if (potEl) potEl.textContent = fmtChips(r.pot);
-
-      // Board: reflip when composition changes
-      const boardArr = r.board || [];
-      const key = boardArr.join(',');
-      if (key !== prevBoardKey) {
-        prevBoardKey = key;
-        setCards($('#board'), boardArr, false);
-        setTimeout(() => { $('#board')?.querySelectorAll('.cardx').forEach((c) => c.classList.add('flip')); }, 140);
-      }
-
-      // Holes: reveal based on selector
-      const sel = $('#holesSel');
-      const mode = sel ? sel.value : 'both';
-      const showSB = mode === 'both' || mode === 'sb';
-      const showBB = mode === 'both' || mode === 'bb';
-      setCards($('#sb_hole'), r.sb_hole || [], false);
-      setCards($('#bb_hole'), r.bb_hole || [], false);
-      $('#sb_hole')?.querySelectorAll('.cardx').forEach((c) => c.classList.toggle('flip', showSB));
-      $('#bb_hole')?.querySelectorAll('.cardx').forEach((c) => c.classList.toggle('flip', showBB));
-
-      // Seat headers per hand: map A/B to SB/BB using hand suffix
-      const aIsSB = /A$/i.test((r.hand_id||''));
-      const sbName = aIsSB ? modelA : modelB;
-      const bbName = aIsSB ? modelB : modelA;
-      const sbHdr = document.querySelector('#sbZone .muted');
-      const bbHdr = document.querySelector('#bbZone .muted');
-      if (sbHdr) sbHdr.textContent = `SB \u2014 ${sbName}`;
-      if (bbHdr) bbHdr.textContent = `BB \u2014 ${bbName}`;
-
-      // Stacks
-      const sbTag = $('#sb_stack_tag');
-      const bbTag = $('#bb_stack_tag');
-      if (sbTag) sbTag.textContent = `Stack: ${fmtChips(r.sb_stack)}`;
-      if (bbTag) bbTag.textContent = `Stack: ${fmtChips(r.bb_stack)}`;
-
-      // Caption + turn indicator
-      const who = (r.actor_label === 'A' ? modelA : modelB) || r.actor_label;
-      const actionText = `${who} ${r.action}` + (r.amount != null ? ` ${r.action === 'call' ? 'for' : 'to'} ${r.amount}` : '');
-      const log = $('#log'); if (log) log.textContent = actionText;
-      const caption = $('#caption'); if (caption) caption.textContent = actionText;
-
-      const turn = $('#turn');
-      if (turn) {
-        const abbrev = r.actor_label;
-        turn.textContent = `Turn: ${abbrev}`;
-      }
-
-      const replayCard = document.querySelector('.card.replay');
-      if (replayCard) {
-        replayCard.classList.remove('focus-sb', 'focus-bb');
-        replayCard.classList.add(r.actor_label === 'A' ? 'focus-sb' : 'focus-bb');
-      }
-
-      // Dealer hop on hand boundary
-      if (prevHandId !== r.hand_id) {
-        prevHandId = r.hand_id;
-        winnerSeat = null; // reset for new hand
-        const sbZ = $('#sbZone'), bbZ = $('#bbZone');
-        sbZ?.classList.remove('win-glow');
-        bbZ?.classList.remove('win-glow');
-        const hb0 = $('#handBanner'); if (hb0) hb0.textContent = '';
-        dealerOnSB = !dealerOnSB;
-        const target = dealerOnSB ? sbZ : bbZ;
-        if (target) {
-          if (!dealerEl) { dealerEl = document.createElement('div'); dealerEl.className = 'dealer dealer-move'; dealerEl.textContent = 'D'; }
-          target.prepend(dealerEl);
-          dealerEl.classList.remove('dealer-move'); void dealerEl.offsetWidth; dealerEl.classList.add('dealer-move');
-        }
-      }
-
-      // End-of-hand banner + winner glow
-      const sbZ = $('#sbZone'), bbZ = $('#bbZone');
-      const hb = $('#handBanner');
-      const endOfHand = i === rows.length - 1 || (rows[i + 1]?.hand_id !== r.hand_id);
-      if (endOfHand) {
-        if (!winnerSeat && r.winner_seat) {
-          winnerSeat = r.winner_seat; // showdown from server
-        }
-        if (!winnerSeat && (r.action || '').toLowerCase() === 'fold') {
-          const wl = r.actor_label === 'A' ? 'B' : 'A';
-          const aIsSB2 = ((r.hand_id || '').slice(-1).toUpperCase() === 'A');
-          winnerSeat = wl === 'A' ? (aIsSB2 ? 'SB' : 'BB') : (aIsSB2 ? 'BB' : 'SB');
-        }
-        if (winnerSeat === 'SB') sbZ?.classList.add('win-glow');
-        if (winnerSeat === 'BB') bbZ?.classList.add('win-glow');
-        if (hb) {
-          let msg = 'Hand complete.';
-          if (winnerSeat === 'SB' || winnerSeat === 'BB') {
-            const aIsSB3 = ((r.hand_id || '').slice(-1).toUpperCase() === 'A');
-            const winModel = (winnerSeat === 'SB') ? (aIsSB3 ? modelA : modelB) : (aIsSB3 ? modelB : modelA);
-            msg = `${winModel} wins \u2014 ${winnerSeat}`;
-          }
-          hb.textContent = msg;
-        }
-      }
-
-      // Progress UI
-      const prog = $('#prog');
-      const count = $('#count');
-      if (prog) prog.value = i;
-      if (count) count.textContent = `${i + 1}/${rows.length}`;
-
-      if (i === rows.length - 1) {
-        const banner = $('#handBanner');
-        if (banner) banner.textContent = 'Match over.';
-        pause();
-        i = 0; // rewind for next play
-      }
-    }
-
-    function step(delta = 1) {
-      if (!rows.length) return;
-      i = Math.max(0, Math.min(i + delta, rows.length - 1));
-      draw();
-    }
-
-    function isHandStart(idx){
-      if (!rows.length) return false;
-      if (idx <= 0) return true;
-      return rows[idx-1]?.hand_id !== rows[idx]?.hand_id;
-    }
-
-    function scheduleNext(){
-      if (!playing) return;
-      const delay = Math.round(speed * (isHandStart(i) ? introHoldFactor : 1));
-      timer = setTimeout(() => { step(+1); scheduleNext(); }, delay);
-    }
-
-    function play() {
-      if (playing) return;
-      playing = true;
-      const st = $('#status'); if (st) { st.textContent = 'Playing'; st.className = 'pill ok'; }
-      scheduleNext();
-    }
-
-    function pause() {
-      playing = false;
-      if (timer) { clearTimeout(timer); timer = null; }
-      const st = $('#status'); if (st) { st.textContent = 'Paused'; st.className = 'pill ghost'; }
-    }
-
-    async function getJSON(url, fallback) {
-      try { const r = await fetch(url, { cache: 'no-store' }); if (r.ok) return await r.json(); } catch {}
-      if (fallback) { try { const r2 = await fetch(fallback, { cache: 'no-store' }); if (r2.ok) return await r2.json(); } catch {} }
-      return null;
-    }
-
-    async function populateModels() {
-      try {
-        const data = await getJSON('/api/matches', '/web/data/matches.json');
-        if (!data) return;
-        const list = data.rows || [];
-
-        // Populate selector
-        const sel = $('#matchSel');
-        if (sel) {
-          sel.innerHTML = list.slice(0, 30).map(m => `<option value="${m.id}">#${m.id} &bull; ${dateShort(m.created_at)}</option>`).join('');
-          if (matchId) sel.value = String(matchId);
-          else if (list[0]) { matchId = list[0].id; sel.value = String(matchId); }
-          sel.onchange = () => { matchId = sel.value; history.replaceState(null, '', `?match_id=${matchId}`); load(); };
-        }
-
-        // Current match row for names
-        const row = list.find(m => String(m.id) === String(matchId)) || list[0];
-        if (row) {
-          modelA = row.model_a || 'A';
-          modelB = row.model_b || 'B';
-          const map = $('#map');
-          if (map) { map.innerHTML = `<span class="pill">A &bull; ${modelA}</span> <span class="pill">B &bull; ${modelB}</span>`; }
-          try { localStorage.setItem(`replay_models_${matchId}`, JSON.stringify({A:modelA,B:modelB})); } catch {}
-        } else {
-          // fallback to cached names for this match
-          try { const cached = localStorage.getItem(`replay_models_${matchId}`); if (cached){ const o = JSON.parse(cached); if (o?.A && o?.B){ modelA = o.A; modelB = o.B; const map = $('#map'); if (map){ map.innerHTML = `<span class="pill">A &bull; ${modelA}</span> <span class="pill">B &bull; ${modelB}</span>`; } } } } catch {}
-        }
-      } catch {}
-    }
-
-    async function load() {
-      if (!matchId) await populateModels();
-      await populateModels(); // refresh labels
-
-      if (!matchId) { const log = $('#log'); if (log) log.textContent = 'No match selected.'; return; }
-      const data = await getJSON(`/api/match-logs?match_id=${encodeURIComponent(matchId)}`, `/web/data/match-logs-${encodeURIComponent(matchId)}.json`);
-      rows = (data && data.rows) ? data.rows : [];
-
-      // reset state
-      i = 0; prevHandId = null; prevBoardKey = ''; winnerSeat = null;
-      const prog = $('#prog'); if (prog) { prog.max = Math.max(0, rows.length - 1); prog.value = 0; }
-      draw();
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-      // Nav active state
-      document.querySelectorAll('.topnav a').forEach((a) => {
-        try { const target = a.getAttribute('href').split('/').pop(); if (location.pathname.endsWith(target)) a.classList.add('active'); } catch {}
-      });
-
-      // initial load
-      populateModels().then(load);
-
-      // Controls
-      $('#play')?.addEventListener('click', play);
-      $('#pause')?.addEventListener('click', pause);
-      $('#next')?.addEventListener('click', () => step(+1));
-      $('#sl')?.addEventListener('input', (e) => { const v = Math.max(1, parseInt(e.target.value || '1', 10) || 1); speed = Math.round(speedBase / v); if (playing) { pause(); play(); } });
-      $('#prog')?.addEventListener('input', (e) => { i = parseInt(e.target.value || '0', 10) || 0; draw(); });
-      const hs = $('#holesSel'); if (hs) hs.onchange = () => draw();
-
-      // Keyboard
-      addEventListener('keydown', (ev) => { if (ev.key === 'ArrowRight') step(+1); else if (ev.key === 'ArrowLeft') step(-1); });
-    });
-  </script>
+  <script type="module" src="/web/replay.js" defer></script>
 </head>
-<body class="replay-theme">
+<body class="replay-theme replay-page">
   <header class="site-header">
     <div class="topnav">
       <a class="brand" href="/web/replay.html" aria-label="PokerBench latest match">
@@ -515,114 +96,231 @@
               <span class="nav-settings__label">Guided tips</span>
               <span class="nav-settings__hint" data-setting-state="tooltips">On</span>
             </button>
-            <button class="nav-settings__row" type="button" disabled>
-              <span class="nav-settings__label">Theme</span>
-              <span class="nav-settings__hint">Auto (coming soon)</span>
-            </button>
           </div>
           <div class="nav-settings__section">
-            <h3>Notifications</h3>
-            <button class="nav-settings__row" type="button" disabled>
-              <span class="nav-settings__label">Match alerts</span>
-              <span class="nav-settings__hint">Not yet available</span>
-            </button>
+            <h3>Shortcuts</h3>
+            <dl class="nav-settings__shortcuts">
+              <div>
+                <dt>← / →</dt>
+                <dd>Step through actions</dd>
+              </div>
+              <div>
+                <dt>Space</dt>
+                <dd>Play / pause</dd>
+              </div>
+            </dl>
           </div>
         </div>
       </div>
     </div>
   </header>
 
-  <main class="page-content">
+  <main class="page-content page-content--replay">
     <div class="wrap wrap--wide">
-      <div class="card">
-        <h1>Replay</h1>
-        <div class="muted">Latest match loads automatically. Switch below.</div>
-        <div class="replay__intro">
-          <label class="muted" for="matchSel">Match</label>
-          <div class="select-pill__wrap">
-            <select id="matchSel" class="select-pill"></select>
-          </div>
-          <div id="map" class="replay__map"></div>
+      <section class="card card--compact replay-intro-card">
+        <div class="card__header">
+          <h1>Replay</h1>
+          <p class="muted">Study every action from recent duels with live chips, board texture, and solver context.</p>
         </div>
-      </div>
-
-      <div class="card replay">
-        <div class="replay__controls">
-          <div class="replay__btn-group">
-            <button class="pill" id="play" type="button">Play</button>
-            <button class="pill" id="pause" type="button">Pause</button>
-            <button class="pill" id="next" type="button">Next</button>
-          </div>
-          <div class="replay__speed">
-            <label class="muted" for="sl">Speed</label>
-            <button class="inline-tip" type="button" data-tip="Slide right to shorten the delay between actions. Playback automatically pauses once the match completes." aria-label="Tip: adjust playback speed">i</button>
-            <input id="sl" type="range" min="1" max="5" value="1"/>
-          </div>
-          <div class="replay__holes">
-            <label class="muted" for="holesSel">Holes</label>
-            <button class="inline-tip" type="button" data-tip="Reveal one or both players' hole cards. Hidden keeps them face down until showdown." aria-label="Tip: toggle hole card visibility">i</button>
+        <div class="replay-intro">
+          <div class="replay-intro__field">
+            <label class="muted" for="matchSel">Match</label>
             <div class="select-pill__wrap">
-              <select id="holesSel" class="select-pill select-pill--condensed">
-                <option value="both">Both</option>
-                <option value="sb">SB Only</option>
-                <option value="bb">BB Only</option>
-                <option value="none">Hidden</option>
-              </select>
+              <select id="matchSel" class="select-pill"></select>
             </div>
           </div>
-          <div class="replay__progress">
-            <label class="muted" for="prog">Timeline</label>
-            <div class="replay__progress-track">
-              <input id="prog" type="range" min="0" value="0"/>
-              <span class="replay__count mono" id="count">0/0</span>
-            </div>
-          </div>
-          <div class="replay__statusbar">
-            <span id="status" class="pill ghost" aria-live="polite">Paused</span>
-            <span id="turn" class="pill turn-pill" aria-live="polite">Turn: &mdash;</span>
-          </div>
+          <div class="replay-intro__players" id="map" aria-live="polite"></div>
+          <div class="replay-intro__meta" id="matchMeta" aria-live="polite">Loading latest match…</div>
         </div>
+      </section>
 
-        <div class="replay__summary">
-          <div class="replay__summary-main">
-            <div class="replay__summary-block">
-              <span class="replay__summary-label">Hand</span>
-              <span id="hand" class="replay__hand">&mdash;</span>
+      <div class="replay-grid">
+        <section class="card card--table" id="tableCard">
+          <header class="replay-table__header">
+            <div class="replay-table__handwrap">
+              <span class="muted">Hand</span>
+              <div id="hand" class="replay-table__hand">—</div>
             </div>
-            <div class="replay__summary-block replay__summary-block--action">
-              <span class="replay__summary-label">Action</span>
-              <div id="caption" class="replay__caption">Waiting for first hand…</div>
-              <div id="log" class="replay__log muted">—</div>
+            <div class="replay-table__status">
+              <div class="replay-table__pot">
+                <span class="muted">Pot</span>
+                <span class="replay-table__pot-value mono" id="pot">0</span>
+              </div>
+              <div class="replay-table__pills">
+                <span id="status" class="pill ghost" aria-live="polite">Paused</span>
+                <span id="turn" class="pill ghost" aria-live="polite">Turn: —</span>
+              </div>
             </div>
-          </div>
-          <div class="replay__banner" id="handBanner"></div>
-        </div>
+          </header>
 
-        <div class="felt">
-          <div class="felt__header">
-            <div class="replay__pot">
-              <span class="replay__pot-label">Pot</span>
-              <span class="replay__pot-value" id="pot">0</span>
+          <div class="replay-table__action">
+            <div id="caption" class="replay-table__action-main">Waiting for first hand…</div>
+            <div id="log" class="replay-table__action-sub muted">—</div>
+          </div>
+
+          <div class="replay-table__board">
+            <div class="cards felt__board" id="board" aria-label="Community cards"></div>
+            <div class="replay-table__board-text" id="boardText">Board: —</div>
+          </div>
+
+          <div class="replay-table__seats">
+            <article class="seat-card" id="sbZone" data-seat="sb">
+              <header class="seat-card__header">
+                <div class="seat-card__identity">
+                  <span class="seat-card__role">Small blind</span>
+                  <span class="seat-card__name" id="sbName">SB</span>
+                </div>
+                <span class="seat-card__dealer" id="sbDealer" aria-hidden="true" hidden>D</span>
+              </header>
+              <div class="seat-card__stacks">
+                <span class="muted">Stack</span>
+                <span id="sb_stack_tag" class="seat-card__stack mono">0</span>
+                <span id="sb_delta" class="seat-card__delta mono">±0</span>
+              </div>
+              <div class="seat-card__ev">
+                <div class="seat-card__ev-head">
+                  <div class="seat-card__ev-title">
+                    <span>Chip equity</span>
+                    <span id="sb_ev_amount" class="seat-card__ev-amount mono">0</span>
+                  </div>
+                  <button class="inline-tip" type="button" data-tip="Approximate chip equity adds half of the pot to each stack so you can track who is ahead as chips move in." aria-label="Tip: chip equity explanation">i</button>
+                </div>
+                <div class="ev-meter" id="sb_ev_meter" aria-hidden="true">
+                  <div class="ev-meter__fill"></div>
+                </div>
+                <div class="seat-card__ev-meta">
+                  <span id="sb_ev_value" class="mono">0%</span>
+                  <span id="sb_ev_delta" class="seat-card__ev-delta mono">±0</span>
+                </div>
+              </div>
+              <div class="seat-card__cards">
+                <div class="cards cards--hole" id="sb_hole" aria-label="Small blind hole cards"></div>
+                <div class="seat-card__cards-text" id="sbHoleText">Hidden</div>
+              </div>
+            </article>
+
+            <article class="seat-card" id="bbZone" data-seat="bb">
+              <header class="seat-card__header">
+                <div class="seat-card__identity">
+                  <span class="seat-card__role">Big blind</span>
+                  <span class="seat-card__name" id="bbName">BB</span>
+                </div>
+                <span class="seat-card__dealer" id="bbDealer" aria-hidden="true" hidden>D</span>
+              </header>
+              <div class="seat-card__stacks">
+                <span class="muted">Stack</span>
+                <span id="bb_stack_tag" class="seat-card__stack mono">0</span>
+                <span id="bb_delta" class="seat-card__delta mono">±0</span>
+              </div>
+              <div class="seat-card__ev">
+                <div class="seat-card__ev-head">
+                  <div class="seat-card__ev-title">
+                    <span>Chip equity</span>
+                    <span id="bb_ev_amount" class="seat-card__ev-amount mono">0</span>
+                  </div>
+                  <button class="inline-tip" type="button" data-tip="Approximate chip equity adds half of the pot to each stack so you can track who is ahead as chips move in." aria-label="Tip: chip equity explanation">i</button>
+                </div>
+                <div class="ev-meter" id="bb_ev_meter" aria-hidden="true">
+                  <div class="ev-meter__fill"></div>
+                </div>
+                <div class="seat-card__ev-meta">
+                  <span id="bb_ev_value" class="mono">0%</span>
+                  <span id="bb_ev_delta" class="seat-card__ev-delta mono">±0</span>
+                </div>
+              </div>
+              <div class="seat-card__cards">
+                <div class="cards cards--hole" id="bb_hole" aria-label="Big blind hole cards"></div>
+                <div class="seat-card__cards-text" id="bbHoleText">Hidden</div>
+              </div>
+            </article>
+          </div>
+
+          <div class="replay-table__insights" id="insightGrid">
+            <div class="insight" id="insightPotOdds">
+              <span class="insight__label">Pot odds</span>
+              <span class="insight__value" id="potOdds">—</span>
+            </div>
+            <div class="insight" id="insightRequiredEq">
+              <span class="insight__label">Required equity</span>
+              <span class="insight__value" id="requiredEq">—</span>
+            </div>
+            <div class="insight" id="insightToCall">
+              <span class="insight__label">To call</span>
+              <span class="insight__value" id="toCall">—</span>
+            </div>
+            <div class="insight" id="insightMinRaise">
+              <span class="insight__label">Min raise</span>
+              <span class="insight__value" id="minRaise">—</span>
+            </div>
+            <div class="insight" id="insightRaiseWindow">
+              <span class="insight__label">Raise window</span>
+              <span class="insight__value" id="raiseWindow">—</span>
+            </div>
+            <div class="insight insight--solver" id="insightSolver">
+              <span class="insight__label">Solver guidance</span>
+              <span class="insight__value" id="solverText">—</span>
             </div>
           </div>
-          <div class="cards felt__board" id="board"></div>
-          <div class="felt__seats">
-            <div id="sbZone" class="sb-zone">
-              <div class="seat-card__header">
-                <span class="seat-card__label muted">SB</span>
-                <span id="sb_stack_tag" class="stack-tag">Stack: 0</span>
-              </div>
-              <div class="cards cards--hole" id="sb_hole"></div>
+
+          <div class="replay-table__banner" id="handBanner" aria-live="polite"></div>
+        </section>
+
+        <section class="card card--controls" id="controlCard">
+          <header class="card__header">
+            <h2>Controls</h2>
+            <p class="muted">Scrub through the match or let it auto-play every action.</p>
+          </header>
+          <div class="replay-controls">
+            <div class="replay-controls__buttons" role="group" aria-label="Playback">
+              <button class="pill accent" id="play" type="button">Play</button>
+              <button class="pill ghost" id="pause" type="button">Pause</button>
+              <button class="pill ghost" id="next" type="button">Next</button>
             </div>
-            <div id="bbZone" class="bb-zone">
-              <div class="seat-card__header">
-                <span class="seat-card__label muted">BB</span>
-                <span id="bb_stack_tag" class="stack-tag">Stack: 0</span>
+            <div class="replay-controls__row">
+              <div class="replay-control">
+                <div class="replay-control__label">
+                  <label for="speedSlider">Speed</label>
+                  <button class="inline-tip" type="button" data-tip="Slide right to shorten the delay between actions. Playback automatically pauses once the match completes." aria-label="Tip: adjust playback speed">i</button>
+                </div>
+                <input id="speedSlider" class="replay-control__range" type="range" min="1" max="5" value="1"/>
+                <div class="replay-control__hint mono" id="speedValue">1×</div>
               </div>
-              <div class="cards cards--hole" id="bb_hole"></div>
+              <div class="replay-control">
+                <div class="replay-control__label">
+                  <label for="holesSelect">Hole cards</label>
+                  <button class="inline-tip" type="button" data-tip="Reveal one or both players' hole cards. Hidden keeps them face down until showdown." aria-label="Tip: toggle hole card visibility">i</button>
+                </div>
+                <div class="select-pill__wrap">
+                  <select id="holesSelect" class="select-pill select-pill--condensed">
+                    <option value="both">Both</option>
+                    <option value="sb">SB Only</option>
+                    <option value="bb">BB Only</option>
+                    <option value="none">Hidden</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="replay-control replay-control--timeline">
+              <div class="replay-control__label">
+                <label for="timeline">Timeline</label>
+              </div>
+              <input id="timeline" class="replay-control__range" type="range" min="0" value="0"/>
+              <div class="replay-control__timeline-meta">
+                <span class="mono" id="count">0/0</span>
+              </div>
             </div>
           </div>
-        </div>
+        </section>
+
+        <section class="card card--log" id="logCard">
+          <header class="card__header">
+            <h2>Action history</h2>
+            <p class="muted">Tap a step to jump directly to that moment.</p>
+          </header>
+          <div class="action-list" id="actionList" role="list">
+            <div class="action-list__empty">Select a match to view its action log.</div>
+          </div>
+        </section>
       </div>
     </div>
   </main>
