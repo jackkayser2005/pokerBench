@@ -128,7 +128,8 @@ func loadAPIKeyFromSecret() {
 		return llm.PreferOpenRouter()
 	}()
 
-	setKey := func(raw string) bool {
+	// Set only OPENAI_API_KEY (for native OpenAI usage).
+	setOpenAI := func(raw string) bool {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			return false
@@ -137,19 +138,52 @@ func loadAPIKeyFromSecret() {
 		return true
 	}
 
+	// Configure OpenRouter keys while keeping mustEnv("OPENAI_API_KEY") happy
+	// and nudging routing/base URLs toward the OpenRouter API.
+	setOpenRouter := func(raw string) bool {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return false
+		}
+		os.Setenv("OPENROUTER_API_KEY", raw)
+		os.Setenv("OPENAI_API_KEY", raw)
+		if strings.TrimSpace(os.Getenv("LLM_PROVIDER")) == "" {
+			os.Setenv("LLM_PROVIDER", "openrouter")
+		}
+		if strings.TrimSpace(os.Getenv("OPENAI_API_BASE")) == "" &&
+			strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")) == "" &&
+			strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) == "" &&
+			strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")) == "" {
+			os.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+		}
+		return true
+	}
+
 	tryEnv := func(names ...string) bool {
 		for _, name := range names {
-			if setKey(os.Getenv(name)) {
-				return true
+			v := strings.TrimSpace(os.Getenv(name))
+			if v == "" {
+				continue
 			}
+			if name == "OPENROUTER_API_KEY" {
+				return setOpenRouter(v)
+			}
+			if name == "OPENAI_API_KEY" {
+				return setOpenAI(v)
+			}
+			return setOpenAI(v)
 		}
 		return false
 	}
 
-	tryPaths := func(paths []string) bool {
+	tryPaths := func(paths []string, isOpenRouter bool) bool {
 		for _, path := range paths {
 			if b, err := os.ReadFile(path); err == nil {
-				if setKey(string(b)) {
+				if isOpenRouter {
+					if setOpenRouter(string(b)) {
+						return true
+					}
+				} else if setOpenAI(string(b)) {
 					return true
 				}
 			}
@@ -185,22 +219,22 @@ func loadAPIKeyFromSecret() {
 		"/run/secrets/openrouter_api_key",
 	)
 
-	openAIEnvCheck := func() bool { return setKey(os.Getenv("OPENAI_API_KEY")) }
+	openAIEnvCheck := func() bool { return setOpenAI(os.Getenv("OPENAI_API_KEY")) }
 
 	var checks []func() bool
 	if preferOpenRouter {
 		checks = append(checks,
 			func() bool { return tryEnv("OPENROUTER_API_KEY") },
-			func() bool { return tryPaths(openrouterPaths) },
+			func() bool { return tryPaths(openrouterPaths, true) },
 			openAIEnvCheck,
-			func() bool { return tryPaths(openaiPaths) },
+			func() bool { return tryPaths(openaiPaths, false) },
 		)
 	} else {
 		checks = append(checks,
 			openAIEnvCheck,
-			func() bool { return tryPaths(openaiPaths) },
+			func() bool { return tryPaths(openaiPaths, false) },
 			func() bool { return tryEnv("OPENROUTER_API_KEY") },
-			func() bool { return tryPaths(openrouterPaths) },
+			func() bool { return tryPaths(openrouterPaths, true) },
 		)
 	}
 
@@ -210,7 +244,8 @@ func loadAPIKeyFromSecret() {
 		}
 	}
 
-	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" && strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
+	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" &&
+		strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
 		os.Setenv("OPENAI_API_KEY", key)
 	}
 }
