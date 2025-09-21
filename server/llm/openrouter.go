@@ -229,11 +229,16 @@ func PreferOpenRouter() bool {
 }
 
 func detectProviderFromModel(model string) (providerKind, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(model))
-	if normalized == "" {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" {
 		return providerOpenAI, false
 	}
-	if strings.Contains(normalized, "openrouter/") {
+	// Native OpenAI models stay on the OpenAI provider unless the user overrides.
+	if strings.HasPrefix(m, "gpt-") || strings.HasPrefix(m, "o") {
+		return providerOpenAI, true
+	}
+	// Anything "vendor/model" (e.g. meta-llama/…, mistralai/…, google/…) maps to OpenRouter style routing.
+	if strings.Contains(m, "/") {
 		return providerOpenRouter, true
 	}
 	return providerOpenAI, false
