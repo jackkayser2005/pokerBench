@@ -936,8 +936,12 @@ const ReplayPage = (() => {
       renderEmptyActionList('Select a match to view its action log.');
       return;
     }
+    const requestedMatchId = state.matchId;
     resetStateForMatch();
-    const data = await getJSON(`/api/match-logs?match_id=${encodeURIComponent(state.matchId)}`, `/web/data/match-logs-${encodeURIComponent(state.matchId)}.json`);
+    const data = await getJSON(`/api/match-logs?match_id=${encodeURIComponent(requestedMatchId)}`, `/web/data/match-logs-${encodeURIComponent(requestedMatchId)}.json`);
+    if (state.matchId !== requestedMatchId) {
+      return;
+    }
     state.rows = Array.isArray(data?.rows) ? data.rows : [];
     if (!state.rows.length) {
       renderEmptyActionList('No actions recorded for this match yet.');
