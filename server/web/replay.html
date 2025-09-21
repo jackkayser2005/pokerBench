@@ -169,11 +169,11 @@
         }
         card.style.animationDelay = `${idx * 100}ms`;
         if (suitGlyph) {
-          card.style.setProperty('--card-glyph', `'${suitGlyph}'`);
+          card.style.setProperty('--card-glyph', "'" + suitGlyph + "'");
         } else {
           card.style.removeProperty('--card-glyph');
           if (!suitName && label) {
-            card.style.setProperty('--card-glyph', `'?'`);
+            card.style.setProperty('--card-glyph', "'?'");
           }
         }
 
