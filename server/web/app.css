@@ -1164,6 +1164,64 @@ p {
   overflow-x: auto;
 }
 
+.matrix-card {
+  position: relative;
+  padding-top: 72px;
+}
+
+.matrix-card__body {
+  margin-top: 12px;
+}
+
+.matrix-card__legend {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--fs-1);
+  color: var(--muted);
+}
+
+.matrix-card__legend-gradient {
+  display: inline-block;
+  width: 140px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, hsl(240 70% 42%) 0%, hsl(0 70% 42%) 100%);
+}
+
+.matrix-card__legend-label {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.matrix-table .matrix-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--surface);
+}
+
+.matrix-table thead th.matrix-sticky {
+  z-index: 4;
+}
+
+.matrix-table tbody tr:hover th.matrix-sticky {
+  background: var(--surface-alt);
+}
+
+.matrix-table th.matrix-sticky {
+  min-width: 200px;
+  box-shadow: 4px 0 12px rgba(15, 23, 42, 0.08);
+}
+
 .matrix-table th.rot {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
@@ -1174,6 +1232,7 @@ p {
 .matrix-diag {
   text-align: center;
   color: var(--muted);
+  background: transparent !important;
 }
 
 .table-compact {
