@@ -698,6 +698,7 @@ const ReplayPage = (() => {
 
   function scheduleNext() {
     window.clearTimeout(state.timer);
+    state.timer = null;
     if (!state.playing) return;
     const delay = Math.round(state.speed * (isHandStart(state.index) ? INTRO_HOLD_FACTOR : 1));
     state.timer = window.setTimeout(() => {
@@ -724,12 +725,14 @@ const ReplayPage = (() => {
   function finishPlayback() {
     state.playing = false;
     window.clearTimeout(state.timer);
+    state.timer = null;
     updateStatus('complete');
   }
 
   function pause() {
     state.playing = false;
     window.clearTimeout(state.timer);
+    state.timer = null;
     updateStatus('paused');
   }
 
@@ -927,6 +930,9 @@ const ReplayPage = (() => {
   }
 
   function resetStateForMatch() {
+    state.playing = false;
+    window.clearTimeout(state.timer);
+    state.timer = null;
     state.rows = [];
     state.index = 0;
     state.prevBoardKey = '';
@@ -934,6 +940,7 @@ const ReplayPage = (() => {
     state.prevHandId = null;
     state.winnerSeat = null;
     state.dealerSeat = 'SB';
+    state.actionButtons = [];
     updateDealerIndicator();
     updateWinnerGlow();
     renderEmptyActionList('Loading actions…');
@@ -970,6 +977,7 @@ const ReplayPage = (() => {
     state.baseEquity.BB = state.startStacks.BB + startPot;
     buildActionList();
     draw();
+    play();
   }
 
   function cacheElements() {
