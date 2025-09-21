@@ -31,10 +31,19 @@
 
     // Suit / rank splitter (expects like 'Ah', 'Tc')
     function cardParts(c) {
-      if (!c || c.length < 2) return { r: '', suitName: '' };
-      const r = c[0], s = c[1];
+      if (!c) return { r: '', suitName: '' };
+      const raw = String(c).trim();
+      if (raw.length < 2) return { r: raw.toUpperCase(), suitName: '' };
+
+      const suitKey = raw.slice(-1).toLowerCase();
+      const rankRaw = raw.slice(0, -1).toUpperCase();
+      const rankMap = { T: '10' };
       const suitMap = { c: 'club', d: 'diamond', h: 'heart', s: 'spade' };
-      return { r, suitName: suitMap[s] || '' };
+
+      return {
+        r: rankMap[rankRaw] || rankRaw,
+        suitName: suitMap[suitKey] || ''
+      };
     }
 
     // Render cards into a slot; reveal by toggling .flip post-insert
