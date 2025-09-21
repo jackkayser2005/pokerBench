@@ -20,11 +20,6 @@
               activePinnedCell.setAttribute('aria-pressed', 'false');
               activePinnedCell = null;
             }
-            const detail = document.getElementById('matrixDetails');
-            if (detail){
-              detail.innerHTML = '<div class="matrix-details__empty">Click a matchup to pin detailed stats.</div>';
-              detail.classList.remove('matrix-details--active');
-            }
           }
         });
         compareDrawer.showIntro('Click a matchup to compare bots.', 'Head-to-head insights update as new matches finish.');
@@ -215,41 +210,8 @@
       positionTooltip(event, cell);
     }
     function updateDetailPanel(cell){
-      const detail = $('#matrixDetails');
-      if(!detail || !cell) return;
-      const a = cell.dataset.a || '—';
-      const b = cell.dataset.b || '—';
-      const pct = cell.dataset.pct || '—';
-      const opp = cell.dataset.opp || '—';
-      const exp = cell.dataset.exp || '—';
-      const handCount = Number(cell.dataset.hands || '0');
-      const hasData = cell.dataset.hasData === 'true';
-      const sample = hasData && handCount > 0
-        ? `${formatNumber(handCount)} hands played`
-        : 'No completed hands yet';
-      detail.innerHTML = `
-        <div class="matrix-details__matchup">
-          <span class="matrix-details__model">${escapeAttr(a)}</span>
-          <span class="matrix-details__versus">vs</span>
-          <span class="matrix-details__model">${escapeAttr(b)}</span>
-        </div>
-        <div class="matrix-details__stat-line">
-          <div class="matrix-details__stat">
-            <span class="matrix-details__label">${escapeAttr(a)}</span>
-            <span class="matrix-details__value">${escapeAttr(hasData ? pct : '—')}</span>
-          </div>
-          <div class="matrix-details__stat">
-            <span class="matrix-details__label">${escapeAttr(b)}</span>
-            <span class="matrix-details__value">${escapeAttr(hasData ? opp : '—')}</span>
-          </div>
-        </div>
-        <div class="matrix-details__meta">
-          <span>${escapeAttr(sample)}</span>
-          <span>Elo expectation: ${escapeAttr(exp)}</span>
-        </div>
-      `;
-      detail.classList.add('matrix-details--active');
-      if(activePinnedCell){
+      if(!cell) return;
+      if(activePinnedCell && activePinnedCell !== cell){
         activePinnedCell.classList.remove('matrix-cell--active');
         activePinnedCell.setAttribute('aria-pressed', 'false');
       }
@@ -433,9 +395,6 @@
         <div class="compare-layout__main">
           <div class="card matrix-card">
             <div class="matrix-card__body" id="matrix">Loading…</div>
-            <div class="matrix-details" id="matrixDetails" role="status" aria-live="polite">
-              <div class="matrix-details__empty">Click a matchup to pin detailed stats.</div>
-            </div>
           </div>
         </div>
         <aside class="compare-drawer" id="compareDrawer" hidden></aside>
