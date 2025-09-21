@@ -29,20 +29,126 @@
     let dealerEl = null;
     let winnerSeat = null; // 'SB' | 'BB' | null
 
-    // Suit / rank splitter (expects like 'Ah', 'Tc')
-    function cardParts(c) {
-      if (!c) return { r: '', suitName: '' };
-      const raw = String(c).trim();
-      if (raw.length < 2) return { r: raw.toUpperCase(), suitName: '' };
+    const SUIT_INFO = {
+      club: { name: 'club', glyph: '♣', aria: 'clubs' },
+      diamond: { name: 'diamond', glyph: '♦', aria: 'diamonds' },
+      heart: { name: 'heart', glyph: '♥', aria: 'hearts' },
+      spade: { name: 'spade', glyph: '♠', aria: 'spades' }
+    };
+    const SUIT_ALIASES = new Map([
+      ['c', 'club'], ['club', 'club'], ['clubs', 'club'], ['♣', 'club'], ['♣️', 'club'], ['♧', 'club'],
+      ['d', 'diamond'], ['diamond', 'diamond'], ['diamonds', 'diamond'], ['♦', 'diamond'], ['♦️', 'diamond'], ['♢', 'diamond'],
+      ['h', 'heart'], ['heart', 'heart'], ['hearts', 'heart'], ['♥', 'heart'], ['♥️', 'heart'], ['♡', 'heart'],
+      ['s', 'spade'], ['spade', 'spade'], ['spades', 'spade'], ['♠', 'spade'], ['♠️', 'spade'], ['♤', 'spade']
+    ]);
+    const NUMBER_WORDS = {
+      2: 'two',
+      3: 'three',
+      4: 'four',
+      5: 'five',
+      6: 'six',
+      7: 'seven',
+      8: 'eight',
+      9: 'nine',
+      10: 'ten'
+    };
+    const rankLookup = new Map();
+    const registerRank = (text, aria, ...keys) => {
+      const info = { text, aria };
+      keys.forEach(key => {
+        if (key != null) rankLookup.set(String(key).toUpperCase(), info);
+      });
+    };
+    registerRank('A', 'ace', 'A', 'ACE', '1', '14');
+    registerRank('K', 'king', 'K', 'KING', '13');
+    registerRank('Q', 'queen', 'Q', 'QUEEN', '12');
+    registerRank('J', 'jack', 'J', 'JACK', '11');
+    registerRank('10', 'ten', 'T', '10', 'TEN', '0');
+    for (let n = 2; n <= 9; n++) {
+      registerRank(String(n), NUMBER_WORDS[n], String(n));
+    }
 
-      const suitKey = raw.slice(-1).toLowerCase();
-      const rankRaw = raw.slice(0, -1).toUpperCase();
-      const rankMap = { T: '10' };
-      const suitMap = { c: 'club', d: 'diamond', h: 'heart', s: 'spade' };
+    function normalizeRank(value) {
+      if (value == null) return { text: '', aria: '' };
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        const info = rankLookup.get(String(Math.trunc(value)));
+        if (info) return { ...info };
+      }
+      const raw = String(value).trim();
+      if (!raw) return { text: '', aria: '' };
+      const direct = rankLookup.get(raw.toUpperCase());
+      if (direct) return { ...direct };
+      return { text: raw.toUpperCase(), aria: raw.toLowerCase() };
+    }
 
+    function normalizeSuit(value) {
+      if (value == null) return { name: '', glyph: '', aria: '' };
+      const raw = String(value).trim();
+      if (!raw) return { name: '', glyph: '', aria: '' };
+      const lowered = raw.toLowerCase().replace(/\ufe0f/g, '');
+      const direct = SUIT_ALIASES.get(lowered)
+        || SUIT_ALIASES.get(lowered.slice(-1))
+        || SUIT_ALIASES.get(lowered.charAt(0));
+      const info = direct ? SUIT_INFO[direct] : null;
+      return info ? { ...info } : { name: '', glyph: '', aria: '' };
+    }
+
+    function cardParts(card) {
+      if (card == null) {
+        return { rank: '', suitName: '', suitGlyph: '', label: '', aria: '' };
+      }
+      let raw = '';
+      if (typeof card === 'string' || typeof card === 'number') {
+        raw = String(card).trim();
+      } else if (typeof card === 'object') {
+        const rawFields = ['raw', 'code', 'card'];
+        for (const key of rawFields) {
+          if (typeof card[key] === 'string') {
+            raw = card[key].trim();
+            break;
+          }
+        }
+      }
+
+      let rankSrc = '';
+      let suitSrc = '';
+      if (typeof card === 'object' && card) {
+        rankSrc = card.rank ?? card.r ?? card.value ?? card.face ?? '';
+        suitSrc = card.suit ?? card.s ?? card.suit_key ?? card.suitName ?? '';
+      }
+
+      if (!rankSrc || !suitSrc) {
+        const candidate = (raw || '').replace(/\s+/g, '');
+        const match = candidate.match(/^(.+?)([cdhsCDHS♣♦♥♠])$/);
+        if (match) {
+          if (!rankSrc) rankSrc = match[1];
+          if (!suitSrc) suitSrc = match[2];
+        } else if (!rankSrc && candidate.length >= 2) {
+          rankSrc = candidate.slice(0, -1);
+          suitSrc = suitSrc || candidate.slice(-1);
+        }
+      }
+
+      const fallbackRaw = raw ? raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
+      const rankInfo = normalizeRank(rankSrc || fallbackRaw);
+      const suitInfo = normalizeSuit(suitSrc);
+      const rankText = rankInfo.text || (fallbackRaw ? fallbackRaw.slice(0, 2) : '');
+      const glyph = suitInfo.glyph;
+      const label = rankText ? (glyph ? `${rankText}${glyph}` : rankText) : (raw || fallbackRaw);
+      const ariaParts = [];
+      if (rankInfo.aria) {
+        ariaParts.push(rankInfo.aria.charAt(0).toUpperCase() + rankInfo.aria.slice(1));
+      }
+      if (suitInfo.aria) {
+        ariaParts.push(`of ${suitInfo.aria}`);
+      }
+      const aria = ariaParts.join(' ').trim();
       return {
-        r: rankMap[rankRaw] || rankRaw,
-        suitName: suitMap[suitKey] || ''
+        rank: rankText,
+        suitName: suitInfo.name,
+        suitGlyph: glyph,
+        label: label || '',
+        aria: aria || (label ? `Card ${label}` : '')
       };
     }
 
@@ -50,25 +156,48 @@
     function setCards(el, arr, reveal) {
       if (!el) return;
       el.innerHTML = '';
-      (arr || []).forEach((c, idx) => {
-        const { r, suitName } = cardParts(c);
+      const list = Array.isArray(arr) ? arr : (arr != null ? [arr] : []);
+      list.forEach((entry, idx) => {
+        const { rank, suitName, suitGlyph, label, aria } = cardParts(entry);
         const card = document.createElement('div');
-        card.className = 'cardx deal ' + (suitName || '');
+        card.className = 'cardx deal';
+        if (suitName) card.classList.add(suitName);
+        if (label) card.setAttribute('title', label);
+        if (aria) {
+          card.setAttribute('role', 'img');
+          card.setAttribute('aria-label', aria);
+        }
         card.style.animationDelay = `${idx * 100}ms`;
+        if (suitGlyph) {
+          card.style.setProperty('--card-glyph', `'${suitGlyph}'`);
+        } else {
+          card.style.removeProperty('--card-glyph');
+          if (!suitName && label) {
+            card.style.setProperty('--card-glyph', `'?'`);
+          }
+        }
 
         const back = document.createElement('div');
         back.className = 'face back';
         const front = document.createElement('div');
         front.className = 'face front';
-        front.innerHTML = r ? `
-          <div class="num-box top suit">${r}</div>
-          <div class="num-box bottom suit">${r}</div>
-          <div class="suit main"></div>` : '';
 
+        const top = document.createElement('div');
+        top.className = 'num-box top suit';
+        top.textContent = (rank || label || '').slice(0, 3);
+        const bottom = document.createElement('div');
+        bottom.className = 'num-box bottom suit';
+        bottom.textContent = (rank || label || '').slice(0, 3);
+        const center = document.createElement('div');
+        center.className = 'suit main';
+
+        front.appendChild(top);
+        front.appendChild(bottom);
+        front.appendChild(center);
         card.appendChild(back);
         card.appendChild(front);
         el.appendChild(card);
-        if (reveal && r) card.classList.add('flip');
+        if (reveal && (rank || label)) card.classList.add('flip');
       });
     }
 
@@ -426,10 +555,12 @@
           </div>
           <div class="replay__speed">
             <label class="muted" for="sl">Speed</label>
+            <button class="inline-tip" type="button" data-tip="Slide right to shorten the delay between actions. Playback automatically pauses once the match completes." aria-label="Tip: adjust playback speed">i</button>
             <input id="sl" type="range" min="1" max="5" value="1"/>
           </div>
           <div class="replay__holes">
             <label class="muted" for="holesSel">Holes</label>
+            <button class="inline-tip" type="button" data-tip="Reveal one or both players' hole cards. Hidden keeps them face down until showdown." aria-label="Tip: toggle hole card visibility">i</button>
             <div class="select-pill__wrap">
               <select id="holesSel" class="select-pill select-pill--condensed">
                 <option value="both">Both</option>
