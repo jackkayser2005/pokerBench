@@ -9,21 +9,12 @@ import (
 	"strings"
 )
 
-type providerKind int
-
-const (
-	providerOpenAI providerKind = iota
-	providerOpenRouter
-)
-
 type apiConfig struct {
-	Kind         providerKind
 	APIKey       string
 	Model        string
 	BaseURL      string
 	HeaderName   string
 	HeaderPrefix string
-	Organization string
 	ExtraHeaders map[string]string
 }
 
@@ -33,125 +24,58 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 		ExtraHeaders: map[string]string{},
 	}
 
-	preferOpenRouter := preferOpenRouterEnv()
-	if preferOpenRouter {
-		cfg.Kind = providerOpenRouter
-	} else {
-		cfg.Kind = providerOpenAI
-	}
-
-	if provider, ok := detectProviderFromModel(cfg.Model); ok {
-		cfg.Kind = provider
-	}
-
-	manualOverride := false
-	if override := strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))); override != "" {
-		switch override {
-		case "openrouter":
-			cfg.Kind = providerOpenRouter
-			manualOverride = true
-		case "openai":
-			cfg.Kind = providerOpenAI
-			manualOverride = true
-		}
-	}
-
 	if cfg.Model == "" {
-		if cfg.Kind == providerOpenRouter {
-			cfg.Model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
-		}
-		if cfg.Model == "" {
-			cfg.Model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
-		}
+		cfg.Model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
 	}
 	if cfg.Model == "" {
-		return apiConfig{}, errors.New("model missing: set OPENAI_MODEL/OPENROUTER_MODEL or pass a value")
+		return apiConfig{}, errors.New("model missing: set OPENROUTER_MODEL or pass a value")
 	}
 
-	if !manualOverride {
-		if provider, ok := detectProviderFromModel(cfg.Model); ok {
-			cfg.Kind = provider
-		}
+	cfg.APIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	if cfg.APIKey == "" {
+		return apiConfig{}, errors.New("API key missing: set OPENROUTER_API_KEY or provide secrets/openrouter_api_key.txt")
 	}
 
 	base := firstNonEmpty(
-		os.Getenv("OPENAI_API_BASE"),
-		os.Getenv("OPENAI_BASE_URL"),
 		os.Getenv("OPENROUTER_API_BASE"),
 		os.Getenv("OPENROUTER_BASE_URL"),
 	)
 	base = strings.TrimSpace(base)
 	if base == "" {
-		if cfg.Kind == providerOpenRouter {
-			base = "https://openrouter.ai/api/v1"
-		} else {
-			base = "https://api.openai.com/v1"
-		}
+		base = "https://openrouter.ai/api/v1"
 	}
 	cfg.BaseURL = strings.TrimRight(base, "/")
-	if !manualOverride && strings.Contains(strings.ToLower(cfg.BaseURL), "openrouter") {
-		cfg.Kind = providerOpenRouter
-	}
 
-	openAIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	openRouterKey := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-	switch cfg.Kind {
-	case providerOpenRouter:
-		if openRouterKey != "" {
-			cfg.APIKey = openRouterKey
-		} else if openAIKey != "" {
-			cfg.APIKey = openAIKey
-		}
-	default:
-		if openAIKey != "" {
-			cfg.APIKey = openAIKey
-		} else if openRouterKey != "" {
-			cfg.APIKey = openRouterKey
-		}
-	}
-	if cfg.APIKey == "" {
-		return apiConfig{}, errors.New("API key missing: set OPENAI_API_KEY or OPENROUTER_API_KEY")
-	}
-
-	headerName := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_HEADER"))
-	if headerName == "" {
-		headerName = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_HEADER"))
-	}
+	headerName := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_HEADER"))
 	if headerName == "" {
 		headerName = "Authorization"
 	}
-	prefix := os.Getenv("OPENAI_API_KEY_PREFIX")
-	if prefix == "" {
-		prefix = os.Getenv("OPENROUTER_API_KEY_PREFIX")
-	}
+	prefix := os.Getenv("OPENROUTER_API_KEY_PREFIX")
 	if headerName == "Authorization" && strings.TrimSpace(prefix) == "" {
 		prefix = "Bearer "
 	}
 	cfg.HeaderName = headerName
 	cfg.HeaderPrefix = prefix
-	cfg.Organization = strings.TrimSpace(os.Getenv("OPENAI_ORG"))
 
-	if cfg.Kind == providerOpenRouter {
-		siteURL, err := resolveOpenRouterSiteURL()
-		if err != nil {
-			log.Printf("OpenRouter site URL error: %v", err)
-			return apiConfig{}, err
-		}
-		if siteURL != "" {
-			cfg.ExtraHeaders["HTTP-Referer"] = siteURL
-			cfg.ExtraHeaders["Referer"] = siteURL
-		}
+	siteURL, err := resolveOpenRouterSiteURL()
+	if err != nil {
+		log.Printf("OpenRouter site URL error: %v", err)
+		return apiConfig{}, err
+	}
+	if siteURL != "" {
+		cfg.ExtraHeaders["HTTP-Referer"] = siteURL
+		cfg.ExtraHeaders["Referer"] = siteURL
+	}
 
-		title := strings.TrimSpace(os.Getenv("OPENROUTER_TITLE"))
-		if title == "" {
-			title = strings.TrimSpace(os.Getenv("APP_NAME"))
-		}
-		if title == "" {
-			title = "PokerBench"
-		}
-		if title != "" {
-			cfg.ExtraHeaders["X-Title"] = title
-		}
+	title := strings.TrimSpace(os.Getenv("OPENROUTER_TITLE"))
+	if title == "" {
+		title = strings.TrimSpace(os.Getenv("APP_NAME"))
+	}
+	if title == "" {
+		title = "PokerBench"
+	}
+	if title != "" {
+		cfg.ExtraHeaders["X-Title"] = title
 	}
 
 	return cfg, nil
@@ -222,24 +146,4 @@ func normalizeOpenRouterSiteURL(siteURL string) (string, error) {
 	normalized := parsed.String()
 	normalized = strings.TrimRight(normalized, "/")
 	return normalized, nil
-}
-
-func PreferOpenRouter() bool {
-	return preferOpenRouterEnv()
-}
-
-func detectProviderFromModel(model string) (providerKind, bool) {
-	m := strings.ToLower(strings.TrimSpace(model))
-	if m == "" {
-		return providerOpenAI, false
-	}
-	// Native OpenAI models stay on the OpenAI provider unless the user overrides.
-	if strings.HasPrefix(m, "gpt-") || strings.HasPrefix(m, "o") {
-		return providerOpenAI, true
-	}
-	// Anything "vendor/model" (e.g. meta-llama/…, mistralai/…, google/…) maps to OpenRouter style routing.
-	if strings.Contains(m, "/") {
-		return providerOpenRouter, true
-	}
-	return providerOpenAI, false
 }

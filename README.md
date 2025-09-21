@@ -43,7 +43,7 @@ Run mirrored-seed duels, compute Elo & Glicko-2, log every action, audit EV with
 - **Detailed telemetry:** Structured action logs capture legal actions, `to_call`, `min_to`/`max_to`, chosen amounts, stack states, and boards.
 - **Monte-Carlo EV judge:** Post-match rollouts estimate accuracy (displayed as **Acc** in the UI) to catch prompt regressions.
 - **Minimalistic UI:** Leaderboard, pairwise matrix, Elo timeline, replay/history, and drill-downs – no heavy JS framework required.
-- **Provider agnostic:** Works with any OpenAI-compatible endpoint (OpenAI, Azure, OpenRouter, Together, Groq, etc.).
+- **Unified API:** Routes every match through OpenRouter so you can mix vendors without juggling provider-specific quirks.
 - **Container-friendly:** Docker Compose stack ships Postgres, migrator, duel runner, and the web server.
 
 ## Architecture at a Glance
@@ -72,21 +72,18 @@ Run mirrored-seed duels, compute Elo & Glicko-2, log every action, audit EV with
 ### Option A — Docker Compose
 
 ```bash
-# 1) copy the sample envs (edit them with your models/keys)
+# 1) copy the sample envs (edit them with your models/key)
 cp compose.env.example compose.env
 mkdir -p secrets
-# drop in whichever providers you use (files can coexist)
-printf 'sk-...' > secrets/openai_api_key.txt
-# printf 'or-key-...' > secrets/openrouter_api_key.txt
+printf 'or-key-...' > secrets/openrouter_api_key.txt
 
 # 2) launch the stack
 docker compose up --build
 ```
 
-`docker compose` binds `./secrets` into every container. The server automatically mirrors
-`secrets/openrouter_api_key.txt` (or `OPENROUTER_API_KEY`) into `OPENAI_API_KEY` whenever
-`OPENAI_API_BASE` targets OpenRouter, so OpenAI and OpenRouter secrets can live side by side
-without extra wiring.
+`docker compose` binds `./secrets` into every container. Supplying either
+`OPENROUTER_API_KEY` or `secrets/openrouter_api_key.txt` is enough for both the
+server and the duel runner.
 
 The server becomes available at [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html).
 `docker compose` also spins up:
@@ -98,17 +95,17 @@ The server becomes available at [http://localhost:8080/web/leaderboard.html](htt
 
 ### Option B — Local Go
 
-Requirements: Go 1.21+, PostgreSQL 15+, and an OpenAI-compatible API key.
+Requirements: Go 1.21+, PostgreSQL 15+, and an OpenRouter API key.
 
 ```bash
 # 1) install dependencies
 go mod download
 
 # 2) set environment (either export or place in a local .env)
-export OPENAI_API_KEY=sk-...
+export OPENROUTER_API_KEY=or-key-...
 export DATABASE_URL="postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
-export OPENAI_MODEL_A="gpt-4o-mini"
-export OPENAI_MODEL_B="gpt-4.1-mini"
+export OPENROUTER_MODEL_A="meta-llama/llama-3.1-70b-instruct"
+export OPENROUTER_MODEL_B="mistralai/mistral-nemo"
 
 # 3) build & run the server
 cd server
@@ -140,8 +137,8 @@ DATABASE_URL="postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
 Run a single mirrored duel and print the full log. Ratings persist if a database is configured.
 
 ```bash
-OPENAI_MODEL_A="gpt-4o-mini" \
-OPENAI_MODEL_B="gpt-4.1-mini" \
+OPENROUTER_MODEL_A="meta-llama/llama-3.1-70b-instruct" \
+OPENROUTER_MODEL_B="mistralai/mistral-nemo" \
 SB=50 BB=100 START_STACK=10000 DUEL_SEEDS=5 \
 ./ai-thunderdome --duel
 ```
@@ -151,14 +148,14 @@ SB=50 BB=100 START_STACK=10000 DUEL_SEEDS=5 \
 Evaluate multiple model matchups across a matrix of seeds:
 
 ```bash
-OPENAI_MODELS='gpt-4o-mini,gpt-4.1-mini,o4-mini' \
+OPENROUTER_MODELS='meta-llama/llama-3.1-70b-instruct,mistralai/mistral-nemo' \
 DUEL_SEEDS=5 \
 ./ai-thunderdome --duel-matrix
 ```
 
-When routing through OpenRouter, set `LLM_PROVIDER=openrouter` and provide `OPENROUTER_MODELS` instead of `OPENAI_MODELS`.
+Set `OPENROUTER_MODELS` when you want the duel matrix to cycle through a list of vendors/models via OpenRouter.
 
-Personal OpenRouter keys also expect the caller to include the site metadata headers. Export `OPENROUTER_SITE_URL` (and optionally `OPENROUTER_TITLE`) so the client can attach them automatically:
+Personal OpenRouter keys expect the caller to include the site metadata headers. Export `OPENROUTER_SITE_URL` (and optionally `OPENROUTER_TITLE`) so the client can attach them automatically:
 
 ```bash
 export OPENROUTER_SITE_URL="https://your-app.example.com"
@@ -167,7 +164,7 @@ export OPENROUTER_TITLE="PokerBench (local dev)"
 
 The site URL defaults to `http://localhost`, keeping local development simple while still allowing production deployments to report their own domain.
 
-Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` and `scripts/run-openai-matrix.ps1`.
+Windows-friendly PowerShell helpers live in `scripts/run-openrouter-pairwise.ps1` and `scripts/run-openrouter-matrix.ps1`.
 
 ---
 
@@ -177,26 +174,19 @@ Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` an
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` | Auth token for the LLM provider. | _(required)_ |
-| `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` | Alternative secret for OpenRouter users (mirrors into `OPENAI_API_KEY`). | _(optional)_ |
+| `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` | OpenRouter auth token (env var or file in `./secrets`). | _(required)_ |
 | `OPENROUTER_SITE_URL` | Referer value registered with OpenRouter (falls back to `http://localhost`). | `http://localhost` |
 | `OPENROUTER_TITLE` | Optional app name advertised to OpenRouter. | `PokerBench` |
+| `OPENROUTER_MODEL` | Shared OpenRouter identifier when both seats use the same model. | _(required)_ |
+| `OPENROUTER_MODEL_A` / `OPENROUTER_MODEL_B` | Seat-specific model overrides. | `OPENROUTER_MODEL` fallback |
+| `OPENROUTER_MODEL_SB` / `OPENROUTER_MODEL_BB` | SB/BB naming for the same overrides. | `OPENROUTER_MODEL` fallback |
+| `OPENROUTER_REASONING_EFFORT` | Provider-specific reasoning hint (e.g., `medium`, `high`). | unset |
+| `OPENROUTER_MAX_OUTPUT_TOKENS` | Hard cap on model responses. | provider default |
+| `OPENROUTER_TEMPERATURE` / `OPENROUTER_TOP_P` / `OPENROUTER_TOP_K` | Sampling controls forwarded to OpenRouter. | provider default |
 | `DATABASE_URL` | PostgreSQL DSN (`postgres://user:pass@host:port/db?sslmode=`). | `postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable` |
 | `PORT` | HTTP port for the server mode. | `8080` |
-| `LLM_PROVIDER` | Force provider precedence (`openai` or `openrouter`). | derived |
-| `OPENAI_MODEL_A` / `OPENAI_MODEL_B` | Model identifiers for the A/B seats. | `OPENAI_MODEL` fallback |
-| `OPENAI_MODEL_SB` / `OPENAI_MODEL_BB` | Seat-specific overrides if you prefer SB/BB naming. | `OPENAI_MODEL` fallback |
-| `OPENROUTER_MODEL` | Shared OpenRouter identifier when routing via OpenRouter. | _(optional)_ |
-| `OPENROUTER_MODEL_A` / `OPENROUTER_MODEL_B` | Seat models for OpenRouter runs. | `OPENROUTER_MODEL` fallback |
-| `OPENROUTER_MODEL_SB` / `OPENROUTER_MODEL_BB` | SB/BB naming for OpenRouter-specific configs. | `OPENROUTER_MODEL` fallback |
-| `OPENAI_REASONING_EFFORT` | Attach provider-specific reasoning hint (e.g., `medium`, `high`). | unset |
-| `OPENAI_MAX_OUTPUT_TOKENS` | Hard cap on model responses. | provider default |
-| `LLM_COMPANY` | Label used in the UI (e.g., `OpenAI`, `Anthropic`). | derived |
+| `LLM_COMPANY` | Label used in the UI (e.g., `OpenRouter`, `Anthropic`). | derived |
 | `AUTO_MIGRATE` | Run database migrations on startup (recommended in dev). | `0` |
-
-Secrets can be provided via the co-located `./secrets/*.txt` files (mounted automatically in Docker Compose) or traditional env vars.
-When `OPENAI_API_BASE` references OpenRouter, the loader automatically reads `OPENROUTER_API_KEY` (or `secrets/openrouter_api_key.txt`) and mirrors it into `OPENAI_API_KEY` for compatibility with OpenAI-style clients.
-
 ### Behavioral Knobs
 
 Fine-tune duel behavior using environment variables:

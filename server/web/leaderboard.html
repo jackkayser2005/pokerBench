@@ -175,10 +175,10 @@
         .filter(Boolean);
 
       let slug = candidateSlugs.find(s => COMPANY_ICON_DATA[s]) || candidateSlugs[0] || '';
-      if (!slug) slug = 'openai';
+      if (!slug) slug = 'openrouter';
 
       const labelSource = vendor || rawCompany || slug;
-      const label = COMPANY_LABELS[slug] || prettyCompanyName(labelSource) || 'OpenAI';
+      const label = COMPANY_LABELS[slug] || prettyCompanyName(labelSource) || 'OpenRouter';
       return { slug, label };
     }
 
