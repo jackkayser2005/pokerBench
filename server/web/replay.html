@@ -4,8 +4,9 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab - Replay</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=6"/>
+  <link rel="stylesheet" href="/web/app.css?v=7"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
+  <script src="/web/app.js" defer></script>
   <script>
     // ------- helpers
     const $ = (s) => document.querySelector(s);
@@ -314,61 +315,63 @@
       <div class="card">
         <h1>Replay</h1>
         <div class="muted">Latest match loads automatically. Switch below.</div>
-        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:6px">
+        <div class="replay__intro">
           <label class="muted" for="matchSel">Match</label>
-          <select id="matchSel" class="pill" style="background:#0f1712; border-color: var(--line); color: var(--text)"></select>
-          <div id="map" class="muted" style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap"></div>
+          <select id="matchSel" class="select-pill"></select>
+          <div id="map" class="replay__map"></div>
         </div>
       </div>
 
       <div class="card replay">
-      <div class="table">
-        <div class="controls" style="grid-column:1/4">
-          <div class="group">
+        <div class="replay__controls">
+          <div class="group replay__btn-group">
             <button class="pill" id="play" type="button">Play</button>
             <button class="pill" id="pause" type="button">Pause</button>
             <button class="pill" id="next" type="button">Next</button>
           </div>
-          <div class="group">
+          <div class="replay__speed">
             <label class="muted" for="sl">Speed</label>
             <input id="sl" type="range" min="1" max="5" value="1"/>
           </div>
-          <span id="status" class="pill ghost" aria-live="polite">Paused</span>
-          <span id="turn" class="pill" style="background:linear-gradient(90deg,#1f6f3d,#2bbd6b); color:#f6fff4; font-weight:700">Turn: &mdash;</span>
-          <div class="group">
+          <span id="status" class="pill ghost replay__status" aria-live="polite">Paused</span>
+          <span id="turn" class="pill turn-pill" aria-live="polite">Turn: &mdash;</span>
+          <div class="replay__holes">
             <label class="muted" for="holesSel">Holes</label>
-            <select id="holesSel" class="pill" style="background:#0f1712; border-color: var(--line); color: var(--text)">
+            <select id="holesSel" class="select-pill select-pill--condensed">
               <option value="both">Both</option>
               <option value="sb">SB Only</option>
               <option value="bb">BB Only</option>
               <option value="none">Hidden</option>
             </select>
           </div>
-          <input id="prog" type="range" min="0" value="0" style="flex:1 1 240px"/>
-          <span class="muted mono" id="count">0/0</span>
+          <div class="replay__progress">
+            <input id="prog" type="range" min="0" value="0"/>
+            <span class="mono" id="count">0/0</span>
+          </div>
         </div>
 
         <div class="felt">
-          <div class="muted" id="hand" style="margin-bottom:8px">&mdash;</div>
-          <div id="caption" class="mono" style="text-align:center; color:var(--muted); margin-bottom:6px"></div>
+          <div id="hand" class="replay__hand">&mdash;</div>
+          <div id="caption" class="replay__caption"></div>
           <div id="handBanner" class="hand-banner"></div>
-          <div class="cards" id="board" style="justify-content:center"></div>
+          <div class="cards" id="board"></div>
           <div class="stacks">
             <div id="sbZone" class="sb-zone">
               <div class="muted">SB</div>
               <div class="cards" id="sb_hole"></div>
               <div id="sb_stack_tag" class="stack-tag">Stack: 0</div>
             </div>
-            <div>Pot: <span class="mono" id="pot">0</span></div>
+            <div class="replay__pot">
+              <span class="replay__pot-label">Pot</span>
+              <span class="replay__pot-value" id="pot">0</span>
+            </div>
             <div id="bbZone" class="bb-zone">
-              <div class="muted" style="text-align:right">BB</div>
-              <div class="cards" id="bb_hole" style="justify-content:flex-end"></div>
-              <div id="bb_stack_tag" class="stack-tag" style="justify-self:end">Stack: 0</div>
+              <div class="muted">BB</div>
+              <div class="cards" id="bb_hole"></div>
+              <div id="bb_stack_tag" class="stack-tag">Stack: 0</div>
             </div>
           </div>
         </div>
-
-      </div>
       </div>
     </div>
   </main>

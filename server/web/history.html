@@ -4,42 +4,144 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab — Match History</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=6"/>
+  <link rel="stylesheet" href="/web/app.css?v=7"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
+  <script src="/web/app.js" defer></script>
   <script>
-    document.addEventListener('DOMContentLoaded', ()=>{
-      document.querySelectorAll('.topnav a').forEach(a=>{ try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){} });
-    });
-    const $ = s => document.querySelector(s);
-    const fmt = n => n.toLocaleString();
-    function row(m){
-      const when = new Date(m.created_at).toLocaleString();
-      const ended = m.ended_at ? new Date(m.ended_at).toLocaleString() : 'in progress';
-      return `<tr>
-        <td class="num">${m.id}</td>
-        <td>${when}</td>
-        <td>${ended}</td>
-        <td><div>${m.model_a||'A'}</div><div class="sub">vs</div><div>${m.model_b||'B'}</div></td>
-        <td class="num">${m.sb}/${m.bb}</td>
-        <td class="num">${fmt(m.start_stack)}</td>
-        <td class="num">${m.duel_seeds}</td>
-        <td class="num"><a class="pill" href="/web/replay.html?match_id=${m.id}">Replay</a></td>
-      </tr>`;
-    }
-    async function getJSON(url, fallback){
-      try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
-      if (fallback){ try{ const r2 = await fetch(fallback); if(r2.ok) return await r2.json(); }catch(e){} }
+    const state = { rows: [], sortKey: 'created_at', sortDir: 'desc' };
+    const $ = (selector) => document.querySelector(selector);
+    const formatNumber = (value) => Number(value ?? 0).toLocaleString();
+    const formatDate = (value) => {
+      if (!value) return '—';
+      try { return new Date(value).toLocaleString(); } catch (_) { return '—'; }
+    };
+
+    const SORTERS = {
+      id: (a, b) => (a.id ?? 0) - (b.id ?? 0),
+      created_at: (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0),
+      ended_at: (a, b) => new Date(a.ended_at || 0) - new Date(b.ended_at || 0),
+      blinds: (a, b) => (a.sb ?? 0) - (b.sb ?? 0),
+      start_stack: (a, b) => (a.start_stack ?? 0) - (b.start_stack ?? 0),
+      duel_seeds: (a, b) => (a.duel_seeds ?? 0) - (b.duel_seeds ?? 0),
+    };
+
+    async function getJSON(url, fallback) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) return await r.json();
+      } catch (_) {}
+      if (fallback) {
+        try {
+          const r2 = await fetch(fallback);
+          if (r2.ok) return await r2.json();
+        } catch (_) {}
+      }
       return { rows: [] };
     }
-    async function load(){
-      const data = await getJSON('/api/matches', '/web/data/matches.json');
-      const rows = data.rows || [];
-      $('#tbody').innerHTML = rows.map(row).join('');
+
+    function statusMeta(row) {
+      if (row?.ended_at) {
+        return { className: 'history-status history-status--done', label: 'Complete' };
+      }
+      return { className: 'history-status history-status--live', label: 'In Progress' };
     }
-    addEventListener('DOMContentLoaded', load);
+
+    function sortRows(list) {
+      const rows = Array.isArray(list) ? list.slice() : [];
+      const sorter = SORTERS[state.sortKey] || SORTERS.created_at;
+      rows.sort((a, b) => sorter(a, b));
+      if (state.sortDir === 'desc') rows.reverse();
+      return rows;
+    }
+
+    function rowMarkup(m) {
+      const status = statusMeta(m);
+      const blinds = (m.sb != null && m.bb != null) ? `${m.sb}/${m.bb}` : '—';
+      return `
+        <tr>
+          <td class="history-table__cell num mono">${m.id}</td>
+          <td class="history-table__cell">
+            <div class="history-date">
+              <div class="history-date__primary">${formatDate(m.created_at)}</div>
+            </div>
+          </td>
+          <td class="history-table__cell">
+            <div class="history-date">
+              <div class="history-date__primary">${formatDate(m.ended_at)}</div>
+              <span class="${status.className}"><span class="history-status__dot"></span>${status.label}</span>
+            </div>
+          </td>
+          <td class="history-table__cell">
+            <div class="history-models">
+              <span>${m.model_a || 'A'}</span>
+              <span class="history-models__vs">vs</span>
+              <span>${m.model_b || 'B'}</span>
+            </div>
+          </td>
+          <td class="history-table__cell num history-blinds">${blinds}</td>
+          <td class="history-table__cell num history-blinds">${formatNumber(m.start_stack)}</td>
+          <td class="history-table__cell num history-blinds">${formatNumber(m.duel_seeds)}</td>
+          <td class="history-table__cell history-table__actions">
+            <a class="pill accent" href="/web/replay.html?match_id=${m.id}">Replay</a>
+          </td>
+        </tr>`;
+    }
+
+    function updateHeaderState() {
+      document.querySelectorAll('th[data-sort]').forEach((th) => {
+        const key = th.getAttribute('data-sort');
+        if (!key) return;
+        if (key === state.sortKey) {
+          th.setAttribute('data-dir', state.sortDir);
+          th.setAttribute('aria-sort', state.sortDir === 'asc' ? 'ascending' : 'descending');
+        } else {
+          th.removeAttribute('data-dir');
+          th.setAttribute('aria-sort', 'none');
+        }
+      });
+    }
+
+    function render() {
+      const tbody = $('#tbody');
+      if (!tbody) return;
+      if (!state.rows.length) {
+        tbody.innerHTML = `<tr><td class="history-table__cell" colspan="8">No matches available.</td></tr>`;
+        updateHeaderState();
+        return;
+      }
+      const sorted = sortRows(state.rows);
+      tbody.innerHTML = sorted.map(rowMarkup).join('');
+      updateHeaderState();
+    }
+
+    function handleSortClick(event) {
+      const th = event.currentTarget;
+      const key = th.getAttribute('data-sort');
+      if (!key) return;
+      if (state.sortKey === key) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortKey = key;
+        state.sortDir = 'desc';
+      }
+      render();
+    }
+
+    async function load() {
+      const data = await getJSON('/api/matches', '/web/data/matches.json');
+      state.rows = data.rows || [];
+      render();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('th[data-sort]').forEach((th) => {
+        th.addEventListener('click', handleSortClick);
+      });
+      load();
+    });
   </script>
 </head>
-<body>
+<body class="page-history">
   <header class="site-header">
     <div class="topnav">
       <a class="brand" href="/web/index.html" aria-label="PokerBench home">
@@ -61,28 +163,31 @@
 
   <main class="page-content">
     <div class="wrap wrap--wide">
-      <div class="card card--compact card--header-row">
-        <div>
+      <div class="history-hero">
+        <a class="history-hero__logo" href="/web/index.html" aria-label="PokerBench home">
+          <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
+        </a>
+        <div class="history-hero__body">
           <h1>Match History</h1>
           <div class="muted">Select a match to watch its replay.</div>
         </div>
       </div>
 
-      <div class="card">
-        <table>
+      <div class="history-table">
+        <table class="table">
           <thead>
             <tr>
-              <th class="num">ID</th>
-              <th>Created</th>
-              <th>Ended</th>
+              <th class="num sortable" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
+              <th class="sortable" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
+              <th class="sortable" data-sort="ended_at" title="Sort by ended date">Ended</th>
               <th>Models</th>
-              <th class="num">Blinds</th>
-              <th class="num">Start</th>
-              <th class="num">Pairs</th>
+              <th class="num sortable" data-sort="blinds" title="Sort by blinds">Blinds</th>
+              <th class="num sortable" data-sort="start_stack" title="Sort by start stack">Start</th>
+              <th class="num sortable" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
               <th class="num">Replay</th>
             </tr>
           </thead>
-          <tbody id="tbody"><tr><td colspan="8">Loading…</td></tr></tbody>
+          <tbody id="tbody"><tr><td class="history-table__cell" colspan="8">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
