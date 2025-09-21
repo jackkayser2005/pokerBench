@@ -136,22 +136,69 @@
 
       <div class="replay-layout">
         <section class="card card--stage" id="tableCard">
-          <header class="stage-header">
-            <div class="stage-header__hand">
-              <span class="muted">Hand</span>
-              <div id="hand" class="stage-header__hand-id">—</div>
-            </div>
-            <div class="stage-header__meta">
-              <div class="stage-header__pot">
-                <span class="muted">Pot</span>
-                <span class="stage-header__pot-value mono" id="pot">0</span>
+          <div class="stage-toolbar">
+            <div class="stage-controls" id="controlCard" aria-label="Playback controls">
+              <div class="stage-controls__primary">
+                <div class="replay-controls__buttons" role="group" aria-label="Playback">
+                  <button class="pill accent" id="play" type="button">Play</button>
+                  <button class="pill ghost" id="pause" type="button">Pause</button>
+                  <button class="pill ghost" id="next" type="button">Next</button>
+                </div>
+                <div class="stage-controls__status" aria-live="polite">
+                  <span class="stage-controls__label muted">Playback</span>
+                  <span id="status" class="pill ghost" aria-live="polite">Paused</span>
+                  <span id="turn" class="pill ghost" aria-live="polite">Turn: —</span>
+                </div>
               </div>
-              <div class="stage-header__status">
-                <span id="status" class="pill ghost" aria-live="polite">Paused</span>
-                <span id="turn" class="pill ghost" aria-live="polite">Turn: —</span>
+              <div class="stage-controls__secondary">
+                <div class="replay-control stage-control">
+                  <div class="replay-control__label">
+                    <label for="speedSlider">Speed</label>
+                    <button class="inline-tip" type="button" data-tip="Slide right to shorten the delay between actions. Playback automatically pauses once the match completes." aria-label="Tip: adjust playback speed">i</button>
+                  </div>
+                  <input id="speedSlider" class="replay-control__range" type="range" min="1" max="5" value="1"/>
+                  <div class="replay-control__hint mono" id="speedValue">1×</div>
+                </div>
+                <div class="replay-control stage-control">
+                  <div class="replay-control__label">
+                    <label for="holesSelect">Hole cards</label>
+                    <button class="inline-tip" type="button" data-tip="Reveal one or both players' hole cards. Hidden keeps them face down until showdown." aria-label="Tip: toggle hole card visibility">i</button>
+                  </div>
+                  <div class="select-pill__wrap">
+                    <select id="holesSelect" class="select-pill select-pill--condensed">
+                      <option value="both">Both</option>
+                      <option value="sb">SB Only</option>
+                      <option value="bb">BB Only</option>
+                      <option value="none">Hidden</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="replay-control replay-control--timeline stage-control stage-control--timeline">
+                <div class="replay-control__label">
+                  <label for="timeline">Timeline</label>
+                </div>
+                <input id="timeline" class="replay-control__range" type="range" min="0" value="0"/>
+                <div class="replay-control__timeline-meta">
+                  <span class="mono" id="count">0/0</span>
+                </div>
               </div>
             </div>
-          </header>
+            <div class="stage-summary">
+              <div class="stage-summary__item">
+                <span class="stage-summary__label muted">Hand</span>
+                <div id="hand" class="stage-summary__value">—</div>
+              </div>
+              <div class="stage-summary__item">
+                <span class="stage-summary__label muted">Pot</span>
+                <div class="stage-summary__value mono" id="pot">0</div>
+              </div>
+              <div class="stage-summary__item stage-summary__item--log">
+                <span class="stage-summary__label muted">Action</span>
+                <div id="log" class="stage-summary__value stage-summary__value--log" aria-live="polite">—</div>
+              </div>
+            </div>
+          </div>
 
           <div class="stage-table">
             <article class="seat-card stage-seat stage-seat--sb" id="sbZone" data-seat="sb">
@@ -162,6 +209,10 @@
                 </div>
                 <span class="seat-card__dealer" id="sbDealer" aria-hidden="true" hidden>D</span>
               </header>
+              <div class="seat-card__cards">
+                <div class="cards cards--hole" id="sb_hole" aria-label="Small blind hole cards"></div>
+                <div class="seat-card__cards-text" id="sbHoleText">Hidden</div>
+              </div>
               <div class="seat-card__stacks">
                 <span class="muted">Stack</span>
                 <span id="sb_stack_tag" class="seat-card__stack mono">0</span>
@@ -183,10 +234,6 @@
                   <span id="sb_ev_delta" class="seat-card__ev-delta mono">±0</span>
                 </div>
               </div>
-              <div class="seat-card__cards">
-                <div class="cards cards--hole" id="sb_hole" aria-label="Small blind hole cards"></div>
-                <div class="seat-card__cards-text" id="sbHoleText">Hidden</div>
-              </div>
             </article>
 
             <div class="stage-table__center">
@@ -207,6 +254,10 @@
                 </div>
                 <span class="seat-card__dealer" id="bbDealer" aria-hidden="true" hidden>D</span>
               </header>
+              <div class="seat-card__cards">
+                <div class="cards cards--hole" id="bb_hole" aria-label="Big blind hole cards"></div>
+                <div class="seat-card__cards-text" id="bbHoleText">Hidden</div>
+              </div>
               <div class="seat-card__stacks">
                 <span class="muted">Stack</span>
                 <span id="bb_stack_tag" class="seat-card__stack mono">0</span>
@@ -227,10 +278,6 @@
                   <span id="bb_ev_value" class="mono">0%</span>
                   <span id="bb_ev_delta" class="seat-card__ev-delta mono">±0</span>
                 </div>
-              </div>
-              <div class="seat-card__cards">
-                <div class="cards cards--hole" id="bb_hole" aria-label="Big blind hole cards"></div>
-                <div class="seat-card__cards-text" id="bbHoleText">Hidden</div>
               </div>
             </article>
           </div>
