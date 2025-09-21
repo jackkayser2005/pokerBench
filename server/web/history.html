@@ -8,7 +8,7 @@
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
   <script>
-    const state = { rows: [], sortKey: 'created_at', sortDir: 'desc' };
+    const state = { rows: [], sortKey: 'created_at', sortDir: 'desc', statusFilter: 'all' };
     const $ = (selector) => document.querySelector(selector);
     const formatNumber = (value) => Number(value ?? 0).toLocaleString();
     const formatDate = (value) => {
@@ -44,6 +44,15 @@
         return { className: 'history-status history-status--done', label: 'Complete' };
       }
       return { className: 'history-status history-status--live', label: 'In Progress' };
+    }
+
+    function applyFilters(list) {
+      if (!Array.isArray(list)) return [];
+      return list.filter((row) => {
+        if (state.statusFilter === 'live') return !row?.ended_at;
+        if (state.statusFilter === 'done') return Boolean(row?.ended_at);
+        return true;
+      });
     }
 
     function sortRows(list) {
@@ -101,17 +110,41 @@
       });
     }
 
+    function emptyMessage() {
+      if (!state.rows.length) return 'No matches available.';
+      return 'No matches match the current filters.';
+    }
+
+    function syncControls() {
+      const sortKeySelect = document.getElementById('historySortKey');
+      const sortDirButton = document.getElementById('historySortDir');
+      const sortDirLabel = document.getElementById('historySortDirLabel');
+      const statusSelect = document.getElementById('historyStatusFilter');
+      const dirLabel = state.sortDir === 'asc' ? 'Oldest first' : 'Newest first';
+
+      if (sortKeySelect) sortKeySelect.value = state.sortKey;
+      if (statusSelect) statusSelect.value = state.statusFilter;
+      if (sortDirButton) {
+        sortDirButton.setAttribute('data-dir', state.sortDir);
+        sortDirButton.setAttribute('aria-label', `Sort direction: ${dirLabel}. Activate to switch.`);
+      }
+      if (sortDirLabel) sortDirLabel.textContent = dirLabel;
+    }
+
     function render() {
       const tbody = $('#tbody');
       if (!tbody) return;
-      if (!state.rows.length) {
-        tbody.innerHTML = `<tr><td class="history-table__cell" colspan="8">No matches available.</td></tr>`;
+      const filtered = applyFilters(state.rows);
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td class="history-table__cell history-table__cell--empty" colspan="8">${emptyMessage()}</td></tr>`;
         updateHeaderState();
+        syncControls();
         return;
       }
-      const sorted = sortRows(state.rows);
+      const sorted = sortRows(filtered);
       tbody.innerHTML = sorted.map(rowMarkup).join('');
       updateHeaderState();
+      syncControls();
     }
 
     function handleSortClick(event) {
@@ -137,6 +170,30 @@
       document.querySelectorAll('th[data-sort]').forEach((th) => {
         th.addEventListener('click', handleSortClick);
       });
+      const sortKeySelect = document.getElementById('historySortKey');
+      const sortDirButton = document.getElementById('historySortDir');
+      const statusSelect = document.getElementById('historyStatusFilter');
+
+      if (sortKeySelect) {
+        sortKeySelect.addEventListener('change', (event) => {
+          state.sortKey = event.target.value;
+          render();
+        });
+      }
+      if (sortDirButton) {
+        sortDirButton.addEventListener('click', () => {
+          state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+          render();
+        });
+      }
+      if (statusSelect) {
+        statusSelect.addEventListener('change', (event) => {
+          state.statusFilter = event.target.value;
+          render();
+        });
+      }
+
+      syncControls();
       load();
     });
   </script>
@@ -258,21 +315,52 @@
       </div>
 
       <div class="history-table">
-        <table class="table">
-          <thead>
-            <tr>
-              <th class="num sortable" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
-              <th class="sortable" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
-              <th class="sortable" data-sort="ended_at" title="Sort by ended date">Ended</th>
-              <th>Models</th>
-              <th class="num sortable" data-sort="blinds" title="Sort by blinds">Blinds</th>
-              <th class="num sortable" data-sort="start_stack" title="Sort by start stack">Start</th>
-              <th class="num sortable" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
-              <th class="num">Replay</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"><tr><td class="history-table__cell" colspan="8">Loading…</td></tr></tbody>
-        </table>
+        <div class="history-toolbar" role="region" aria-label="Match history controls">
+          <div class="history-toolbar__group">
+            <label class="history-toolbar__label" for="historySortKey">Sort by</label>
+            <select class="history-select" id="historySortKey" name="historySortKey">
+              <option value="created_at" selected>Created date</option>
+              <option value="ended_at">Ended date</option>
+              <option value="id">Match ID</option>
+              <option value="blinds">Blinds</option>
+              <option value="start_stack">Starting stack</option>
+              <option value="duel_seeds">Pairs</option>
+            </select>
+          </div>
+          <button class="history-toolbar__toggle" type="button" id="historySortDir" aria-label="Sort direction">
+            <span class="history-toolbar__icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" focusable="false" role="presentation">
+                <path d="M8 3.25 4.25 7h7.5L8 3.25Zm0 9.5L11.75 9h-7.5L8 12.75Z"></path>
+              </svg>
+            </span>
+            <span id="historySortDirLabel">Newest first</span>
+          </button>
+          <div class="history-toolbar__group history-toolbar__group--status">
+            <label class="history-toolbar__label" for="historyStatusFilter">Show</label>
+            <select class="history-select" id="historyStatusFilter" name="historyStatusFilter">
+              <option value="all" selected>All matches</option>
+              <option value="live">In progress</option>
+              <option value="done">Completed</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th class="num sortable" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
+                <th class="sortable" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
+                <th class="sortable" data-sort="ended_at" title="Sort by ended date">Ended</th>
+                <th>Models</th>
+                <th class="num sortable" data-sort="blinds" title="Sort by blinds">Blinds</th>
+                <th class="num sortable" data-sort="start_stack" title="Sort by start stack">Start</th>
+                <th class="num sortable" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
+                <th class="num">Replay</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"><tr><td class="history-table__cell history-table__cell--empty" colspan="8">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </main>
