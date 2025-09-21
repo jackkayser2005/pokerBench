@@ -54,27 +54,34 @@
         const pa = total>0 ? p.a_wins/total : 0.5;
         wins[i][j] = pa; wins[j][i] = 1-pa;
       }
-      let html = '<div class="table-wrap"><table class="matrix-table"><thead><tr><th>Model</th>' + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
+      let html = '<div class="table-wrap"><table class="matrix-table"><thead><tr><th class=\"matrix-sticky\">Model</th>' + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
       bots.forEach((b, i)=>{
-        html += `<tr><th scope="row"><div>${shortName(b.name)}</div><div class=\"sub\">${b.company}</div></th>`;
+        html += `<tr><th scope="row" class="matrix-sticky"><div>${shortName(b.name)}</div><div class=\"sub\">${b.company}</div></th>`;
         for(let j=0;j<N;j++){
-          if(i===j){ html += '<td class="matrix-diag">-</td>'; continue; }
+          if(i===j){
+            const name = bots[i]?.name || '—';
+            const diagTitle = `${name} self-play intentionally left blank`;
+            const diagAria = `Self matchup for ${name} — intentionally blank`;
+            html += `<td class="matrix-diag" title="${escapeAttr(diagTitle)}" aria-label="${escapeAttr(diagAria)}"></td>`;
+            continue;
+          }
           const p = wins[i][j];
-          const pct = p==null? '-' : Math.round(100*p)+'%';
+          const pct = p==null? '—' : Math.round(100*p)+'%';
+          const q = wins[j][i];
+          const oppPct = q==null? '—' : Math.round(100*q)+'%';
           const exp = Math.round(100*eloProb(elo[i], elo[j]))+'%';
           const aName = bots[i]?.name || '—';
           const bName = bots[j]?.name || '—';
           const pairLabel = `${aName} vs ${bName}`;
-          const tipParts = [pairLabel];
-          if (hands[i][j]) {
-            tipParts.push(`${pct} actual of ${hands[i][j]} hands`);
-          } else {
-            tipParts.push(`${pct} actual`);
-          }
-          tipParts.push(`${exp} expected (Elo)`);
+          const handCount = hands[i][j] || 0;
+          const sample = handCount > 0 ? ` (n=${handCount})` : '';
+          const duelLine = `${aName} vs ${bName}: ${pct}${sample} • ${bName} vs ${aName}: ${oppPct}${sample}`;
+          const tipParts = [duelLine, `Expected (Elo): ${exp}`];
           const tip = tipParts.join('\n');
           const style = heat(p==null?0.5:p);
-          const aria = pct === '-' ? `${pairLabel}` : `${pct} win rate — ${pairLabel}`;
+          const aria = p==null
+            ? `${pairLabel} — no completed hands yet`
+            : `${pairLabel}: ${pct} over ${handCount} hands. Reverse: ${bName} vs ${aName} ${oppPct}. Expected (Elo) ${exp}.`;
           html += `<td class="num" style="${style}" title="${escapeAttr(tip)}" aria-label="${escapeAttr(aria)}">${pct}</td>`;
         }
         html += '</tr>';
@@ -193,10 +200,17 @@
     <div class="wrap wrap--wide">
       <div class="card card--compact">
         <h1>Win Percentage Matrix <button class="inline-tip" type="button" data-tip="Each cell shows A's win rate versus B based on completed hands. Hover a result to see the sample size and Elo expectation." aria-label="Tip: how to read the win matrix">i</button></h1>
-        <div class="muted">Cell shows A’s win rate vs B (hand-level). Heat indicates stronger advantage.</div>
+        <div class="muted">Cell = A’s win rate vs B; diagonal blank by design.</div>
       </div>
 
-      <div class="card" id="matrix">Loading…</div>
+      <div class="card matrix-card">
+        <div class="matrix-card__legend" aria-hidden="true">
+          <span class="matrix-card__legend-label">0%</span>
+          <span class="matrix-card__legend-gradient"></span>
+          <span class="matrix-card__legend-label">100%</span>
+        </div>
+        <div class="matrix-card__body" id="matrix">Loading…</div>
+      </div>
     </div>
   </main>
 
