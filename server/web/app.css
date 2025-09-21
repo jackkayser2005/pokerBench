@@ -4046,6 +4046,12 @@ body.tooltips-disabled .inline-tip {
   color: #1f2937;
 }
 
+:root[data-theme='dark'] .history-status--done,
+:root.theme-dark .history-status--done {
+  background: rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
+}
+
 .history-table__actions {
   text-align: right;
 }
