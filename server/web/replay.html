@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab - Replay</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=7"/>
+  <link rel="stylesheet" href="/web/app.css?v=8"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
   <script>
@@ -360,8 +360,12 @@
         <button class="pill nav-link nav-settings" type="button" aria-expanded="false" aria-controls="navSettingsPanel">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
-              <path d="M10.5 3.5 9.8 5.7a1 1 0 0 1-.7.7L6.9 6.9a1 1 0 0 0-.5 1.6l1.6 1.6a1 1 0 0 1 .3.9l-.4 2.3a1 1 0 0 0 1 1.2h2.2a1 1 0 0 1 .9.6l1 2.1a1 1 0 0 0 1.8 0l1-2.1a1 1 0 0 1 .9-.6h2.2a1 1 0 0 0 1-1.2l-.4-2.3a1 1 0 0 1 .3-.9l1.6-1.6a1 1 0 0 0-.5-1.6l-2.2-.5a1 1 0 0 1-.7-.7l-.7-2.2a1 1 0 0 0-1-.7h-2.4a1 1 0 0 0-1 .7Z"></path>
-              <circle cx="12" cy="12" r="2.5"></circle>
+              <path d="M4 6h16"></path>
+              <circle cx="9" cy="6" r="2" fill="none"></circle>
+              <path d="M4 12h16"></path>
+              <circle cx="15" cy="12" r="2" fill="none"></circle>
+              <path d="M4 18h16"></path>
+              <circle cx="7" cy="18" r="2" fill="none"></circle>
             </svg>
           </span>
           <span class="nav-link__label">Settings</span>
@@ -409,8 +413,6 @@
             <label class="muted" for="sl">Speed</label>
             <input id="sl" type="range" min="1" max="5" value="1"/>
           </div>
-          <span id="status" class="pill ghost replay__status" aria-live="polite">Paused</span>
-          <span id="turn" class="pill turn-pill" aria-live="polite">Turn: &mdash;</span>
           <div class="replay__holes">
             <label class="muted" for="holesSel">Holes</label>
             <select id="holesSel" class="select-pill select-pill--condensed">
@@ -421,30 +423,55 @@
             </select>
           </div>
           <div class="replay__progress">
-            <input id="prog" type="range" min="0" value="0"/>
-            <span class="mono" id="count">0/0</span>
+            <label class="muted" for="prog">Timeline</label>
+            <div class="replay__progress-track">
+              <input id="prog" type="range" min="0" value="0"/>
+              <span class="replay__count mono" id="count">0/0</span>
+            </div>
+          </div>
+          <div class="replay__statusbar">
+            <span id="status" class="pill ghost" aria-live="polite">Paused</span>
+            <span id="turn" class="pill turn-pill" aria-live="polite">Turn: &mdash;</span>
           </div>
         </div>
 
-        <div class="felt">
-          <div id="hand" class="replay__hand">&mdash;</div>
-          <div id="caption" class="replay__caption"></div>
-          <div id="handBanner" class="hand-banner"></div>
-          <div class="cards" id="board"></div>
-          <div class="stacks">
-            <div id="sbZone" class="sb-zone">
-              <div class="muted">SB</div>
-              <div class="cards" id="sb_hole"></div>
-              <div id="sb_stack_tag" class="stack-tag">Stack: 0</div>
+        <div class="replay__summary">
+          <div class="replay__summary-main">
+            <div class="replay__summary-block">
+              <span class="replay__summary-label">Hand</span>
+              <span id="hand" class="replay__hand">&mdash;</span>
             </div>
+            <div class="replay__summary-block replay__summary-block--action">
+              <span class="replay__summary-label">Action</span>
+              <div id="caption" class="replay__caption">Waiting for first hand…</div>
+              <div id="log" class="replay__log muted">—</div>
+            </div>
+          </div>
+          <div class="replay__banner" id="handBanner"></div>
+        </div>
+
+        <div class="felt">
+          <div class="felt__header">
             <div class="replay__pot">
               <span class="replay__pot-label">Pot</span>
               <span class="replay__pot-value" id="pot">0</span>
             </div>
+          </div>
+          <div class="cards felt__board" id="board"></div>
+          <div class="felt__seats">
+            <div id="sbZone" class="sb-zone">
+              <div class="seat-card__header">
+                <span class="seat-card__label muted">SB</span>
+                <span id="sb_stack_tag" class="stack-tag">Stack: 0</span>
+              </div>
+              <div class="cards cards--hole" id="sb_hole"></div>
+            </div>
             <div id="bbZone" class="bb-zone">
-              <div class="muted">BB</div>
-              <div class="cards" id="bb_hole"></div>
-              <div id="bb_stack_tag" class="stack-tag">Stack: 0</div>
+              <div class="seat-card__header">
+                <span class="seat-card__label muted">BB</span>
+                <span id="bb_stack_tag" class="stack-tag">Stack: 0</span>
+              </div>
+              <div class="cards cards--hole" id="bb_hole"></div>
             </div>
           </div>
         </div>
@@ -467,7 +494,15 @@
         <a href="/web/about.html">About</a>
         <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
       </nav>
-      <p class="site-footer__copy">© 2025 PokerBench</p>
+      <div class="site-footer__actions">
+        <a class="site-footer__social" href="https://x.com/PokerAIArena" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path d="M3 3h4.3l5.14 6.8L17.8 3H21l-7.6 9.8L21 21h-4.3l-5.32-7.16L7.2 21H3l7.74-10.02Z" fill="currentColor"></path>
+          </svg>
+          <span>@PokerAIArena</span>
+        </a>
+        <p class="site-footer__copy">© 2025 PokerBench</p>
+      </div>
     </div>
   </footer>
 </body>

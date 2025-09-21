@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab — Elo Over Time</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=7"/>
+  <link rel="stylesheet" href="/web/app.css?v=8"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
     <script>
@@ -367,7 +367,7 @@
         const msg = mk('text');
         msg.setAttribute('x', String(pad.left));
         msg.setAttribute('y', String(height / 2));
-        msg.setAttribute('fill', '#5b7089');
+        msg.setAttribute('fill', '#94a3b8');
         msg.setAttribute('font-size', '14');
         msg.textContent = state.selectedCompany !== 'all'
           ? 'No duels logged yet for this company.'
@@ -405,8 +405,8 @@
       bgGrad.setAttribute('x2', '0');
       bgGrad.setAttribute('y1', '0');
       bgGrad.setAttribute('y2', '1');
-      const bgStop1 = mk('stop'); bgStop1.setAttribute('offset', '0%'); bgStop1.setAttribute('stop-color', 'rgba(20,34,52,.72)');
-      const bgStop2 = mk('stop'); bgStop2.setAttribute('offset', '100%'); bgStop2.setAttribute('stop-color', 'rgba(12,18,28,.92)');
+      const bgStop1 = mk('stop'); bgStop1.setAttribute('offset', '0%'); bgStop1.setAttribute('stop-color', 'rgba(255,255,255,0.98)');
+      const bgStop2 = mk('stop'); bgStop2.setAttribute('offset', '100%'); bgStop2.setAttribute('stop-color', 'rgba(233,239,255,0.94)');
       bgGrad.appendChild(bgStop1); bgGrad.appendChild(bgStop2);
       defs.appendChild(bgGrad);
       svg.appendChild(defs);
@@ -420,7 +420,7 @@
       svg.appendChild(bg);
 
       const grid = mk('g');
-      grid.setAttribute('stroke', 'rgba(255,255,255,.08)');
+      grid.setAttribute('stroke', 'rgba(15, 23, 42, 0.08)');
       grid.setAttribute('stroke-width', '1');
       grid.setAttribute('fill', 'none');
 
@@ -433,14 +433,14 @@
         line.setAttribute('x2', String(width - pad.right));
         line.setAttribute('y1', String(yy));
         line.setAttribute('y2', String(yy));
-        line.setAttribute('opacity', i === yTicks ? '0.45' : '0.25');
+        line.setAttribute('opacity', i === yTicks ? '0.4' : '0.18');
         grid.appendChild(line);
 
         const label = mk('text');
         label.setAttribute('x', String(pad.left - 16));
         label.setAttribute('y', String(yy + 4));
         label.setAttribute('text-anchor', 'end');
-        label.setAttribute('fill', '#6f8099');
+        label.setAttribute('fill', '#4b5563');
         label.setAttribute('font-size', '11');
         label.textContent = Math.round(value).toString();
         svg.appendChild(label);
@@ -471,14 +471,14 @@
         line.setAttribute('x2', String(xx));
         line.setAttribute('y1', String(pad.top));
         line.setAttribute('y2', String(height - pad.bottom));
-        line.setAttribute('opacity', '0.22');
+        line.setAttribute('opacity', '0.16');
         grid.appendChild(line);
 
         const label = mk('text');
         label.setAttribute('x', String(xx));
         label.setAttribute('y', String(height - pad.bottom + 20));
         label.setAttribute('text-anchor', 'middle');
-        label.setAttribute('fill', '#6f8099');
+        label.setAttribute('fill', '#4b5563');
         label.setAttribute('font-size', '11');
         label.textContent = shortDate.format(new Date(time));
         const labelTitle = mk('title');
@@ -491,7 +491,7 @@
 
       const axis = mk('path');
       axis.setAttribute('d', `M ${pad.left} ${pad.top} V ${height - pad.bottom} H ${width - pad.right}`);
-      axis.setAttribute('stroke', 'rgba(255,255,255,.35)');
+      axis.setAttribute('stroke', 'rgba(15, 23, 42, 0.18)');
       axis.setAttribute('fill', 'none');
       axis.setAttribute('stroke-width', '1.2');
       svg.appendChild(axis);
@@ -801,6 +801,20 @@
       });
     }
 
+    function updateActiveIndicator() {
+      const indicator = document.getElementById('activeCompanyIndicator');
+      if (!indicator) return;
+      const key = state.selectedCompany;
+      indicator.classList.toggle('is-active', key !== 'all');
+      if (key === 'all') {
+        indicator.textContent = 'Showing all companies';
+        return;
+      }
+      const entry = state.companies.find(item => item.key === key);
+      const label = entry?.label || prettyCompanyName(key);
+      indicator.textContent = `Showing ${label}`;
+    }
+
     function renderCompanyFilters() {
       const host = document.getElementById('companyFilters');
       if (!host) return;
@@ -810,6 +824,7 @@
         host.appendChild(createFilterButton(entry.key, entry.label, entry.iconMarkup));
       });
       updateFilterButtons();
+      updateActiveIndicator();
     }
 
     function applyFilters() {
@@ -819,6 +834,7 @@
         : state.fullSeries.filter(entry => entry.meta.companyKey === key);
       const sorted = sortSeries(filtered);
       draw(sorted);
+      updateActiveIndicator();
     }
 
     function bindFilterEvents() {
@@ -988,8 +1004,12 @@
         <button class="pill nav-link nav-settings" type="button" aria-expanded="false" aria-controls="navSettingsPanel">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
-              <path d="M10.5 3.5 9.8 5.7a1 1 0 0 1-.7.7L6.9 6.9a1 1 0 0 0-.5 1.6l1.6 1.6a1 1 0 0 1 .3.9l-.4 2.3a1 1 0 0 0 1 1.2h2.2a1 1 0 0 1 .9.6l1 2.1a1 1 0 0 0 1.8 0l1-2.1a1 1 0 0 1 .9-.6h2.2a1 1 0 0 0 1-1.2l-.4-2.3a1 1 0 0 1 .3-.9l1.6-1.6a1 1 0 0 0-.5-1.6l-2.2-.5a1 1 0 0 1-.7-.7l-.7-2.2a1 1 0 0 0-1-.7h-2.4a1 1 0 0 0-1 .7Z"></path>
-              <circle cx="12" cy="12" r="2.5"></circle>
+              <path d="M4 6h16"></path>
+              <circle cx="9" cy="6" r="2" fill="none"></circle>
+              <path d="M4 12h16"></path>
+              <circle cx="15" cy="12" r="2" fill="none"></circle>
+              <path d="M4 18h16"></path>
+              <circle cx="7" cy="18" r="2" fill="none"></circle>
             </svg>
           </span>
           <span class="nav-link__label">Settings</span>
@@ -1042,6 +1062,7 @@
               Filter by company
             </span>
             <div id="companyFilters" class="filter-chips"></div>
+            <div id="activeCompanyIndicator" class="filter-indicator" aria-live="polite">Showing all companies</div>
           </div>
           <label class="sort-control" for="sortMode">
             <span class="sort-control__label">Sort by</span>
@@ -1080,7 +1101,15 @@
         <a href="/web/about.html">About</a>
         <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
       </nav>
-      <p class="site-footer__copy">© 2025 PokerBench</p>
+      <div class="site-footer__actions">
+        <a class="site-footer__social" href="https://x.com/PokerAIArena" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path d="M3 3h4.3l5.14 6.8L17.8 3H21l-7.6 9.8L21 21h-4.3l-5.32-7.16L7.2 21H3l7.74-10.02Z" fill="currentColor"></path>
+          </svg>
+          <span>@PokerAIArena</span>
+        </a>
+        <p class="site-footer__copy">© 2025 PokerBench</p>
+      </div>
     </div>
   </footer>
 </body>

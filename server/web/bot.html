@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab — Bot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=7"/>
+  <link rel="stylesheet" href="/web/app.css?v=8"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
   <script>
@@ -37,6 +37,14 @@
       return map[raw] || 'N/A';
     }
 
+    const STYLE_META = {
+      LAG: { title: 'Loose Aggressive', label: 'Loose · Aggressive' },
+      TAG: { title: 'Tight Aggressive', label: 'Tight · Aggressive' },
+      FISH: { title: 'Loose Passive', label: 'Loose · Passive' },
+      NIT: { title: 'Tight Passive', label: 'Tight · Passive' },
+    };
+    const STYLE_ORDER = ['LAG', 'TAG', 'FISH', 'NIT'];
+
     // -------------------- API-driven sections --------------------
     async function getJSON(url, fallback){
       try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
@@ -51,17 +59,45 @@
         const styleCode = canonicalStyle(d.style);
         const wrap = $('#playstyle');
         if(!wrap) return;
+        const activeKey = STYLE_META[styleCode] ? styleCode : 'N/A';
+        const badgeText = STYLE_META[styleCode]?.title || 'Unknown style';
+        const cells = STYLE_ORDER.map(key => {
+          const meta = STYLE_META[key];
+          if (!meta) return '';
+          const isActive = key === activeKey;
+          return `
+            <button type="button" class="playstyle-grid__cell${isActive ? ' is-active' : ''}" data-style="${key}" data-label="${meta.title}" aria-label="${meta.title}">
+              <span class="playstyle-grid__abbr">${key}</span>
+              <span class="playstyle-grid__text">${meta.label}</span>
+            </button>`;
+        }).join('');
+
         wrap.innerHTML = `
-          <div class="muted">Playstyle <span class="num-sub">(click squares for details)</span></div>
-          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-            <span class="style-grid lg" data-style="${styleCode}">
-              <span class="sq"></span><span class="sq"></span><span class="sq"></span><span class="sq"></span>
-            </span>
-            <span class="muted mono">
-              raise ${pct(d.raise_pct)}% &bull;
-              call ${pct(d.call_pct)}% &bull;
-              fold ${pct(d.fold_pct)}%
-            </span>
+          <div class="playstyle-card" data-style="${activeKey}">
+            <div class="playstyle-card__header">
+              <div class="playstyle-card__header-text">
+                <span class="playstyle-card__label">Playstyle</span>
+                <span class="playstyle-card__hint">Click a quadrant for details</span>
+              </div>
+              <span class="playstyle-card__badge">${badgeText}</span>
+            </div>
+            <div class="style-grid playstyle-grid" data-style="${activeKey}" role="list">
+              ${cells}
+            </div>
+            <dl class="playstyle-card__stats">
+              <div class="playstyle-card__stat">
+                <dt>Raise</dt>
+                <dd>${pct(d.raise_pct)}%</dd>
+              </div>
+              <div class="playstyle-card__stat">
+                <dt>Call</dt>
+                <dd>${pct(d.call_pct)}%</dd>
+              </div>
+              <div class="playstyle-card__stat">
+                <dt>Fold</dt>
+                <dd>${pct(d.fold_pct)}%</dd>
+              </div>
+            </dl>
           </div>`;
       }catch{/* noop */}
     }
@@ -157,7 +193,7 @@
       tipEl.style.top  = top  + 'px';
     }
 
-    function showTip(anchor, label){
+    function showTip(anchor, styleKey, displayLabel){
       const explain = {
         LAG:'Loose-Aggressive: plays many hands and applies pressure with bets/raises.',
         TAG:'Tight-Aggressive: selects stronger ranges and applies pressure.',
@@ -165,10 +201,12 @@
         NIT:'Very tight/passive: waits for premiums, folds often.'
       };
       tipAnchor = anchor;
+      const key = (styleKey || '').toUpperCase();
+      const title = displayLabel || STYLE_META[key]?.title || key || 'Playstyle';
       tipEl.innerHTML =
         '<button class="close" aria-label="Close">×</button>' +
-        '<div class="title">'+label+'</div>' +
-        '<div class="body">'+(explain[label]||'Playstyle summary.')+'</div>';
+        '<div class="title">'+title+'</div>' +
+        '<div class="body">'+(explain[key]||'Playstyle summary.')+'</div>';
 
       tipEl.style.display = 'block';
       tipEl.classList.add('show');
@@ -195,17 +233,18 @@
 
       // Toggle via clicks
       document.addEventListener('click', (ev)=>{
-        const grid = ev.target.closest('.style-grid');
-        if (!grid) {
-          if (!ev.target.closest('#tip-pop')) hideTip();
+        const cell = ev.target.closest('.playstyle-grid__cell');
+        if (cell) {
+          const styleKey = cell.getAttribute('data-style') || 'N/A';
+          const display = cell.getAttribute('data-label') || STYLE_META[styleKey]?.title || styleKey;
+          if (tipEl.classList.contains('show') && tipAnchor === cell) {
+            hideTip();
+          } else {
+            showTip(cell, styleKey, display);
+          }
           return;
         }
-        const label = grid.getAttribute('data-style') || 'N/A';
-        if (tipEl.classList.contains('show') && tipAnchor === grid) {
-          hideTip();
-        } else {
-          showTip(grid, label);
-        }
+        if (!ev.target.closest('.style-grid') && !ev.target.closest('#tip-pop')) hideTip();
       });
 
       // Close on Escape
@@ -292,8 +331,12 @@
         <button class="pill nav-link nav-settings" type="button" aria-expanded="false" aria-controls="navSettingsPanel">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
-              <path d="M10.5 3.5 9.8 5.7a1 1 0 0 1-.7.7L6.9 6.9a1 1 0 0 0-.5 1.6l1.6 1.6a1 1 0 0 1 .3.9l-.4 2.3a1 1 0 0 0 1 1.2h2.2a1 1 0 0 1 .9.6l1 2.1a1 1 0 0 0 1.8 0l1-2.1a1 1 0 0 1 .9-.6h2.2a1 1 0 0 0 1-1.2l-.4-2.3a1 1 0 0 1 .3-.9l1.6-1.6a1 1 0 0 0-.5-1.6l-2.2-.5a1 1 0 0 1-.7-.7l-.7-2.2a1 1 0 0 0-1-.7h-2.4a1 1 0 0 0-1 .7Z"></path>
-              <circle cx="12" cy="12" r="2.5"></circle>
+              <path d="M4 6h16"></path>
+              <circle cx="9" cy="6" r="2" fill="none"></circle>
+              <path d="M4 12h16"></path>
+              <circle cx="15" cy="12" r="2" fill="none"></circle>
+              <path d="M4 18h16"></path>
+              <circle cx="7" cy="18" r="2" fill="none"></circle>
             </svg>
           </span>
           <span class="nav-link__label">Settings</span>
@@ -377,7 +420,15 @@
         <a href="/web/about.html">About</a>
         <a href="https://github.com/jackkayser2005/pokerBench" target="_blank" rel="noopener">GitHub</a>
       </nav>
-      <p class="site-footer__copy">© 2025 PokerBench</p>
+      <div class="site-footer__actions">
+        <a class="site-footer__social" href="https://x.com/PokerAIArena" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path d="M3 3h4.3l5.14 6.8L17.8 3H21l-7.6 9.8L21 21h-4.3l-5.32-7.16L7.2 21H3l7.74-10.02Z" fill="currentColor"></path>
+          </svg>
+          <span>@PokerAIArena</span>
+        </a>
+        <p class="site-footer__copy">© 2025 PokerBench</p>
+      </div>
     </div>
   </footer>
 </body>
