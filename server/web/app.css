@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600&family=Syne+Mono&display=swap');
 
 :root {
+  color-scheme: light;
   --page-bg: #f6f7fb;
   --page-bg-alt: #eef1f6;
   --surface: #ffffff;
@@ -77,6 +78,69 @@
   --card-lightBlk: #9ca3af;
   --card-w: 140px;
   --card-h: 196px;
+}
+
+:root[data-theme='dark'],
+:root.theme-dark {
+  color-scheme: dark;
+  --page-bg: #080d17;
+  --page-bg-alt: #111a2b;
+  --surface: #151e30;
+  --surface-alt: #1b2640;
+  --surface-soft: #23304d;
+  --surface-strong: #2c3a5a;
+  --text: #f3f6ff;
+  --muted: #9aa6c7;
+  --muted-soft: #8894b5;
+  --border: #24314c;
+  --border-strong: #313f61;
+  --accent: #8db7ff;
+  --accent-soft: #5f8ddc;
+  --accent-contrast: #050b16;
+  --focus-ring: rgba(141, 183, 255, 0.45);
+  --shadow-sm: 0 10px 30px rgba(2, 6, 16, 0.55);
+  --shadow-md: 0 28px 58px rgba(2, 6, 16, 0.58);
+  --shadow-lg: 0 48px 112px rgba(2, 6, 16, 0.6);
+  --bg: var(--page-bg);
+  --bg-2: var(--surface);
+  --surface-2: var(--surface-alt);
+  --surface-3: var(--surface-soft);
+  --overlay: rgba(8, 13, 23, 0.88);
+  --slate-3: #1a2338;
+  --slate-4: #202a42;
+  --slate-5: #263454;
+  --slate-7: #334062;
+  --slate-8: #3c4a6f;
+  --slate-12: #f3f6ff;
+  --glass-1: rgba(18, 26, 45, 0.72);
+  --glass-2: rgba(18, 26, 45, 0.58);
+  --glass-3: rgba(18, 26, 45, 0.45);
+  --glass-soft: rgba(24, 34, 56, 0.35);
+  --glass-strong: rgba(10, 18, 34, 0.82);
+  --line: var(--border);
+  --divider: var(--border);
+  --primary: #8db7ff;
+  --primary-2: #5f8ddc;
+  --primary-3: #3c5fa8;
+  --accent-2: #5f8ddc;
+  --accent-3: #3b82f6;
+  --link: var(--accent);
+  --warn: #3b82f6;
+  --ok: #34d399;
+  --bad: #f87171;
+  --ok-9: #22c55e;
+  --ok-11: #16a34a;
+  --warn-9: #2563eb;
+  --warn-11: #1d4ed8;
+  --err-9: #f43f5e;
+  --err-11: #e11d48;
+  --ring: 0 0 0 4px rgba(141, 183, 255, 0.32);
+  --card-darkBg: #0b1220;
+  --card-lightBg: #1d2944;
+  --card-darkRed: #f87171;
+  --card-lightRed: #fda4af;
+  --card-darkBlk: #0b1220;
+  --card-lightBlk: #94a3c2;
 }
 
 * {
@@ -384,6 +448,12 @@ p {
   border-color: rgba(17, 17, 17, 0.18);
 }
 
+:root[data-theme='dark'] .topnav__actions.is-open .nav-settings,
+:root.theme-dark .topnav__actions.is-open .nav-settings {
+  background: rgba(141, 183, 255, 0.16);
+  border-color: rgba(141, 183, 255, 0.28);
+}
+
 .nav-settings__section {
   display: grid;
   gap: 10px;
@@ -576,6 +646,50 @@ p {
   color: #ffffff;
 }
 
+:root[data-theme='dark'] .pill:hover,
+:root.theme-dark .pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .pill.active,
+:root[data-theme='dark'] .pill[aria-current="page"],
+:root.theme-dark .pill.active,
+:root.theme-dark .pill[aria-current="page"] {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(141, 183, 255, 0.28);
+}
+
+:root[data-theme='dark'] .pill.ghost,
+:root.theme-dark .pill.ghost {
+  border-color: rgba(148, 163, 184, 0.32);
+}
+
+:root[data-theme='dark'] .pill.warn,
+:root.theme-dark .pill.warn {
+  border-color: rgba(34, 197, 94, 0.32);
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+:root[data-theme='dark'] .pill.ok,
+:root.theme-dark .pill.ok {
+  border-color: rgba(250, 204, 21, 0.32);
+  background: rgba(250, 204, 21, 0.2);
+  color: #fde68a;
+}
+
+:root[data-theme='dark'] .replay-page .pill.accent,
+:root.theme-dark .replay-page .pill.accent {
+  background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%);
+  color: #f8fafc;
+  box-shadow: 0 14px 26px rgba(2, 6, 16, 0.5);
+}
+
+:root[data-theme='dark'] .replay-page .pill.accent:hover,
+:root.theme-dark .replay-page .pill.accent:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%);
+}
+
 .replay-page .pill.ghost {
   border-color: rgba(17, 24, 39, 0.12);
   color: var(--accent);
@@ -592,6 +706,20 @@ p {
   border-color: rgba(234, 179, 8, 0.3);
   background: rgba(234, 179, 8, 0.22);
   color: #854d0e;
+}
+
+:root[data-theme='dark'] .replay-page .pill.warn,
+:root.theme-dark .replay-page .pill.warn {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.22);
+  color: #bbf7d0;
+}
+
+:root[data-theme='dark'] .replay-page .pill.ok,
+:root.theme-dark .replay-page .pill.ok {
+  border-color: rgba(234, 179, 8, 0.34);
+  background: rgba(234, 179, 8, 0.24);
+  color: #fde68a;
 }
 
 .select-pill {
@@ -612,6 +740,11 @@ p {
   background-image: none;
 }
 
+:root[data-theme='dark'] .select-pill,
+:root.theme-dark .select-pill {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 .select-pill:hover {
   border-color: var(--accent);
 }
@@ -619,6 +752,11 @@ p {
 .select-pill:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.08);
+}
+
+:root[data-theme='dark'] .select-pill:focus,
+:root.theme-dark .select-pill:focus {
+  box-shadow: 0 0 0 4px rgba(141, 183, 255, 0.25);
 }
 
 .select-pill::-ms-expand {
@@ -643,6 +781,11 @@ p {
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.5 1.5L6 6.5L10.5 1.5' stroke='%23111827' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-size: contain;
+}
+
+:root[data-theme='dark'] .select-pill__wrap::after,
+:root.theme-dark .select-pill__wrap::after {
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.5 1.5L6 6.5L10.5 1.5' stroke='%23f3f6ff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 .select-pill__wrap select {
@@ -2497,6 +2640,17 @@ n);
   background: transparent;
 }
 
+:root[data-theme='dark'] .cardx,
+:root.theme-dark .cardx {
+  --card-front-bg: linear-gradient(180deg, #20304b 0%, #151f33 100%);
+  --card-front-border: rgba(141, 183, 255, 0.3);
+  --card-front-color: #f3f6ff;
+  --card-back-bg: linear-gradient(155deg, #1d4ed8 0%, #1e3a8a 56%, #0b1220 100%);
+  --card-back-pattern: rgba(96, 165, 250, 0.22);
+  --card-back-shine: rgba(148, 197, 255, 0.26);
+  box-shadow: 0 24px 52px rgba(2, 6, 16, 0.45);
+}
+
 .cardx .face {
   position: absolute;
   inset: 0;
@@ -2580,6 +2734,11 @@ n);
   text-shadow: 0 14px 32px rgba(15, 23, 42, 0.26);
 }
 
+:root[data-theme='dark'] .cardx .suit,
+:root.theme-dark .cardx .suit {
+  text-shadow: 0 14px 32px rgba(2, 6, 16, 0.45);
+}
+
 .cardx .suit::after {
   content: var(--card-glyph, '');
 }
@@ -2595,6 +2754,23 @@ n);
 
 .club {
   color: #15803d;
+}
+
+:root[data-theme='dark'] .spade,
+:root.theme-dark .spade {
+  color: #dbe5ff;
+}
+
+:root[data-theme='dark'] .heart,
+:root[data-theme='dark'] .diamond,
+:root.theme-dark .heart,
+:root.theme-dark .diamond {
+  color: #fda4af;
+}
+
+:root[data-theme='dark'] .club,
+:root.theme-dark .club {
+  color: #4ade80;
 }
 
 .cardx.spade {
@@ -2625,6 +2801,34 @@ n);
   --card-glyph: '\\2663';
 }
 
+:root[data-theme='dark'] .cardx.spade,
+:root.theme-dark .cardx.spade {
+  --card-front-bg: linear-gradient(180deg, #1d2840 0%, #131c2f 100%);
+  --card-front-border: rgba(141, 183, 255, 0.34);
+  --card-front-color: #dee7ff;
+}
+
+:root[data-theme='dark'] .cardx.heart,
+:root.theme-dark .cardx.heart {
+  --card-front-bg: linear-gradient(180deg, #36111f 0%, #250b16 100%);
+  --card-front-border: rgba(248, 113, 113, 0.36);
+  --card-front-color: #fda4af;
+}
+
+:root[data-theme='dark'] .cardx.diamond,
+:root.theme-dark .cardx.diamond {
+  --card-front-bg: linear-gradient(180deg, #351428 0%, #230c18 100%);
+  --card-front-border: rgba(251, 113, 133, 0.34);
+  --card-front-color: #fbb6ce;
+}
+
+:root[data-theme='dark'] .cardx.club,
+:root.theme-dark .cardx.club {
+  --card-front-bg: linear-gradient(180deg, #123321 0%, #0c2216 100%);
+  --card-front-border: rgba(34, 197, 94, 0.28);
+  --card-front-color: #86efac;
+}
+
 .cardx.cardx--placeholder {
   --card-glyph: '';
   display: block;
@@ -2645,6 +2849,17 @@ n);
   border-radius: 18px;
   background: linear-gradient(135deg, rgba(148, 163, 184, 0.24) 0%, rgba(148, 163, 184, 0.12) 100%);
   border: 1px dashed rgba(148, 163, 184, 0.38);
+}
+
+:root[data-theme='dark'] .cardx.cardx--placeholder,
+:root.theme-dark .cardx.cardx--placeholder {
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+:root[data-theme='dark'] .cardx.cardx--placeholder .cardx__placeholder,
+:root.theme-dark .cardx.cardx--placeholder .cardx__placeholder {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.18) 0%, rgba(148, 163, 184, 0.08) 100%);
+  border-color: rgba(148, 163, 184, 0.26);
 }
 
 body.replay-theme {

@@ -401,6 +401,17 @@ const ReplayPage = (() => {
   function updateStatus(mode) {
     if (!els.status) return;
     const base = ['pill'];
+    const isPlaying = mode === 'playing';
+    const resolvedMode = mode === 'complete' ? 'complete' : (isPlaying ? 'playing' : 'paused');
+    if (els.playBtn) {
+      els.playBtn.textContent = isPlaying ? 'Playing' : 'Play';
+      els.playBtn.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+    }
+    if (els.pauseBtn) {
+      const isPaused = resolvedMode !== 'playing';
+      els.pauseBtn.textContent = isPaused ? 'Paused' : 'Pause';
+      els.pauseBtn.setAttribute('aria-pressed', isPaused ? 'true' : 'false');
+    }
     if (mode === 'playing') {
       els.status.textContent = 'Playing';
       els.status.className = base.concat('warn').join(' ');
