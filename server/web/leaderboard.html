@@ -4,8 +4,9 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab - Leaderboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=6"/>
+  <link rel="stylesheet" href="/web/app.css?v=7"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
+  <script src="/web/app.js" defer></script>
   <script>
     document.addEventListener('DOMContentLoaded', ()=>{
       document.querySelectorAll('.topnav a').forEach(a=>{
@@ -21,7 +22,7 @@
     const escapeHtml = (s = '') => s.replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
 
     const COMPANY_ICON_DATA = {
-      openai:      { path: '/web/img/openai.svg', alt: 'OpenAI' },
+      openai:      { path: '/web/img/openai-dark.svg', alt: 'OpenAI' },
       deepseek:    { path: '/web/img/deepseek-color.svg', alt: 'DeepSeek' },
       xai:         { path: '/web/img/xai.svg', alt: 'xAI' },
       anthropic:   { path: '/web/img/anthropic.svg', alt: 'Anthropic' },
