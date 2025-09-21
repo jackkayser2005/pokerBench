@@ -151,7 +151,11 @@ const ReplayPage = (() => {
     if (!el) return;
     el.innerHTML = '';
     const list = Array.isArray(arr) ? arr : (arr != null ? [arr] : []);
-    list.forEach((entry, idx) => {
+    const slotCount = parseInt(el.dataset.cardSlots ?? el.getAttribute('data-card-slots') ?? '0', 10);
+    const maxCards = Number.isFinite(slotCount) && slotCount > 0 ? Math.min(list.length, slotCount) : list.length;
+    const cardsToRender = list.slice(0, maxCards);
+
+    cardsToRender.forEach((entry, idx) => {
       const { rank, suitName, suitGlyph, label, aria } = cardParts(entry);
       const card = document.createElement('div');
       card.className = 'cardx deal';
@@ -189,12 +193,28 @@ const ReplayPage = (() => {
       card.appendChild(front);
       el.appendChild(card);
     });
+
+    if (Number.isFinite(slotCount) && slotCount > 0) {
+      for (let idx = cardsToRender.length; idx < slotCount; idx += 1) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'cardx cardx--placeholder';
+        placeholder.dataset.placeholder = 'true';
+        placeholder.setAttribute('aria-hidden', 'true');
+        const shell = document.createElement('div');
+        shell.className = 'cardx__placeholder';
+        placeholder.appendChild(shell);
+        el.appendChild(placeholder);
+      }
+    }
   }
 
   function applyFlip(el, reveal, delayStep = FLIP_DELAY) {
     if (!el) return;
     const cards = $$('.cardx', el);
     cards.forEach((card, idx) => {
+      if (card.dataset && card.dataset.placeholder === 'true') {
+        return;
+      }
       if (card._flipTimer) {
         window.clearTimeout(card._flipTimer);
         card._flipTimer = null;
@@ -255,6 +275,31 @@ const ReplayPage = (() => {
     const num = Number(value);
     if (!Number.isFinite(num)) return null;
     return `${(num * 100).toFixed(1)}%`;
+  }
+
+  function computePotOddsValue(row) {
+    const direct = Number(row?.pot_odds);
+    if (Number.isFinite(direct) && direct >= 0) {
+      return direct;
+    }
+    const toCall = Number(row?.to_call);
+    const pot = Number(row?.pot);
+    if (!Number.isFinite(toCall) || toCall <= 0) {
+      return null;
+    }
+    const potSize = Number.isFinite(pot) && pot >= 0 ? pot : 0;
+    const denom = potSize + toCall;
+    if (denom <= 0) return null;
+    return toCall / denom;
+  }
+
+  function computeRequiredEquityValue(row) {
+    const direct = Number(row?.required_equity);
+    if (Number.isFinite(direct) && direct >= 0) {
+      return direct;
+    }
+    const odds = computePotOddsValue(row);
+    return Number.isFinite(odds) ? odds : null;
   }
 
   function formatCardLabels(cards) {
@@ -371,18 +416,14 @@ const ReplayPage = (() => {
   function updateDealerIndicator() {
     const seat = state.dealerSeat;
     if (els.sbDealer) {
-      if (seat === 'SB') {
-        els.sbDealer.hidden = false;
-      } else {
-        els.sbDealer.hidden = true;
-      }
+      const isDealer = seat === 'SB';
+      els.sbDealer.hidden = !isDealer;
+      els.sbDealer.setAttribute('aria-hidden', isDealer ? 'false' : 'true');
     }
     if (els.bbDealer) {
-      if (seat === 'BB') {
-        els.bbDealer.hidden = false;
-      } else {
-        els.bbDealer.hidden = true;
-      }
+      const isDealer = seat === 'BB';
+      els.bbDealer.hidden = !isDealer;
+      els.bbDealer.setAttribute('aria-hidden', isDealer ? 'false' : 'true');
     }
     if (els.sbZone) {
       els.sbZone.classList.toggle('seat-card--dealer', seat === 'SB');
@@ -466,8 +507,10 @@ const ReplayPage = (() => {
   }
 
   function updateInsights(row) {
-    const potOdds = formatPercent(row?.pot_odds);
-    const reqEq = formatPercent(row?.required_equity);
+    const potOddsValue = computePotOddsValue(row);
+    const potOdds = formatPercent(potOddsValue);
+    const reqEqValue = computeRequiredEquityValue(row);
+    const reqEq = formatPercent(reqEqValue);
     const toCall = Number(row?.to_call);
     const minRaise = Number(row?.min_raise_to);
     const maxRaise = Number(row?.max_raise_to);
@@ -532,6 +575,34 @@ const ReplayPage = (() => {
       els.solverText.textContent = text || '—';
       els.solverText.parentElement?.classList.toggle('is-empty', !text);
     }
+  }
+
+  function addPressFeedback(btn) {
+    if (!btn) return;
+    const clearPress = () => {
+      btn.classList.remove('is-pressing');
+    };
+    btn.addEventListener('pointerdown', () => {
+      btn.classList.add('is-pressing');
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evt => {
+      btn.addEventListener(evt, clearPress);
+    });
+    btn.addEventListener('blur', clearPress);
+    btn.addEventListener('keydown', (ev) => {
+      if (ev.key === ' ' || ev.key === 'Enter') {
+        btn.classList.add('is-pressing');
+      }
+    });
+    btn.addEventListener('keyup', clearPress);
+    btn.addEventListener('click', () => {
+      btn.classList.remove('did-press');
+      void btn.offsetWidth;
+      btn.classList.add('did-press');
+      window.setTimeout(() => {
+        btn.classList.remove('did-press');
+      }, 280);
+    });
   }
 
   function updateHandDisplay(row) {
@@ -1035,6 +1106,8 @@ const ReplayPage = (() => {
   }
 
   function attachListeners() {
+    [els.playBtn, els.pauseBtn, els.nextBtn].forEach(addPressFeedback);
+
     if (els.playBtn) {
       els.playBtn.addEventListener('click', () => {
         play();
