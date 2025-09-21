@@ -158,6 +158,15 @@ DUEL_SEEDS=5 \
 
 When routing through OpenRouter, set `LLM_PROVIDER=openrouter` and provide `OPENROUTER_MODELS` instead of `OPENAI_MODELS`.
 
+Personal OpenRouter keys also expect the caller to include the site metadata headers. Export `OPENROUTER_SITE_URL` (and optionally `OPENROUTER_TITLE`) so the client can attach them automatically:
+
+```bash
+export OPENROUTER_SITE_URL="https://your-app.example.com"
+export OPENROUTER_TITLE="PokerBench (local dev)"
+```
+
+The site URL defaults to `http://localhost`, keeping local development simple while still allowing production deployments to report their own domain.
+
 Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` and `scripts/run-openai-matrix.ps1`.
 
 ---
@@ -170,6 +179,8 @@ Windows-friendly PowerShell helpers live in `scripts/run-openai-pairwise.ps1` an
 | --- | --- | --- |
 | `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` | Auth token for the LLM provider. | _(required)_ |
 | `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` | Alternative secret for OpenRouter users (mirrors into `OPENAI_API_KEY`). | _(optional)_ |
+| `OPENROUTER_SITE_URL` | Referer value registered with OpenRouter (falls back to `http://localhost`). | `http://localhost` |
+| `OPENROUTER_TITLE` | Optional app name advertised to OpenRouter. | `PokerBench` |
 | `DATABASE_URL` | PostgreSQL DSN (`postgres://user:pass@host:port/db?sslmode=`). | `postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable` |
 | `PORT` | HTTP port for the server mode. | `8080` |
 | `LLM_PROVIDER` | Force provider precedence (`openai` or `openrouter`). | derived |

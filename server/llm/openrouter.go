@@ -2,6 +2,9 @@ package llm
 
 import (
 	"errors"
+	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -129,12 +132,10 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 	cfg.Organization = strings.TrimSpace(os.Getenv("OPENAI_ORG"))
 
 	if cfg.Kind == providerOpenRouter {
-		siteURL := strings.TrimSpace(os.Getenv("OPENROUTER_SITE_URL"))
-		if siteURL == "" {
-			siteURL = strings.TrimSpace(os.Getenv("SITE_URL"))
-		}
-		if siteURL == "" {
-			siteURL = "https://pokerbench.ai"
+		siteURL, err := resolveOpenRouterSiteURL()
+		if err != nil {
+			log.Printf("OpenRouter site URL error: %v", err)
+			return apiConfig{}, err
 		}
 		if siteURL != "" {
 			cfg.ExtraHeaders["HTTP-Referer"] = siteURL
@@ -163,6 +164,39 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func resolveOpenRouterSiteURL() (string, error) {
+	siteURL := strings.TrimSpace(os.Getenv("OPENROUTER_SITE_URL"))
+	if siteURL == "" {
+		siteURL = strings.TrimSpace(os.Getenv("SITE_URL"))
+	}
+	if siteURL == "" {
+		port := strings.TrimSpace(os.Getenv("PORT"))
+		if port != "" {
+			siteURL = fmt.Sprintf("http://localhost:%s", port)
+		} else {
+			siteURL = "http://localhost"
+		}
+	}
+	siteURL = strings.TrimRight(siteURL, "/")
+
+	if siteURL == "" {
+		return "", errors.New("missing OpenRouter site URL: set OPENROUTER_SITE_URL or SITE_URL")
+	}
+
+	parsed, err := url.Parse(siteURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid OpenRouter site URL %q: %w", siteURL, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("invalid OpenRouter site URL scheme %q: must be http or https", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("invalid OpenRouter site URL %q: host missing", siteURL)
+	}
+
+	return parsed.String(), nil
 }
 
 func PreferOpenRouter() bool {

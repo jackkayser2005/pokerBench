@@ -12,10 +12,10 @@ func TestResolveAPIConfigOpenRouterDefaults(t *testing.T) {
 	if cfg.Kind != providerOpenRouter {
 		t.Fatalf("expected providerOpenRouter, got %v", cfg.Kind)
 	}
-	if got := cfg.ExtraHeaders["HTTP-Referer"]; got != "https://pokerbench.ai" {
+	if got := cfg.ExtraHeaders["HTTP-Referer"]; got != "http://localhost" {
 		t.Fatalf("unexpected HTTP-Referer: %q", got)
 	}
-	if got := cfg.ExtraHeaders["Referer"]; got != "https://pokerbench.ai" {
+	if got := cfg.ExtraHeaders["Referer"]; got != "http://localhost" {
 		t.Fatalf("unexpected Referer: %q", got)
 	}
 	if got := cfg.ExtraHeaders["X-Title"]; got != "PokerBench" {
@@ -43,5 +43,14 @@ func TestResolveAPIConfigOpenRouterOverrides(t *testing.T) {
 	}
 	if got := cfg.ExtraHeaders["X-Title"]; got != "Custom Title" {
 		t.Fatalf("unexpected X-Title: %q", got)
+	}
+}
+
+func TestResolveAPIConfigOpenRouterInvalidSiteURL(t *testing.T) {
+	t.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("OPENROUTER_SITE_URL", "ftp://example.com/bad")
+	if _, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct"); err == nil {
+		t.Fatalf("expected error for invalid site URL, got nil")
 	}
 }
