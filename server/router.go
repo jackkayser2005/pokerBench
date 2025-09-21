@@ -276,6 +276,9 @@ func Router(db *store.DB) http.Handler {
 			Model       string    `json:"model"`
 			Company     string    `json:"company"`
 			Elo         float64   `json:"elo"`
+			GRating     float64   `json:"glicko_rating"`
+			GRD         float64   `json:"glicko_rd"`
+			GSigma      float64   `json:"glicko_sigma"`
 			Matches     int       `json:"matches"`
 			Hands       int       `json:"hands"`
 			Updated     time.Time `json:"updated_at"`
@@ -301,6 +304,9 @@ func Router(db *store.DB) http.Handler {
                    c.name AS model,
                    c.company AS company,
                    COALESCE(c.elo, 1500)         AS elo,
+                   COALESCE(c.g_rating, 1500)    AS glicko_rating,
+                   COALESCE(c.g_rd, 350)         AS glicko_rd,
+                   COALESCE(c.g_sigma, 0.06)     AS glicko_sigma,
                    COALESCE(c.matches, 0)        AS matches,
                    COALESCE(c.hands, 0)          AS hands,
                    COALESCE(c.updated_at, now()) AS updated_at,
@@ -334,6 +340,9 @@ func Router(db *store.DB) http.Handler {
                    c.name AS model,
                    c.company AS company,
                    COALESCE(c.elo, 1500)         AS elo,
+                   COALESCE(c.g_rating, 1500)    AS glicko_rating,
+                   COALESCE(c.g_rd, 350)         AS glicko_rd,
+                   COALESCE(c.g_sigma, 0.06)     AS glicko_sigma,
                    COALESCE(c.matches, 0)        AS matches,
                    COALESCE(c.hands, 0)          AS hands,
                    COALESCE(c.updated_at, now()) AS updated_at,
@@ -363,7 +372,7 @@ func Router(db *store.DB) http.Handler {
 		out := []Row{}
 		for rows.Next() {
 			var x Row
-			if err := rows.Scan(&x.BotID, &x.Model, &x.Company, &x.Elo, &x.Matches, &x.Hands, &x.Updated, &x.CareerWins, &x.CareerHands, &x.WinRatePct, &x.NetChips, &x.Good, &x.Total, &x.Acc); err != nil {
+			if err := rows.Scan(&x.BotID, &x.Model, &x.Company, &x.Elo, &x.GRating, &x.GRD, &x.GSigma, &x.Matches, &x.Hands, &x.Updated, &x.CareerWins, &x.CareerHands, &x.WinRatePct, &x.NetChips, &x.Good, &x.Total, &x.Acc); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}

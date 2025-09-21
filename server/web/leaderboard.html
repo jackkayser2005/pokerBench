@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <title>AI Poker Lab - Leaderboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="/web/app.css?v=5"/>
+  <link rel="stylesheet" href="/web/app.css?v=6"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script>
     document.addEventListener('DOMContentLoaded', ()=>{
@@ -259,7 +259,12 @@
       return companyIconMarkup(company, model);
     }
 
-function rowHTML(i, r){
+    function ratingFor(row, metric){
+      if (metric === 'glicko') return Number(row.glicko_rating ?? row.g_rating ?? 1500);
+      return Number(row.elo ?? 1500);
+    }
+
+function rowHTML(i, r, metric){
       const full  = trim1(r.model||'');
       const short = trimModelName(full);
       const title = full.replace(/"/g,'&quot;');
@@ -268,6 +273,9 @@ function rowHTML(i, r){
       const ci    = wilson(wins, hands);
       const ciTxt = hands ? ` (${Math.round(ci[0]*100)}-${Math.round(ci[1]*100)}%)` : '';
       const judge = judgeStatsFor(r.bot_id, r);
+      const ratingVal = ratingFor(r, metric).toFixed(1);
+      const rd = Number(r.glicko_rd ?? r.g_rd);
+      const rdText = metric === 'glicko' && Number.isFinite(rd) ? `<span class="sub">±${Math.round(rd)}</span>` : '';
       return `<tr class="lb-row" data-href="/web/bot.html?id=${r.bot_id}">
         <td class="num">${i+1}</td>
         <td>
@@ -276,7 +284,7 @@ function rowHTML(i, r){
             <a href="/web/bot.html?id=${r.bot_id}" class="name" title="${title}">${short}</a>
           </div>
         </td>
-        <td class="num">${Number(r.elo||0).toFixed(1)}</td>
+        <td class="num">${ratingVal}${rdText}</td>
         <td>${orgCell(r.company, r.model)}</td>
         <td class="num">${fmt(hands)}</td>
         <td class="num">${Math.max(0,Math.min(100, Number(r.win_rate_pct||0)))}%<span class="sub">${ciTxt}</span></td>
@@ -312,8 +320,23 @@ function rowHTML(i, r){
         }
       } catch {}
 
-      let sortKey = 'elo';
+      let sortKey = 'rating';
       let sortDesc = true;
+      let ratingMetric = 'elo';
+
+      const ratingLabels = { elo: 'Elo', glicko: 'Glicko-2' };
+
+      function ratingKey(){
+        return ratingMetric === 'glicko' ? 'glicko_rating' : 'elo';
+      }
+
+      function updateRatingHeader(){
+        const head = document.getElementById('ratingHead');
+        if (!head) return;
+        const label = ratingLabels[ratingMetric] || 'Rating';
+        head.textContent = label;
+        head.title = `Sort by ${label}`;
+      }
 
       function setHeaderIndicators(){
         document.querySelectorAll('.lb-table thead th.sortable').forEach(th=>{
@@ -324,9 +347,13 @@ function rowHTML(i, r){
       }
 
       function render(){
+        updateRatingHeader();
         const out = rows.slice().sort((a,b)=>{
           const num = (x)=>Number(x||0);
-          if (sortKey === 'elo')     return (sortDesc? -1:1) * (num(a.elo) - num(b.elo));
+          if (sortKey === 'rating') {
+            const key = ratingKey();
+            return (sortDesc? -1:1) * (num(a[key]) - num(b[key]));
+          }
           if (sortKey === 'hands')   return (sortDesc? -1:1) * (num(a.hands||a.career_hands) - num(b.hands||b.career_hands));
           if (sortKey === 'win')     return (sortDesc? -1:1) * (num(a.win_rate_pct) - num(b.win_rate_pct));
           if (sortKey === 'net')     return (sortDesc? -1:1) * (num(a.net_chips) - num(b.net_chips));
@@ -338,7 +365,7 @@ function rowHTML(i, r){
           if (sortKey === 'updated') return (sortDesc? -1:1) * ((new Date(a.updated_at)) - (new Date(b.updated_at)));
           return 0;
         });
-        $('#tbody').innerHTML = out.map((r,i)=>rowHTML(i,r)).join('');
+        $('#tbody').innerHTML = out.map((r,i)=>rowHTML(i,r,ratingMetric)).join('');
 
         // Append judge accuracy pills next to model name
         try {
@@ -411,6 +438,19 @@ function rowHTML(i, r){
         });
       });
 
+      document.querySelectorAll('[data-rating]').forEach(btn => {
+        btn.addEventListener('click', ()=>{
+          const metric = btn.getAttribute('data-rating');
+          if (!metric || metric === ratingMetric) return;
+          ratingMetric = metric;
+          document.querySelectorAll('[data-rating]').forEach(el => el.classList.toggle('active', el === btn));
+          sortKey = 'rating';
+          sortDesc = true;
+          updateRatingHeader();
+          render();
+        });
+      });
+
       render();
       setInterval(refreshJudgeAccuracy, 10000);
 
@@ -450,7 +490,12 @@ function rowHTML(i, r){
         <div class="lb-card__header">
           <div>
             <h1>Leaderboard</h1>
-            <div class="muted">Elo with career hands, win%, and net chips.</div>
+            <div class="muted">Compare bots by rating, volume, win rate, and judge accuracy.</div>
+          </div>
+          <div class="sort-control" role="group" aria-label="Rating metric">
+            <span class="sort-control__label">Rating</span>
+            <button type="button" class="active" data-rating="elo">Elo</button>
+            <button type="button" data-rating="glicko">Glicko-2</button>
           </div>
         </div>
         <div class="lb-card__body">
@@ -471,7 +516,7 @@ function rowHTML(i, r){
               <tr>
                 <th class="num">#</th>
                 <th>Model</th>
-                <th class="num sortable" data-sort="elo" title="Sort by Elo">Elo</th>
+                <th id="ratingHead" class="num sortable" data-sort="rating" title="Sort by rating">Elo</th>
                 <th>Org</th>
                 <th class="num sortable" data-sort="hands" title="Sort by Hands">Hands</th>
                 <th class="num sortable" data-sort="win" title="Sort by Win %">Win%</th>
