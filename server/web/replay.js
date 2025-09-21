@@ -430,27 +430,28 @@ const ReplayPage = (() => {
     const prevSeat = state.prevDealerSeat;
     const shouldAnimate = seat && seat !== prevSeat;
 
-    const syncDealerChip = (el, isDealer) => {
-      if (!el) return;
-      if (isDealer) {
-        el.hidden = false;
-        el.setAttribute('aria-hidden', 'false');
+    const chip = els.dealerChip;
+    if (chip) {
+      if (seat) {
+        const targetHeader = seat === 'SB' ? els.sbHeader : els.bbHeader;
+        if (targetHeader && chip.parentElement !== targetHeader) {
+          targetHeader.appendChild(chip);
+        }
+        chip.hidden = false;
+        chip.setAttribute('aria-hidden', 'false');
         if (shouldAnimate) {
-          el.classList.remove('dealer-move');
-          void el.offsetWidth; // force reflow to restart animation
-          el.classList.add('dealer-move');
+          chip.classList.remove('dealer-move');
+          void chip.offsetWidth; // force reflow to restart animation
+          chip.classList.add('dealer-move');
         } else {
-          el.classList.remove('dealer-move');
+          chip.classList.remove('dealer-move');
         }
       } else {
-        el.hidden = true;
-        el.setAttribute('aria-hidden', 'true');
-        el.classList.remove('dealer-move');
+        chip.hidden = true;
+        chip.setAttribute('aria-hidden', 'true');
+        chip.classList.remove('dealer-move');
       }
-    };
-
-    syncDealerChip(els.sbDealer, seat === 'SB');
-    syncDealerChip(els.bbDealer, seat === 'BB');
+    }
 
     if (els.sbZone) {
       els.sbZone.classList.toggle('seat-card--dealer', seat === 'SB');
@@ -1102,8 +1103,9 @@ const ReplayPage = (() => {
     els.bbDelta = $('#bb_delta');
     els.sbName = $('#sbName');
     els.bbName = $('#bbName');
-    els.sbDealer = $('#sbDealer');
-    els.bbDealer = $('#bbDealer');
+    els.sbHeader = $('#sbZone .seat-card__header');
+    els.bbHeader = $('#bbZone .seat-card__header');
+    els.dealerChip = $('#dealerChip');
     els.sbEvAmount = $('#sb_ev_amount');
     els.bbEvAmount = $('#bb_ev_amount');
     els.sbEvValue = $('#sb_ev_value');
