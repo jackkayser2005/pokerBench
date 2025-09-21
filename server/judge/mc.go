@@ -236,7 +236,11 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			// Facing bet: call vs fold
 			b := float64(r.ToCall)
 			evFold := 0.0
-			evCall := eq*(P+b) - (1.0-eq)*b
+			// Hero invests b to call. Eq captures win probability plus half of ties,
+			// so eq*(P+b) is the expected return from the pot while the call always
+			// costs the full b chips. Avoid discounting the loss by (1-eq) because eq
+			// already prices the tie outcomes.
+			evCall := eq*(P+b) - b
 
 			bestAction := "call"
 			bestTo := (*int)(nil)
@@ -260,8 +264,9 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				evChosen = evCall
 			}
 
-			gap := (evBest - evChosen) / float64(bb)
-			isTop := (evBest - evChosen) <= eps
+			gapChips := evBest - evChosen
+			gap := gapChips / float64(bb)
+			isTop := gapChips <= eps
 			t0 := time.Now()
 			// Insert using the same connection to avoid pool-close races.
 			var sv, abs, pol, evs any
@@ -325,7 +330,9 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			b := math.Max(float64(bb), math.Round(0.66*P))
 			F := 0.35 // assumed fold equity for 2/3 pot sizing
 			evCheck := 0.0
-			evBet := F*P + (1.0-F)*(eq*(P+2*b)-(1.0-eq)*b)
+			// When villain folds we earn +P; when called we reach a showdown with pot
+			// P+2b and have already invested b ourselves.
+			evBet := F*P + (1.0-F)*(eq*(P+2*b)-b)
 			bestAction := "raise" // represent bet as raise
 			bestTo := (*int)(nil)
 			evBest := evBet
@@ -346,8 +353,9 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				evChosen = evBet
 			}
 
-			gap := (evBest - evChosen) / float64(bb)
-			isTop := (evBest - evChosen) <= eps
+			gapChips := evBest - evChosen
+			gap := gapChips / float64(bb)
+			isTop := gapChips <= eps
 			t0 := time.Now()
 			// Insert using the same connection to avoid pool-close races.
 			var sv, abs, pol, evs any
