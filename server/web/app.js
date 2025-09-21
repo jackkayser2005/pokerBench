@@ -61,6 +61,8 @@
 
     const TOOLTIP_COOKIE = 'pb_tooltips';
     const TOOLTIP_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+    const THEME_COOKIE = 'pb_theme';
+    const THEME_COOKIE_MAX_AGE = TOOLTIP_COOKIE_MAX_AGE;
 
     const getCookie = name => {
       if (!name || !document.cookie) return '';
@@ -86,6 +88,27 @@
     let tooltipHint = null;
     let tooltipsEnabled = getCookie(TOOLTIP_COOKIE) !== 'off';
 
+    const VALID_THEME_PREFERENCES = new Set(['auto', 'light', 'dark']);
+    const sanitizeThemePreference = value => (VALID_THEME_PREFERENCES.has(value) ? value : 'auto');
+    const themeMedia = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+    let themePreference = sanitizeThemePreference(getCookie(THEME_COOKIE));
+    let themeToggle = null;
+    let themeHint = null;
+
+    const getResolvedTheme = () => {
+      if (themePreference === 'dark') return 'dark';
+      if (themePreference === 'light') return 'light';
+      return themeMedia?.matches ? 'dark' : 'light';
+    };
+
+    const themeLabels = {
+      auto: 'Auto',
+      light: 'Light',
+      dark: 'Dark',
+    };
+
     const syncTooltipsPreference = () => {
       if (document.body) {
         document.body.classList.toggle('tooltips-disabled', !tooltipsEnabled);
@@ -103,7 +126,57 @@
       }
     };
 
+    const syncThemePreference = () => {
+      const resolved = getResolvedTheme();
+      const root = document.documentElement;
+      if (root) {
+        root.setAttribute('data-theme', resolved);
+        root.setAttribute('data-theme-preference', themePreference);
+        root.classList.toggle('theme-dark', resolved === 'dark');
+        root.classList.toggle('theme-light', resolved !== 'dark');
+      }
+      if (document.body) {
+        document.body.classList.toggle('theme-dark', resolved === 'dark');
+        document.body.classList.toggle('theme-light', resolved !== 'dark');
+      }
+
+      const label = themeLabels[themePreference] || themePreference;
+      const resolvedLabel = resolved.charAt(0).toUpperCase() + resolved.slice(1);
+      const hintText = themePreference === 'auto' ? `${label} · ${resolvedLabel}` : label;
+      const description = themePreference === 'auto'
+        ? `${label} (currently ${resolvedLabel})`
+        : label;
+
+      if (themeToggle) {
+        const controlLabel = `Theme: ${description}. Click to change.`;
+        themeToggle.setAttribute('aria-label', controlLabel);
+        themeToggle.setAttribute('title', controlLabel);
+        themeToggle.setAttribute('data-theme-preference', themePreference);
+        themeToggle.setAttribute('data-theme-resolved', resolved);
+      }
+      if (themeHint) {
+        themeHint.textContent = hintText;
+        themeHint.setAttribute('data-theme-preference', themePreference);
+        themeHint.setAttribute('aria-label', `Theme preference: ${description}`);
+      }
+    };
+
     syncTooltipsPreference();
+    syncThemePreference();
+
+    const handleThemeMediaChange = () => {
+      if (themePreference === 'auto') {
+        syncThemePreference();
+      }
+    };
+
+    if (themeMedia) {
+      if (typeof themeMedia.addEventListener === 'function') {
+        themeMedia.addEventListener('change', handleThemeMediaChange);
+      } else if (typeof themeMedia.addListener === 'function') {
+        themeMedia.addListener(handleThemeMediaChange);
+      }
+    }
 
     const settingsToggle = document.querySelector('.nav-settings');
     const settingsPanel = document.getElementById('navSettingsPanel');
@@ -155,6 +228,22 @@
           tooltipsEnabled = !tooltipsEnabled;
           syncTooltipsPreference();
           setCookie(TOOLTIP_COOKIE, tooltipsEnabled ? 'on' : 'off', TOOLTIP_COOKIE_MAX_AGE);
+        });
+      }
+
+      themeToggle = settingsPanel.querySelector('[data-setting="theme"]');
+      themeHint = settingsPanel.querySelector('[data-setting-state="theme"]');
+      syncThemePreference();
+
+      if (themeToggle) {
+        const themeOrder = ['auto', 'light', 'dark'];
+        themeToggle.addEventListener('click', event => {
+          const currentIndex = Math.max(0, themeOrder.indexOf(themePreference));
+          const step = event.shiftKey ? -1 : 1;
+          const nextIndex = (currentIndex + step + themeOrder.length) % themeOrder.length;
+          themePreference = themeOrder[nextIndex];
+          syncThemePreference();
+          setCookie(THEME_COOKIE, themePreference, THEME_COOKIE_MAX_AGE);
         });
       }
 
