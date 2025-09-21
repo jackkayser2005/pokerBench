@@ -76,7 +76,7 @@
         <div class="compare-drawer__header">
           <div>
             <div class="compare-drawer__eyebrow">Matchup insights</div>
-            <h2 class="compare-drawer__title">Compare bots</h2>
+            <h2 class="compare-drawer__title">No matchup selected</h2>
           </div>
           <button type="button" class="compare-drawer__close" aria-label="Close comparison">
             <span aria-hidden="true">×</span>
@@ -92,6 +92,8 @@
         </div>
       `;
       this.titleEl = this.root.querySelector('.compare-drawer__title');
+      this.defaultTitle = 'No matchup selected';
+      this.titleEl.textContent = this.defaultTitle;
       this.statusEl = this.root.querySelector('[data-section="status"]');
       this.summaryEl = this.root.querySelector('[data-section="summary"]');
       this.matchesEl = this.root.querySelector('[data-section="matches"]');
@@ -122,14 +124,14 @@
       this.summaryEl.innerHTML = '';
       this.matchesEl.hidden = true;
       this.matchListEl.innerHTML = '';
-      this.titleEl.textContent = 'Compare bots';
+      this.titleEl.textContent = this.defaultTitle;
       if (!options.silent && typeof this.options.onClose === 'function') {
         this.options.onClose();
       }
     }
 
     renderIntro(message = 'Select two bots to compare.', detail = '') {
-      this.titleEl.textContent = 'Compare bots';
+      this.titleEl.textContent = this.defaultTitle;
       const lines = [`<p>${escapeHtml(message)}</p>`];
       if (detail) lines.push(`<p class="compare-drawer__muted">${escapeHtml(detail)}</p>`);
       this.statusEl.hidden = false;
@@ -180,7 +182,7 @@
 
     showError(message = 'Comparison data is unavailable right now.') {
       this.open();
-      this.titleEl.textContent = 'Compare bots';
+      this.titleEl.textContent = 'Matchup unavailable';
       this.statusEl.hidden = false;
       this.statusEl.innerHTML = `<p>${escapeHtml(message)}</p>`;
       this.summaryEl.hidden = true;
