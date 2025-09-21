@@ -212,6 +212,19 @@ const ReplayPage = (() => {
     });
   }
 
+  function setRangeProgress(el) {
+    if (!el) return;
+    const min = Number(el.min ?? 0);
+    const max = Number(el.max ?? 100);
+    const value = Number(el.value ?? min);
+    let pct = 0;
+    if (Number.isFinite(min) && Number.isFinite(max) && max > min) {
+      pct = (value - min) / (max - min);
+    }
+    pct = Math.max(0, Math.min(1, pct));
+    el.style.setProperty('--progress', `${pct}`);
+  }
+
   function formatNumber(value, precision) {
     const num = Number(value);
     if (!Number.isFinite(num)) return '0';
@@ -631,6 +644,7 @@ const ReplayPage = (() => {
     els.timeline.max = String(max);
     els.timeline.value = String(Math.min(state.index, max));
     els.timeline.disabled = state.rows.length <= 1;
+    setRangeProgress(els.timeline);
     if (els.count) {
       const current = state.rows.length ? state.index + 1 : 0;
       els.count.textContent = `${current}/${state.rows.length}`;
@@ -1036,6 +1050,7 @@ const ReplayPage = (() => {
         if (els.speedValue) {
           els.speedValue.textContent = `${v}×`;
         }
+        setRangeProgress(els.speedSlider);
         if (state.playing) {
           scheduleNext();
         }
@@ -1043,6 +1058,7 @@ const ReplayPage = (() => {
       updateSpeed(els.speedSlider.value);
       els.speedSlider.addEventListener('input', (ev) => {
         updateSpeed(ev.target.value);
+        setRangeProgress(ev.target);
       });
     }
     if (els.holesSelect) {
@@ -1058,6 +1074,7 @@ const ReplayPage = (() => {
         pause();
         state.index = value;
         draw();
+        setRangeProgress(ev.target);
       });
     }
     if (els.matchSelect) {
