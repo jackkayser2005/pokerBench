@@ -901,6 +901,25 @@ p {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 
+.page-elo .sort-control {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(6px);
+}
+
+.page-elo .sort-control select {
+  padding: 0.35rem 1.1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.page-elo .sort-control select:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
 .table,
 .lb-table,
 .matrix-table {
@@ -1550,43 +1569,103 @@ ion);
 
 /* ---------- Elo page ------------------------------------------------ */
 
+.page-elo .card.elo-card {
+  position: relative;
+  overflow: hidden;
+  padding: 32px 34px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.98) 0%, rgba(237, 243, 255, 0.95) 100%);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 34px 72px rgba(15, 23, 42, 0.14);
+}
+
+.page-elo .card.elo-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.14), transparent 58%);
+  pointer-events: none;
+}
+
+.page-elo .card.elo-card::after {
+  content: '';
+  position: absolute;
+  top: -70px;
+  right: -46px;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, rgba(59, 130, 246, 0) 70%);
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .page-elo .card.elo-card {
+    padding: 26px;
+  }
+}
+
 .elo-card {
   display: grid;
-  gap: 24px;
+  gap: 28px;
 }
 
 .elo-card__header {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  gap: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+@media (min-width: 960px) {
+  .elo-card__header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
 }
 
 .elo-card__heading {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .elo-card__intro {
+  display: grid;
+  gap: 8px;
   color: var(--muted);
 }
 
 .elo-card__filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px 20px;
 }
 
 .elo-card__filters .sort-control {
   margin-left: auto;
 }
 
+@media (max-width: 720px) {
+  .elo-card__filters {
+    justify-content: flex-start;
+  }
+
+  .elo-card__filters .sort-control {
+    margin-left: 0;
+  }
+}
+
 .filter-group {
   display: grid;
   gap: 10px;
   min-width: 240px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(6px);
 }
 
 .filter-group__label {
@@ -1693,8 +1772,8 @@ n);
   color: var(--muted);
   font-size: var(--fs-1);
   font-weight: 600;
-  transition: background var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transit
-ion);
+  transition: background var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition);
+  backdrop-filter: blur(6px);
 }
 
 .filter-indicator::before {
@@ -1716,7 +1795,7 @@ ion);
 .elo-card__body {
   position: relative;
   display: grid;
-  gap: 16px;
+  gap: 20px;
 }
 
 .elo-chart {
@@ -1731,9 +1810,10 @@ ion);
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(236, 243, 255, 0.92) 100%);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.12);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.98) 0%, rgba(235, 242, 255, 0.9) 100%);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 32px 64px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(10px);
   pointer-events: none;
 }
 
@@ -1752,26 +1832,32 @@ ion);
 
 .chart-legend {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
   margin-top: 18px;
 }
 
 .chart-legend__item {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
   border-radius: var(--radius-md);
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 255, 0.94) 100%);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
   transition: transform var(--transition), box-shadow var(--transition);
 }
 
 .chart-legend__item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.16);
+}
+
+.chart-legend__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .chart-legend__swatch {
@@ -1819,6 +1905,57 @@ ion);
 
 .chart-legend__company {
   font-size: var(--fs-0);
+  color: var(--muted);
+}
+
+.chart-legend__metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+}
+
+@media (min-width: 960px) {
+  .chart-legend__item {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .chart-legend__metrics {
+    margin-left: auto;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(108px, auto);
+    justify-items: end;
+  }
+}
+
+.chart-legend__metric {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.chart-legend__metric-value {
+  font-weight: 600;
+  font-size: var(--fs-2);
+  color: var(--text);
+}
+
+.chart-legend__metric-label {
+  font-size: var(--fs-0);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-legend__metric.is-positive .chart-legend__metric-value {
+  color: var(--ok);
+}
+
+.chart-legend__metric.is-negative .chart-legend__metric-value {
+  color: var(--bad);
+}
+
+.chart-legend__metric.is-neutral .chart-legend__metric-value {
   color: var(--muted);
 }
 
