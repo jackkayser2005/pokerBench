@@ -59,6 +59,52 @@
       });
     }
 
+    const TOOLTIP_COOKIE = 'pb_tooltips';
+    const TOOLTIP_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+    const getCookie = name => {
+      if (!name || !document.cookie) return '';
+      const prefix = `${name}=`;
+      const parts = document.cookie.split(';');
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (trimmed && trimmed.startsWith(prefix)) {
+          return decodeURIComponent(trimmed.slice(prefix.length));
+        }
+      }
+      return '';
+    };
+
+    const setCookie = (name, value, maxAge) => {
+      if (!name) return;
+      const safeValue = encodeURIComponent(value ?? '');
+      const age = Number.isFinite(maxAge) ? `; max-age=${Math.max(0, Math.trunc(maxAge))}` : '';
+      document.cookie = `${name}=${safeValue}${age}; path=/; SameSite=Lax`;
+    };
+
+    let tooltipToggle = null;
+    let tooltipHint = null;
+    let tooltipsEnabled = getCookie(TOOLTIP_COOKIE) !== 'off';
+
+    const syncTooltipsPreference = () => {
+      if (document.body) {
+        document.body.classList.toggle('tooltips-disabled', !tooltipsEnabled);
+      }
+      if (tooltipToggle) {
+        tooltipToggle.setAttribute('aria-checked', tooltipsEnabled ? 'true' : 'false');
+        tooltipToggle.classList.toggle('is-off', !tooltipsEnabled);
+        tooltipToggle.setAttribute('title', tooltipsEnabled ? 'Disable guided tips' : 'Enable guided tips');
+      }
+      if (tooltipHint) {
+        tooltipHint.textContent = tooltipsEnabled ? 'On' : 'Off';
+      }
+      if (!tooltipsEnabled && document.activeElement?.classList?.contains('inline-tip')) {
+        document.activeElement.blur();
+      }
+    };
+
+    syncTooltipsPreference();
+
     const settingsToggle = document.querySelector('.nav-settings');
     const settingsPanel = document.getElementById('navSettingsPanel');
     const actionsHost = settingsToggle?.closest('.topnav__actions');
@@ -99,6 +145,18 @@
       document.addEventListener('keydown', event => {
         if (event.key === 'Escape') closePanel();
       });
+
+      tooltipToggle = settingsPanel.querySelector('[data-setting="tooltips"]');
+      tooltipHint = settingsPanel.querySelector('[data-setting-state="tooltips"]');
+      syncTooltipsPreference();
+
+      if (tooltipToggle) {
+        tooltipToggle.addEventListener('click', () => {
+          tooltipsEnabled = !tooltipsEnabled;
+          syncTooltipsPreference();
+          setCookie(TOOLTIP_COOKIE, tooltipsEnabled ? 'on' : 'off', TOOLTIP_COOKIE_MAX_AGE);
+        });
+      }
 
       closePanel();
     }

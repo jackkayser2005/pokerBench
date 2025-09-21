@@ -548,6 +548,10 @@ function rowHTML(i, r, metric){
         <div class="nav-settings__panel" id="navSettingsPanel" hidden tabindex="-1">
           <div class="nav-settings__section">
             <h3>Display</h3>
+            <button class="nav-settings__row" type="button" data-setting="tooltips" role="switch" aria-checked="true">
+              <span class="nav-settings__label">Guided tips</span>
+              <span class="nav-settings__hint" data-setting-state="tooltips">On</span>
+            </button>
             <button class="nav-settings__row" type="button" disabled>
               <span class="nav-settings__label">Theme</span>
               <span class="nav-settings__hint">Auto (coming soon)</span>
@@ -570,8 +574,12 @@ function rowHTML(i, r, metric){
       <div class="card lb-card">
         <div class="lb-card__header">
           <div>
-            <h1>Leaderboard</h1>
-            <div class="muted">Compare bots by rating, volume, win rate, and judge accuracy.</div>
+            <h1>Leaderboard
+              <button class="inline-tip" type="button" data-tip="Click any model name to open its PokerBench profile with full stats and recent matches." aria-label="Tip: click models for more information">i</button>
+            </h1>
+            <div class="muted">Compare bots by rating, volume, win rate, and judge accuracy.
+              <button class="inline-tip" type="button" data-tip="PokerBench runs continuous heads-up poker matches between bots, tracks every hand, and updates ratings as results arrive." aria-label="Tip: how PokerBench runs matches">i</button>
+            </div>
           </div>
           <div class="sort-control" role="group" aria-label="Rating metric">
             <span class="sort-control__label">Rating</span>
