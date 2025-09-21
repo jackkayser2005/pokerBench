@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -281,16 +282,37 @@ func (db *DB) CreateMatch(
 	deckSeedBase int64,
 	eloStart, eloK float64,
 	eloPerHand, eloWeightByPot bool,
+	seedpack *SeedpackMeta,
 ) (int64, error) {
 	var id int64
+	var name any
+	var version any
+	var count any
+	var sha any
+	if seedpack != nil && seedpack.Count > 0 {
+		if seedpack.Name != "" {
+			name = seedpack.Name
+		}
+		if seedpack.Version != "" {
+			version = seedpack.Version
+		}
+		count = seedpack.Count
+		if seedpack.SHA256 != "" {
+			sha = seedpack.SHA256
+		}
+	}
 	err := db.QueryRow(ctx, `
-		INSERT INTO matches(
-			sb, bb, start_stack, duel_seeds, deck_seed_base,
-			elo_start, elo_k, elo_per_hand, elo_weight_by_pot
-		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-		RETURNING id
-	`, sb, bb, startStack, duelSeeds, deckSeedBase, eloStart, eloK, eloPerHand, eloWeightByPot).Scan(&id)
+                INSERT INTO matches(
+                        sb, bb, start_stack, duel_seeds, deck_seed_base,
+                        elo_start, elo_k, elo_per_hand, elo_weight_by_pot,
+                        seedpack_name, seedpack_version, seedpack_count, seedpack_sha256
+                )
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                RETURNING id
+        `, sb, bb, startStack, duelSeeds, deckSeedBase,
+		eloStart, eloK, eloPerHand, eloWeightByPot,
+		name, version, count, sha,
+	).Scan(&id)
 	return id, err
 }
 
@@ -404,6 +426,123 @@ func (db *DB) CompleteMatch(ctx context.Context, matchID int64) error {
 	return err
 }
 
+func (db *DB) InsertPairDelta(ctx context.Context, matchID int64, pairIndex int, botAID, botBID int64, bbPer100 float64) error {
+	_, err := db.Exec(ctx, `
+        INSERT INTO match_pair_deltas(match_id, pair_index, bot_a_id, bot_b_id, bb_per_100)
+        VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (match_id, pair_index) DO UPDATE
+          SET bot_a_id = EXCLUDED.bot_a_id,
+              bot_b_id = EXCLUDED.bot_b_id,
+              bb_per_100 = EXCLUDED.bb_per_100
+    `, matchID, pairIndex, botAID, botBID, bbPer100)
+	return err
+}
+
+func (db *DB) RankingOrder(ctx context.Context, overrides map[int64]float64) ([]int64, error) {
+	rows, err := db.Query(ctx, `
+            SELECT id, COALESCE(g_rating, 1500) AS rating,
+                   COALESCE(matches, 0) AS matches,
+                   COALESCE(hands, 0) AS hands
+              FROM v_bot_career
+        `)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type entry struct {
+		id      int64
+		rating  float64
+		matches int
+		hands   int
+	}
+	entries := []entry{}
+	seen := make(map[int64]struct{})
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.id, &e.rating, &e.matches, &e.hands); err != nil {
+			return nil, err
+		}
+		if overrides != nil {
+			if v, ok := overrides[e.id]; ok {
+				e.rating = v
+			}
+		}
+		entries = append(entries, e)
+		seen[e.id] = struct{}{}
+	}
+	for id, rating := range overrides {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		entries = append(entries, entry{id: id, rating: rating})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].rating != entries[j].rating {
+			return entries[i].rating > entries[j].rating
+		}
+		if entries[i].matches != entries[j].matches {
+			return entries[i].matches > entries[j].matches
+		}
+		if entries[i].hands != entries[j].hands {
+			return entries[i].hands > entries[j].hands
+		}
+		return entries[i].id < entries[j].id
+	})
+	out := make([]int64, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.id)
+	}
+	return out, nil
+}
+
+func (db *DB) InsertRatingCheckpoint(ctx context.Context, matchID int64, stage string, pairIndex *int, ranking []int64) error {
+	if len(ranking) == 0 {
+		return nil
+	}
+	var idx any
+	if pairIndex != nil {
+		idx = *pairIndex
+	}
+	_, err := db.Exec(ctx, `
+        INSERT INTO rating_checkpoints(match_id, stage, pair_index, rankings)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT (match_id, stage, COALESCE(pair_index,0)) DO UPDATE
+          SET rankings = EXCLUDED.rankings,
+              created_at = now()
+    `, matchID, stage, idx, ranking)
+	return err
+}
+
+func (db *DB) ListSeedpacks(ctx context.Context) ([]SeedpackMeta, error) {
+	rows, err := db.Query(ctx, `
+            SELECT DISTINCT seedpack_name, seedpack_version, seedpack_count, seedpack_sha256
+              FROM matches
+             WHERE seedpack_name IS NOT NULL
+               AND seedpack_sha256 IS NOT NULL
+             ORDER BY seedpack_name, seedpack_version
+        `)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	res := []SeedpackMeta{}
+	for rows.Next() {
+		var m SeedpackMeta
+		var count *int
+		if err := rows.Scan(&m.Name, &m.Version, &count, &m.SHA256); err != nil {
+			return nil, err
+		}
+		if count != nil {
+			m.Count = *count
+		}
+		if m.SHA256 == "" {
+			continue
+		}
+		res = append(res, m)
+	}
+	return res, nil
+}
+
 // InsertActionLog records one action step for live viewers and auditing.
 func (db *DB) InsertActionLog(
 	ctx context.Context,
@@ -419,6 +558,8 @@ func (db *DB) InsertActionLog(
 	board []string,
 	sbHole []string,
 	bbHole []string,
+	potOdds float64,
+	requiredEquity float64,
 ) error {
 	var amt any
 	if amount != nil {
@@ -430,13 +571,15 @@ func (db *DB) InsertActionLog(
             actor_label, action, amount,
             pot, cur_bet, to_call, min_raise_to, max_raise_to,
             sb_stack, bb_stack, sb_committed, bb_committed,
-            board, sb_hole, bb_hole
+            board, sb_hole, bb_hole,
+            pot_odds, required_equity
         ) VALUES (
             $1,$2,$3,$4,
             $5,$6,$7,
             $8,$9,$10,$11,$12,
             $13,$14,$15,$16,
-            $17,$18,$19
+            $17,$18,$19,
+            $20,$21
         )
     `,
 		matchID, pairIndex, handID, street,
@@ -444,6 +587,7 @@ func (db *DB) InsertActionLog(
 		pot, curBet, toCall, minTo, maxTo,
 		sbStack, bbStack, sbCommitted, bbCommitted,
 		board, sbHole, bbHole,
+		potOdds, requiredEquity,
 	)
 	return err
 }

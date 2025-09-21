@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,17 +41,21 @@ func Router(db *store.DB) http.Handler {
 		ctx := r.Context()
 
 		type Match struct {
-			ID             int64      `json:"id"`
-			CreatedAt      time.Time  `json:"created_at"`
-			EndedAt        *time.Time `json:"ended_at"`
-			SB             int        `json:"sb"`
-			BB             int        `json:"bb"`
-			StartStack     int        `json:"start_stack"`
-			DuelSeeds      int        `json:"duel_seeds"`
-			EloStart       float64    `json:"elo_start"`
-			EloK           float64    `json:"elo_k"`
-			EloPerHand     bool       `json:"elo_per_hand"`
-			EloWeightByPot bool       `json:"elo_weight_by_pot"`
+			ID              int64      `json:"id"`
+			CreatedAt       time.Time  `json:"created_at"`
+			EndedAt         *time.Time `json:"ended_at"`
+			SB              int        `json:"sb"`
+			BB              int        `json:"bb"`
+			StartStack      int        `json:"start_stack"`
+			DuelSeeds       int        `json:"duel_seeds"`
+			EloStart        float64    `json:"elo_start"`
+			EloK            float64    `json:"elo_k"`
+			EloPerHand      bool       `json:"elo_per_hand"`
+			EloWeightByPot  bool       `json:"elo_weight_by_pot"`
+			SeedpackName    *string    `json:"seedpack_name,omitempty"`
+			SeedpackVersion *string    `json:"seedpack_version,omitempty"`
+			SeedpackCount   *int       `json:"seedpack_count,omitempty"`
+			SeedpackSHA     *string    `json:"seedpack_sha256,omitempty"`
 		}
 		type Participant struct {
 			Label   string  `json:"label"`
@@ -95,12 +100,14 @@ func Router(db *store.DB) http.Handler {
 		var m Match
 		err := db.QueryRow(ctx, `
             SELECT id, created_at, ended_at, sb, bb, start_stack, duel_seeds,
-                   elo_start, elo_k, elo_per_hand, elo_weight_by_pot
+                   elo_start, elo_k, elo_per_hand, elo_weight_by_pot,
+                   seedpack_name, seedpack_version, seedpack_count, seedpack_sha256
               FROM matches
              ORDER BY id DESC
              LIMIT 1
         `).Scan(&m.ID, &m.CreatedAt, &m.EndedAt, &m.SB, &m.BB, &m.StartStack, &m.DuelSeeds,
-			&m.EloStart, &m.EloK, &m.EloPerHand, &m.EloWeightByPot)
+			&m.EloStart, &m.EloK, &m.EloPerHand, &m.EloWeightByPot,
+			&m.SeedpackName, &m.SeedpackVersion, &m.SeedpackCount, &m.SeedpackSHA)
 		if err != nil {
 			http.Error(w, "no matches yet", http.StatusNotFound)
 			return
@@ -190,20 +197,25 @@ func Router(db *store.DB) http.Handler {
 	mux.HandleFunc("/api/matches", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		type Row struct {
-			ID        int64      `json:"id"`
-			CreatedAt time.Time  `json:"created_at"`
-			EndedAt   *time.Time `json:"ended_at"`
-			SBA       int        `json:"sb"`
-			BBA       int        `json:"bb"`
-			Start     int        `json:"start_stack"`
-			Seeds     int        `json:"duel_seeds"`
-			ModelA    string     `json:"model_a"`
-			ModelB    string     `json:"model_b"`
+			ID              int64      `json:"id"`
+			CreatedAt       time.Time  `json:"created_at"`
+			EndedAt         *time.Time `json:"ended_at"`
+			SBA             int        `json:"sb"`
+			BBA             int        `json:"bb"`
+			Start           int        `json:"start_stack"`
+			Seeds           int        `json:"duel_seeds"`
+			ModelA          string     `json:"model_a"`
+			ModelB          string     `json:"model_b"`
+			SeedpackName    *string    `json:"seedpack_name,omitempty"`
+			SeedpackVersion *string    `json:"seedpack_version,omitempty"`
+			SeedpackCount   *int       `json:"seedpack_count,omitempty"`
+			SeedpackSHA     *string    `json:"seedpack_sha256,omitempty"`
 		}
 		rows, err := db.Query(ctx, `
             SELECT m.id, m.created_at, m.ended_at, m.sb, m.bb, m.start_stack, m.duel_seeds,
                    MAX(CASE WHEN p.label='A' THEN p.name_snapshot END) AS model_a,
-                   MAX(CASE WHEN p.label='B' THEN p.name_snapshot END) AS model_b
+                   MAX(CASE WHEN p.label='B' THEN p.name_snapshot END) AS model_b,
+                   m.seedpack_name, m.seedpack_version, m.seedpack_count, m.seedpack_sha256
               FROM matches m
               LEFT JOIN match_participants p ON p.match_id = m.id
              GROUP BY m.id
@@ -218,13 +230,42 @@ func Router(db *store.DB) http.Handler {
 		out := []Row{}
 		for rows.Next() {
 			var x Row
-			if err := rows.Scan(&x.ID, &x.CreatedAt, &x.EndedAt, &x.SBA, &x.BBA, &x.Start, &x.Seeds, &x.ModelA, &x.ModelB); err != nil {
+			if err := rows.Scan(&x.ID, &x.CreatedAt, &x.EndedAt, &x.SBA, &x.BBA, &x.Start, &x.Seeds, &x.ModelA, &x.ModelB,
+				&x.SeedpackName, &x.SeedpackVersion, &x.SeedpackCount, &x.SeedpackSHA); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
 			out = append(out, x)
 		}
 		writeJSON(w, map[string]any{"rows": out})
+	})
+
+	mux.HandleFunc("/api/seedpacks", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		packs, err := db.ListSeedpacks(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		type Pack struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+			Count   int    `json:"count"`
+			SHA256  string `json:"sha256"`
+		}
+		out := make([]Pack, 0, len(packs))
+		for _, p := range packs {
+			if strings.TrimSpace(p.SHA256) == "" {
+				continue
+			}
+			out = append(out, Pack{
+				Name:    p.Name,
+				Version: p.Version,
+				Count:   p.Count,
+				SHA256:  p.SHA256,
+			})
+		}
+		writeJSON(w, map[string]any{"seedpacks": out})
 	})
 
 	// Leaderboard: top bots by Elo (career stats, org)
@@ -591,6 +632,8 @@ func Router(db *store.DB) http.Handler {
 			Board       []string  `json:"board"`
 			SBHole      []string  `json:"sb_hole"`
 			BBHole      []string  `json:"bb_hole"`
+			PotOdds     float64   `json:"pot_odds"`
+			RequiredEq  float64   `json:"required_equity"`
 			CreatedAt   time.Time `json:"created_at"`
 		}
 
@@ -617,7 +660,7 @@ func Router(db *store.DB) http.Handler {
                     SELECT id, pair_index, hand_id, street, actor_label, action, amount,
                            pot, cur_bet, to_call, min_raise_to, max_raise_to,
                            sb_stack, bb_stack, sb_committed, bb_committed,
-                           board, created_at
+                           board, pot_odds, required_equity, created_at
                       FROM action_logs
                      WHERE match_id = $1 AND id > $2
                      ORDER BY id
@@ -632,7 +675,7 @@ func Router(db *store.DB) http.Handler {
 					if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 						&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
 						&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
-						&r.Board, &r.CreatedAt); err != nil {
+						&r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
 						rows.Close()
 						http.Error(w, err.Error(), 500)
 						return
@@ -677,11 +720,15 @@ func Router(db *store.DB) http.Handler {
 			bots = append(bots, b)
 		}
 		type Pair struct {
-			AID   int64 `json:"a_id"`
-			BID   int64 `json:"b_id"`
-			AWins int   `json:"a_wins"`
-			BWins int   `json:"b_wins"`
-			Hands int   `json:"hands"`
+			AID          int64    `json:"a_id"`
+			BID          int64    `json:"b_id"`
+			AWins        int      `json:"a_wins"`
+			BWins        int      `json:"b_wins"`
+			Hands        int      `json:"hands"`
+			BB100Samples int      `json:"bb100_samples"`
+			BB100Mean    *float64 `json:"bb100_mean,omitempty"`
+			BB100Lo      *float64 `json:"bb100_lo,omitempty"`
+			BB100Hi      *float64 `json:"bb100_hi,omitempty"`
 		}
 		pairs := []Pair{}
 		rows2, err := db.Query(ctx, `
@@ -708,7 +755,152 @@ func Router(db *store.DB) http.Handler {
 			}
 			pairs = append(pairs, p)
 		}
+		type pairKey struct{ a, b int64 }
+		deltaMap := make(map[pairKey][]float64)
+		rows3, err := db.Query(ctx, `
+            SELECT bot_a_id, bot_b_id, bb_per_100
+              FROM match_pair_deltas
+        `)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		for rows3.Next() {
+			var aID, bID int64
+			var val float64
+			if err := rows3.Scan(&aID, &bID, &val); err != nil {
+				rows3.Close()
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			key := pairKey{a: aID, b: bID}
+			delta := val
+			if aID > bID {
+				key = pairKey{a: bID, b: aID}
+				delta = -val
+			}
+			deltaMap[key] = append(deltaMap[key], delta)
+		}
+		rows3.Close()
+		for i := range pairs {
+			key := pairKey{a: pairs[i].AID, b: pairs[i].BID}
+			vals := deltaMap[key]
+			if len(vals) == 0 {
+				continue
+			}
+			mean, lo, hi := PairedBootstrapCI(vals, 2000, 0.05)
+			pairs[i].BB100Samples = len(vals)
+			m := mean
+			l := lo
+			h := hi
+			pairs[i].BB100Mean = &m
+			pairs[i].BB100Lo = &l
+			pairs[i].BB100Hi = &h
+		}
 		writeJSON(w, map[string]any{"bots": bots, "pairs": pairs})
+	})
+
+	mux.HandleFunc("/api/stability", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		finalOrder, err := db.RankingOrder(ctx, nil)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		finalStrings := make([]string, 0, len(finalOrder))
+		for _, id := range finalOrder {
+			finalStrings = append(finalStrings, strconv.FormatInt(id, 10))
+		}
+		type Row struct {
+			MatchID  int64     `json:"match_id"`
+			Stage    string    `json:"stage"`
+			PairIdx  *int      `json:"pair_index,omitempty"`
+			Rankings []int64   `json:"rankings"`
+			Created  time.Time `json:"created_at"`
+			Seedpack *struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+				Count   int    `json:"count"`
+				SHA256  string `json:"sha256"`
+			} `json:"seedpack,omitempty"`
+			Tau float64 `json:"kendall_tau"`
+		}
+		rows, err := db.Query(ctx, `
+            SELECT c.match_id, c.stage, COALESCE(c.pair_index, -1) AS pair_index,
+                   c.rankings, c.created_at,
+                   m.seedpack_name, m.seedpack_version, m.seedpack_count, m.seedpack_sha256
+              FROM rating_checkpoints c
+              JOIN matches m ON m.id = c.match_id
+             ORDER BY c.created_at
+        `)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rows.Close()
+		out := []Row{}
+		for rows.Next() {
+			var matchID int64
+			var stage string
+			var pairIdx int
+			var rankings []int64
+			var created time.Time
+			var seedName, seedVersion, seedSHA *string
+			var seedCount *int
+			if err := rows.Scan(&matchID, &stage, &pairIdx, &rankings, &created, &seedName, &seedVersion, &seedCount, &seedSHA); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			var idxPtr *int
+			if pairIdx >= 0 {
+				idx := pairIdx
+				idxPtr = &idx
+			}
+			rankStrings := make([]string, 0, len(rankings))
+			for _, id := range rankings {
+				rankStrings = append(rankStrings, strconv.FormatInt(id, 10))
+			}
+			tau := 0.0
+			if len(rankStrings) > 1 && len(finalStrings) > 1 {
+				tau = KendallTau(rankStrings, finalStrings)
+			}
+			row := Row{
+				MatchID:  matchID,
+				Stage:    stage,
+				PairIdx:  idxPtr,
+				Rankings: rankings,
+				Created:  created,
+				Tau:      tau,
+			}
+			if seedName != nil || seedVersion != nil || seedCount != nil || seedSHA != nil {
+				var cnt int
+				if seedCount != nil {
+					cnt = *seedCount
+				}
+				sha := ""
+				if seedSHA != nil {
+					sha = *seedSHA
+				}
+				if strings.TrimSpace(sha) != "" {
+					row.Seedpack = &struct {
+						Name    string `json:"name"`
+						Version string `json:"version"`
+						Count   int    `json:"count"`
+						SHA256  string `json:"sha256"`
+					}{
+						Name:    strPtrValue(seedName),
+						Version: strPtrValue(seedVersion),
+						Count:   cnt,
+						SHA256:  sha,
+					}
+				}
+			}
+			out = append(out, row)
+		}
+		writeJSON(w, map[string]any{
+			"rows":       out,
+			"final_rank": finalOrder,
+		})
 	})
 
 	// Elo history across matches per bot (end-of-match Elo and label mapping)
@@ -781,6 +973,8 @@ func Router(db *store.DB) http.Handler {
 			Board       []string  `json:"board"`
 			SBHole      []string  `json:"sb_hole"`
 			BBHole      []string  `json:"bb_hole"`
+			PotOdds     float64   `json:"pot_odds"`
+			RequiredEq  float64   `json:"required_equity"`
 			CreatedAt   time.Time `json:"created_at"`
 			// Optional solver eval join
 			Solver          *string  `json:"solver"`
@@ -797,7 +991,7 @@ func Router(db *store.DB) http.Handler {
             SELECT a.id, a.pair_index, a.hand_id, a.street, a.actor_label, a.action, a.amount,
                    a.pot, a.cur_bet, a.to_call, a.min_raise_to, a.max_raise_to,
                    a.sb_stack, a.bb_stack, a.sb_committed, a.bb_committed,
-                   a.board, a.sb_hole, a.bb_hole, a.created_at,
+                   a.board, a.sb_hole, a.bb_hole, a.pot_odds, a.required_equity, a.created_at,
                    e.solver, e.solver_version, e.best_action, e.best_amount_to, e.ev_gap_bb, e.correctness_prob, e.is_top_action
               FROM action_logs a
               LEFT JOIN action_eval e ON e.action_log_id = a.id
@@ -815,7 +1009,7 @@ func Router(db *store.DB) http.Handler {
 			if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 				&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
 				&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
-				&r.Board, &r.SBHole, &r.BBHole, &r.CreatedAt,
+				&r.Board, &r.SBHole, &r.BBHole, &r.PotOdds, &r.RequiredEq, &r.CreatedAt,
 				&r.Solver, &r.SolverVersion, &r.EvalBestAction, &r.EvalBestTo, &r.EvalGapBB, &r.EvalCorrectProb, &r.EvalIsTop); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
@@ -918,6 +1112,13 @@ func Router(db *store.DB) http.Handler {
 	})
 
 	return mux
+}
+
+func strPtrValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

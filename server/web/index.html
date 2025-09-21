@@ -576,7 +576,7 @@
           }
         }
 
-        $('#meta').innerHTML = [
+        const metaRows = [
           metaRow('Match ID', match.id),
           metaRow('Created', new Date(match.created_at).toLocaleString()),
           metaRow('Ended', ended),
@@ -587,7 +587,18 @@
           metaRow('K factor', match.elo_k ?? '—'),
           metaRow('Per-hand K', match.elo_per_hand ?? '—'),
           metaRow('Weight by pot', match.elo_weight_by_pot ? 'Yes' : 'No'),
-        ].join('');
+        ];
+        if (match.seedpack_sha256) {
+          const nameBits = [];
+          if (match.seedpack_name) nameBits.push(safe(match.seedpack_name));
+          if (match.seedpack_version) nameBits.push(`v${safe(match.seedpack_version)}`);
+          const title = nameBits.join(' ').trim() || 'Seedpack';
+          const count = match.seedpack_count ? `${fmt(match.seedpack_count)} seeds` : '';
+          const body = [title, safe(count)].filter(Boolean).join(' · ');
+          const hashShort = safe(String(match.seedpack_sha256).slice(0, 12)) + '…';
+          metaRows.push(metaRow('Seedpack', `${body}<br><span class="mono muted">${hashShort}</span>`));
+        }
+        $('#meta').innerHTML = metaRows.join('');
 
         const participantMeta = {};
         const participants = (d.participants || []).map(p => {
