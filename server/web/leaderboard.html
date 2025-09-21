@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/web/app.css?v=8"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
+  <script src="/web/compare.js" defer></script>
   <script>
     document.addEventListener('DOMContentLoaded', ()=>{
       document.querySelectorAll('.topnav a').forEach(a=>{
@@ -277,11 +278,18 @@ function rowHTML(i, r, metric){
       const ratingVal = ratingFor(r, metric).toFixed(1);
       const rd = Number(r.glicko_rd ?? r.g_rd);
       const rdText = metric === 'glicko' && Number.isFinite(rd) ? `<span class="sub">±${Math.round(rd)}</span>` : '';
-      return `<tr class="lb-row" data-href="/web/bot.html?id=${r.bot_id}">
+      const fullSafe = escapeHtml(full);
+      const shortSafe = escapeHtml(short);
+      const companySafe = escapeHtml(trim1(r.company) || '');
+      const compareLabel = escapeHtml(`Select ${short || full || 'bot'} for comparison`);
+      return `<tr class="lb-row" data-href="/web/bot.html?id=${r.bot_id}" data-bot-id="${r.bot_id}" data-bot-name="${fullSafe}" data-bot-short="${shortSafe}" data-bot-company="${companySafe}">
         <td class="num">${i+1}</td>
         <td>
           <div class="lb-model">
             ${modelIcon(r.company, r.model)}
+            <button type="button" class="compare-select" data-bot-id="${r.bot_id}" aria-pressed="false" aria-label="${compareLabel}" title="${compareLabel}">
+              <span class="compare-select__icon" aria-hidden="true"></span>
+            </button>
             <a href="/web/bot.html?id=${r.bot_id}" class="name" title="${title}">${short}</a>
           </div>
         </td>
@@ -324,6 +332,120 @@ function rowHTML(i, r, metric){
       let sortKey = 'rating';
       let sortDesc = true;
       let ratingMetric = 'elo';
+
+      const compareState = { enabled: false, selected: [] };
+      const lbCard = document.querySelector('.lb-card');
+      const compareToggle = document.getElementById('compareToggle');
+      const compareDrawerEl = document.getElementById('compareDrawer');
+      let compareDrawer = null;
+
+      function syncSelectionUI(){
+        const rowsInDom = document.querySelectorAll('tr.lb-row');
+        const selectedIds = new Set(compareState.selected.map(item => item.id));
+        const presentIds = new Set();
+        rowsInDom.forEach(row => {
+          const id = Number(row.dataset.botId || '');
+          if (!Number.isFinite(id)) return;
+          presentIds.add(id);
+          const isSelected = selectedIds.has(id);
+          row.classList.toggle('is-selected', compareState.enabled && isSelected);
+          row.classList.toggle('is-selectable', compareState.enabled);
+          const btn = row.querySelector('.compare-select');
+          if (btn){
+            btn.classList.toggle('is-selected', isSelected);
+            btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+            btn.disabled = !compareState.enabled;
+          }
+        });
+        if (presentIds.size < compareState.selected.length){
+          compareState.selected = compareState.selected.filter(item => presentIds.has(item.id));
+        }
+      }
+
+      function updateDrawerState(){
+        if (!compareDrawer) return;
+        if (!compareState.enabled){
+          compareDrawer.close({ silent: true });
+          return;
+        }
+        if (compareState.selected.length === 0){
+          compareDrawer.showIntro('Select two bots to compare.', 'Choose any two leaderboard entries to view head-to-head results.');
+          return;
+        }
+        if (compareState.selected.length === 1){
+          compareDrawer.showPending(compareState.selected);
+          return;
+        }
+        const [first, second] = compareState.selected;
+        compareDrawer.showMatchup({
+          aId: first.id,
+          bId: second.id,
+          meta: {
+            aId: first.id,
+            bId: second.id,
+            aName: first.name,
+            bName: second.name,
+            aShort: first.short,
+            bShort: second.short,
+            aCompany: first.company,
+            bCompany: second.company
+          }
+        });
+      }
+
+      function toggleSelection(row){
+        if (!compareState.enabled || !row) return;
+        const id = Number(row.dataset.botId || '');
+        if (!Number.isFinite(id) || id <= 0) return;
+        const existingIdx = compareState.selected.findIndex(item => item.id === id);
+        if (existingIdx >= 0){
+          compareState.selected.splice(existingIdx, 1);
+        } else {
+          const meta = {
+            id,
+            name: row.dataset.botName || row.querySelector('.lb-model .name')?.textContent || '',
+            short: row.dataset.botShort || row.querySelector('.lb-model .name')?.textContent || '',
+            company: row.dataset.botCompany || ''
+          };
+          if (compareState.selected.length >= 2){
+            compareState.selected.shift();
+          }
+          compareState.selected.push(meta);
+        }
+        syncSelectionUI();
+        updateDrawerState();
+      }
+
+      function setCompareMode(on){
+        const next = Boolean(on);
+        if (compareState.enabled === next) return;
+        compareState.enabled = next;
+        if (compareToggle){
+          compareToggle.setAttribute('aria-pressed', next ? 'true' : 'false');
+          compareToggle.classList.toggle('is-active', next);
+        }
+        if (lbCard){
+          lbCard.classList.toggle('is-compare-mode', next);
+        }
+        if (!next){
+          compareState.selected = [];
+        }
+        syncSelectionUI();
+        updateDrawerState();
+      }
+
+      if (compareDrawerEl && window.PokerBench?.CompareDrawer){
+        compareDrawer = window.PokerBench.CompareDrawer.create(compareDrawerEl, {
+          onClose: () => setCompareMode(false)
+        });
+      }
+
+      if (compareToggle){
+        compareToggle.setAttribute('aria-pressed', 'false');
+        compareToggle.addEventListener('click', ()=>{
+          setCompareMode(!compareState.enabled);
+        });
+      }
 
       const ratingLabels = { elo: 'Elo', glicko: 'Glicko-2' };
 
@@ -389,6 +511,8 @@ function rowHTML(i, r, metric){
           });
         } catch {}
         setHeaderIndicators();
+        syncSelectionUI();
+        if (compareState.enabled) updateDrawerState();
       }
 
       async function refreshJudgeAccuracy(){
@@ -457,9 +581,23 @@ function rowHTML(i, r, metric){
 
       const tb = $('#tbody');
       tb.addEventListener('click', (e)=>{
+        const compareBtn = e.target.closest('.compare-select');
+        if (compareBtn){
+          e.preventDefault();
+          e.stopPropagation();
+          toggleSelection(compareBtn.closest('tr.lb-row'));
+          return;
+        }
+        const tr = e.target.closest('tr.lb-row');
+        if (!tr) return;
+        if (compareState.enabled){
+          e.preventDefault();
+          toggleSelection(tr);
+          return;
+        }
         if (e.target.closest('a')) return;
-        const tr = e.target.closest('tr.lb-row'); if (!tr) return;
-        const href = tr.getAttribute('data-href'); if (href) location.href = href;
+        const href = tr.getAttribute('data-href');
+        if (href) location.href = href;
       });
     }
     addEventListener('DOMContentLoaded', load);
@@ -581,14 +719,22 @@ function rowHTML(i, r, metric){
               <button class="inline-tip" type="button" data-tip="PokerBench runs continuous heads-up poker matches between bots, tracks every hand, and updates ratings as results arrive." aria-label="Tip: how PokerBench runs matches">i</button>
             </div>
           </div>
-          <div class="sort-control" role="group" aria-label="Rating metric">
-            <span class="sort-control__label">Rating</span>
-            <button type="button" class="active" data-rating="elo">Elo</button>
-            <button type="button" data-rating="glicko">Glicko-2</button>
+          <div class="lb-card__header-actions">
+            <div class="sort-control" role="group" aria-label="Rating metric">
+              <span class="sort-control__label">Rating</span>
+              <button type="button" class="active" data-rating="elo">Elo</button>
+              <button type="button" data-rating="glicko">Glicko-2</button>
+            </div>
+            <button type="button" class="pill compare-toggle" id="compareToggle" aria-pressed="false">
+              <span class="compare-toggle__icon" aria-hidden="true"></span>
+              <span class="compare-toggle__label">Compare</span>
+            </button>
           </div>
         </div>
         <div class="lb-card__body">
-          <div class="lb-table-wrap">
+          <div class="compare-layout">
+            <div class="compare-layout__main">
+              <div class="lb-table-wrap">
             <table class="lb-table">
             <colgroup>
               <col style="width:56px" />
@@ -617,6 +763,9 @@ function rowHTML(i, r, metric){
             <tbody id="tbody"><tr><td colspan="9">Loading...</td></tr></tbody>
           </table>
         </div>
+            </div>
+            <aside class="compare-drawer" id="compareDrawer" hidden></aside>
+          </div>
         </div>
       </div>
     </div>

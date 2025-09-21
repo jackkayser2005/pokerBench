@@ -809,6 +809,185 @@ func Router(db *store.DB) http.Handler {
 		writeJSON(w, map[string]any{"bots": bots, "pairs": pairs})
 	})
 
+	mux.HandleFunc("/api/matchup", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		aStr := r.URL.Query().Get("a")
+		bStr := r.URL.Query().Get("b")
+		if aStr == "" || bStr == "" {
+			http.Error(w, "missing bot ids", http.StatusBadRequest)
+			return
+		}
+
+		var aID, bID int64
+		if _, err := fmt.Sscan(aStr, &aID); err != nil || aID <= 0 {
+			http.Error(w, "invalid a", http.StatusBadRequest)
+			return
+		}
+		if _, err := fmt.Sscan(bStr, &bID); err != nil || bID <= 0 {
+			http.Error(w, "invalid b", http.StatusBadRequest)
+			return
+		}
+		if aID == bID {
+			http.Error(w, "ids must differ", http.StatusBadRequest)
+			return
+		}
+
+		type botSummary struct {
+			ID      int64   `json:"id"`
+			Name    string  `json:"name"`
+			Company string  `json:"company"`
+			Elo     float64 `json:"elo"`
+			GRating float64 `json:"g_rating"`
+			GRD     float64 `json:"g_rd"`
+		}
+		bots := make([]botSummary, 0, 2)
+		rows, err := db.Query(ctx, `
+            SELECT id, name, company,
+                   COALESCE(elo,1500) AS elo,
+                   COALESCE(g_rating,1500) AS g_rating,
+                   COALESCE(g_rd,350) AS g_rd
+              FROM v_bot_career
+             WHERE id = $1 OR id = $2
+        `, aID, bID)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var b botSummary
+			if err := rows.Scan(&b.ID, &b.Name, &b.Company, &b.Elo, &b.GRating, &b.GRD); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			bots = append(bots, b)
+		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if len(bots) != 2 {
+			http.Error(w, "pair not found", http.StatusNotFound)
+			return
+		}
+
+		type headSummary struct {
+			AWins   int `json:"a_wins"`
+			BWins   int `json:"b_wins"`
+			Hands   int `json:"hands"`
+			Matches int `json:"matches"`
+		}
+		var summary headSummary
+		err = db.QueryRow(ctx, `
+            SELECT
+                COALESCE(SUM(a.wins),0) AS a_wins,
+                COALESCE(SUM(b.wins),0) AS b_wins,
+                COALESCE(SUM(a.hands_dealt),0) AS hands,
+                COUNT(*) AS matches
+              FROM match_participants a
+              JOIN match_participants b ON a.match_id = b.match_id
+             WHERE a.bot_id = $1 AND b.bot_id = $2
+        `, aID, bID).Scan(&summary.AWins, &summary.BWins, &summary.Hands, &summary.Matches)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		type matchParticipant struct {
+			BotID     int64  `json:"bot_id"`
+			Label     string `json:"label"`
+			Model     string `json:"model"`
+			StartBank int    `json:"start_bank"`
+			EndBank   int    `json:"end_bank"`
+			Wins      int    `json:"wins"`
+			Hands     int    `json:"hands"`
+			NetChips  int    `json:"net_chips"`
+		}
+
+		type pairMatch struct {
+			MatchID      int64              `json:"match_id"`
+			CreatedAt    time.Time          `json:"created_at"`
+			EndedAt      *time.Time         `json:"ended_at,omitempty"`
+			Hands        int                `json:"hands"`
+			Participants []matchParticipant `json:"participants"`
+		}
+
+		rows2, err := db.Query(ctx, `
+            WITH pair_matches AS (
+                SELECT m.id, m.created_at, m.ended_at
+                  FROM matches m
+                  JOIN match_participants a ON a.match_id = m.id AND a.bot_id = $1
+                  JOIN match_participants b ON b.match_id = m.id AND b.bot_id = $2
+                 ORDER BY m.id DESC
+                 LIMIT 12
+            )
+            SELECT pm.id, pm.created_at, pm.ended_at,
+                   p.bot_id, p.label, p.name_snapshot,
+                   p.start_bank, p.end_bank, p.wins, p.hands_dealt, p.net_chips
+              FROM pair_matches pm
+              JOIN match_participants p ON p.match_id = pm.id
+             WHERE p.bot_id = $1 OR p.bot_id = $2
+             ORDER BY pm.id DESC, p.bot_id
+        `, aID, bID)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rows2.Close()
+		matchIndex := make(map[int64]*pairMatch)
+		order := make([]*pairMatch, 0, 12)
+		for rows2.Next() {
+			var matchID int64
+			var created time.Time
+			var ended *time.Time
+			var part matchParticipant
+			if err := rows2.Scan(&matchID, &created, &ended, &part.BotID, &part.Label, &part.Model, &part.StartBank, &part.EndBank, &part.Wins, &part.Hands, &part.NetChips); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			pm := matchIndex[matchID]
+			if pm == nil {
+				pm = &pairMatch{MatchID: matchID, CreatedAt: created, EndedAt: ended}
+				matchIndex[matchID] = pm
+				order = append(order, pm)
+			}
+			pm.Participants = append(pm.Participants, part)
+			if part.Hands > pm.Hands {
+				pm.Hands = part.Hands
+			}
+		}
+		if err := rows2.Err(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		for _, pm := range order {
+			if len(pm.Participants) == 2 {
+				if pm.Participants[0].BotID != aID && pm.Participants[0].BotID == bID {
+					pm.Participants[0], pm.Participants[1] = pm.Participants[1], pm.Participants[0]
+				}
+			}
+		}
+		flatMatches := make([]pairMatch, len(order))
+		for i := range order {
+			flatMatches[i] = *order[i]
+		}
+
+		payload := struct {
+			AID     int64        `json:"a_id"`
+			BID     int64        `json:"b_id"`
+			Bots    []botSummary `json:"bots"`
+			Summary headSummary  `json:"summary"`
+			Matches []pairMatch  `json:"recent_matches"`
+		}{
+			AID:     aID,
+			BID:     bID,
+			Bots:    bots,
+			Summary: summary,
+			Matches: flatMatches,
+		}
+		writeJSON(w, payload)
+	})
+
 	mux.HandleFunc("/api/stability", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		finalOrder, err := db.RankingOrder(ctx, nil)
