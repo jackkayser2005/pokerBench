@@ -7,9 +7,28 @@
   <link rel="stylesheet" href="/web/app.css?v=8"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
+  <script src="/web/compare.js" defer></script>
   <script>
     document.addEventListener('DOMContentLoaded', ()=>{
       document.querySelectorAll('.topnav__links a').forEach(a=>{ try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){} });
+      const drawerEl = document.getElementById('compareDrawer');
+      if (drawerEl && window.PokerBench?.CompareDrawer){
+        compareDrawer = window.PokerBench.CompareDrawer.create(drawerEl, {
+          onClose: ()=>{
+            if (activePinnedCell){
+              activePinnedCell.classList.remove('matrix-cell--active');
+              activePinnedCell.setAttribute('aria-pressed', 'false');
+              activePinnedCell = null;
+            }
+            const detail = document.getElementById('matrixDetails');
+            if (detail){
+              detail.innerHTML = '<div class="matrix-details__empty">Click a matchup to pin detailed stats.</div>';
+              detail.classList.remove('matrix-details--active');
+            }
+          }
+        });
+        compareDrawer.showIntro('Click a matchup to compare bots.', 'Head-to-head insights update as new matches finish.');
+      }
     });
     const $ = s => document.querySelector(s);
     const nf = new Intl.NumberFormat();
@@ -21,6 +40,7 @@
     let tooltipActiveCell = null;
     let tooltipScrollHandlerAttached = false;
     let activePinnedCell = null;
+    let compareDrawer = null;
     function heat(p){
       const x = Math.max(0, Math.min(1, p));
       const hue = 240*(1-x); // blue -> red
@@ -79,8 +99,10 @@
           const q = wins[j][i];
           const oppPct = q==null? '—' : Math.round(100*q)+'%';
           const exp = Math.round(100*eloProb(elo[i], elo[j]))+'%';
-          const aName = bots[i]?.name || '—';
-          const bName = bots[j]?.name || '—';
+          const aBot = bots[i] || {};
+          const bBot = bots[j] || {};
+          const aName = aBot.name || '—';
+          const bName = bBot.name || '—';
           const pairLabel = `${aName} vs ${bName}`;
           const handCount = hands[i][j] || 0;
           const sample = handCount > 0 ? ` (n=${handCount})` : '';
@@ -93,6 +115,12 @@
           const dataAttrs = [
             `data-a="${escapeAttr(aName)}"`,
             `data-b="${escapeAttr(bName)}"`,
+            `data-a-id="${escapeAttr(String(aBot.id || ''))}"`,
+            `data-b-id="${escapeAttr(String(bBot.id || ''))}"`,
+            `data-a-full="${escapeAttr(aName)}"`,
+            `data-b-full="${escapeAttr(bName)}"`,
+            `data-a-company="${escapeAttr(aBot.company || '')}"`,
+            `data-b-company="${escapeAttr(bBot.company || '')}"`,
             `data-pct="${escapeAttr(pct)}"`,
             `data-opp="${escapeAttr(oppPct)}"`,
             `data-hands="${escapeAttr(handCount)}"`,
@@ -238,6 +266,29 @@
         window.addEventListener('resize', hideTooltip, { passive: true });
         tooltipScrollHandlerAttached = true;
       }
+      function handleCellSelection(cell){
+        if (!cell) return;
+        hideTooltip();
+        updateDetailPanel(cell);
+        if (compareDrawer){
+          const aId = Number(cell.dataset.aId || '0');
+          const bId = Number(cell.dataset.bId || '0');
+          if (Number.isFinite(aId) && Number.isFinite(bId) && aId > 0 && bId > 0){
+            const meta = {
+              aId,
+              bId,
+              aName: cell.dataset.aFull || cell.dataset.a || '—',
+              bName: cell.dataset.bFull || cell.dataset.b || '—',
+              aShort: shortName(cell.dataset.aFull || cell.dataset.a || ''),
+              bShort: shortName(cell.dataset.bFull || cell.dataset.b || ''),
+              aCompany: cell.dataset.aCompany || '',
+              bCompany: cell.dataset.bCompany || ''
+            };
+            compareDrawer.showMatchup({ aId, bId, meta });
+          }
+        }
+      }
+
       cells.forEach(cell=>{
         cell.addEventListener('mouseenter', event=>{
           showTooltip(cell, event);
@@ -254,14 +305,12 @@
         cell.addEventListener('blur', hideTooltip);
         cell.addEventListener('click', event=>{
           event.preventDefault();
-          hideTooltip();
-          updateDetailPanel(cell);
+          handleCellSelection(cell);
         });
         cell.addEventListener('keydown', event=>{
           if(event.key === 'Enter' || event.key === ' '){
             event.preventDefault();
-            hideTooltip();
-            updateDetailPanel(cell);
+            handleCellSelection(cell);
           }
         });
       });
@@ -380,11 +429,16 @@
         <div class="muted">Cell = A’s win rate vs B; diagonal blank by design.</div>
       </div>
 
-      <div class="card matrix-card">
-        <div class="matrix-card__body" id="matrix">Loading…</div>
-        <div class="matrix-details" id="matrixDetails" role="status" aria-live="polite">
-          <div class="matrix-details__empty">Click a matchup to pin detailed stats.</div>
+      <div class="compare-layout compare-layout--matrix">
+        <div class="compare-layout__main">
+          <div class="card matrix-card">
+            <div class="matrix-card__body" id="matrix">Loading…</div>
+            <div class="matrix-details" id="matrixDetails" role="status" aria-live="polite">
+              <div class="matrix-details__empty">Click a matchup to pin detailed stats.</div>
+            </div>
+          </div>
         </div>
+        <aside class="compare-drawer" id="compareDrawer" hidden></aside>
       </div>
     </div>
   </main>
