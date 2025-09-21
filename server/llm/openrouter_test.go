@@ -2,15 +2,14 @@ package llm
 
 import "testing"
 
-func TestResolveAPIConfigOpenRouterDefaults(t *testing.T) {
-	t.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-	t.Setenv("OPENAI_API_KEY", "test-key")
+func TestResolveAPIConfigDefaults(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
 	cfg, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct")
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
 	}
-	if cfg.Kind != providerOpenRouter {
-		t.Fatalf("expected providerOpenRouter, got %v", cfg.Kind)
+	if cfg.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("unexpected default base URL: %q", cfg.BaseURL)
 	}
 	if got := cfg.ExtraHeaders["HTTP-Referer"]; got != "http://localhost" {
 		t.Fatalf("unexpected HTTP-Referer: %q", got)
@@ -23,17 +22,17 @@ func TestResolveAPIConfigOpenRouterDefaults(t *testing.T) {
 	}
 }
 
-func TestResolveAPIConfigOpenRouterOverrides(t *testing.T) {
-	t.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-	t.Setenv("OPENAI_API_KEY", "test-key")
+func TestResolveAPIConfigOverrides(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("OPENROUTER_API_BASE", "https://router.example.com/v1")
 	t.Setenv("OPENROUTER_SITE_URL", "https://example.com/app")
 	t.Setenv("OPENROUTER_TITLE", "Custom Title")
 	cfg, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct")
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
 	}
-	if cfg.Kind != providerOpenRouter {
-		t.Fatalf("expected providerOpenRouter, got %v", cfg.Kind)
+	if cfg.BaseURL != "https://router.example.com/v1" {
+		t.Fatalf("unexpected base URL: %q", cfg.BaseURL)
 	}
 	if got := cfg.ExtraHeaders["HTTP-Referer"]; got != "https://example.com/app" {
 		t.Fatalf("unexpected HTTP-Referer: %q", got)
@@ -46,18 +45,16 @@ func TestResolveAPIConfigOpenRouterOverrides(t *testing.T) {
 	}
 }
 
-func TestResolveAPIConfigOpenRouterInvalidSiteURL(t *testing.T) {
-	t.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-	t.Setenv("OPENAI_API_KEY", "test-key")
+func TestResolveAPIConfigInvalidSiteURL(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
 	t.Setenv("OPENROUTER_SITE_URL", "ftp://example.com/bad")
 	if _, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct"); err == nil {
 		t.Fatalf("expected error for invalid site URL, got nil")
 	}
 }
 
-func TestResolveAPIConfigOpenRouterSiteURLNormalization(t *testing.T) {
-	t.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-	t.Setenv("OPENAI_API_KEY", "test-key")
+func TestResolveAPIConfigSiteURLNormalization(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
 	t.Setenv("OPENROUTER_SITE_URL", "app.example.com/bench/")
 	cfg, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct")
 	if err != nil {
@@ -71,9 +68,8 @@ func TestResolveAPIConfigOpenRouterSiteURLNormalization(t *testing.T) {
 	}
 }
 
-func TestResolveAPIConfigOpenRouterSiteURLLocalhost(t *testing.T) {
-	t.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-	t.Setenv("OPENAI_API_KEY", "test-key")
+func TestResolveAPIConfigSiteURLLocalhost(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
 	t.Setenv("OPENROUTER_SITE_URL", "localhost:3000/ui")
 	cfg, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct")
 	if err != nil {

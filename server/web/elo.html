@@ -184,10 +184,10 @@
         .filter(Boolean);
 
       let slug = candidateSlugs.find(s => COMPANY_ICON_DATA[s]) || candidateSlugs[0] || '';
-      if (!slug) slug = 'openai';
+      if (!slug) slug = 'openrouter';
 
       const labelSource = vendor || rawCompany || slug;
-      const label = COMPANY_LABELS[slug] || prettyCompanyName(labelSource) || 'OpenAI';
+      const label = COMPANY_LABELS[slug] || prettyCompanyName(labelSource) || 'OpenRouter';
       return { slug, label };
     }
 
@@ -354,7 +354,7 @@
         const model = (r.model || '').trim();
         const metaInfo = resolveCompanyMeta(r.company, model);
         const companyLabel = metaInfo.label;
-        const companySlug = metaInfo.slug || 'openai';
+        const companySlug = metaInfo.slug || 'openrouter';
         let entry = map.get(r.bot_id);
         if (!entry) {
           entry = {
@@ -388,7 +388,7 @@
     function buildCompanyIndex(series) {
       const map = new Map();
       series.forEach(entry => {
-        const key = entry.meta.companyKey || 'openai';
+        const key = entry.meta.companyKey || 'openrouter';
         if (!map.has(key)) {
           map.set(key, {
             key,

@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS bots (
   id                BIGSERIAL PRIMARY KEY,
   name              TEXT NOT NULL UNIQUE,   -- 'gpt-5-mini'
-  company           TEXT NOT NULL,          -- 'OpenAI' (or your vendor tag)
+  company           TEXT NOT NULL,          -- 'OpenRouter' (or your vendor tag)
   reasoning_effort  TEXT,                   -- NULL for non-thinking models
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );

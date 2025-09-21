@@ -101,109 +101,35 @@ func sub(title string)      { fmt.Printf("%s %s\n", dim("•"), bold(title)) }
 //
 
 // The loader looks for pre-exported env vars first, then falls back to common
-// file hints. When OPENAI_API_BASE targets OpenRouter, OpenRouter secrets and
-// files are preferred before OpenAI ones (but are still mirrored into
-// OPENAI_API_KEY so downstream clients keep working).
+// file hints. Only OpenRouter credentials are considered.
 func loadAPIKeyFromSecret() {
-	preferOpenRouter := func() bool {
-		switch strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))) {
-		case "openrouter":
-			return true
-		case "openai":
-			return false
-		}
-		base := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_API_BASE")))
-		if base == "" {
-			base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")))
-		}
-		if base == "" {
-			base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")))
-		}
-		if base == "" {
-			base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")))
-		}
-		if base != "" {
-			return strings.Contains(base, "openrouter")
-		}
-		return llm.PreferOpenRouter()
-	}()
-
-	// Set only OPENAI_API_KEY (for native OpenAI usage).
-	setOpenAI := func(raw string) bool {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return false
-		}
-		os.Setenv("OPENAI_API_KEY", raw)
-		return true
-	}
-
-	// Configure OpenRouter keys while keeping mustEnv("OPENAI_API_KEY") happy
-	// and nudging routing/base URLs toward the OpenRouter API.
 	setOpenRouter := func(raw string) bool {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			return false
 		}
 		os.Setenv("OPENROUTER_API_KEY", raw)
-		os.Setenv("OPENAI_API_KEY", raw)
-		if strings.TrimSpace(os.Getenv("LLM_PROVIDER")) == "" {
-			os.Setenv("LLM_PROVIDER", "openrouter")
-		}
-		if strings.TrimSpace(os.Getenv("OPENAI_API_BASE")) == "" &&
-			strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")) == "" &&
-			strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) == "" &&
+		if strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) == "" &&
 			strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")) == "" {
-			os.Setenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+			os.Setenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
 		}
 		return true
 	}
 
-	tryEnv := func(names ...string) bool {
-		for _, name := range names {
-			v := strings.TrimSpace(os.Getenv(name))
-			if v == "" {
-				continue
-			}
-			if name == "OPENROUTER_API_KEY" {
-				return setOpenRouter(v)
-			}
-			if name == "OPENAI_API_KEY" {
-				return setOpenAI(v)
-			}
-			return setOpenAI(v)
-		}
-		return false
+	if setOpenRouter(os.Getenv("OPENROUTER_API_KEY")) {
+		return
 	}
 
-	tryPaths := func(paths []string, isOpenRouter bool) bool {
+	tryPaths := func(paths []string) bool {
 		for _, path := range paths {
 			if b, err := os.ReadFile(path); err == nil {
-				if isOpenRouter {
-					if setOpenRouter(string(b)) {
-						return true
-					}
-				} else if setOpenAI(string(b)) {
+				if setOpenRouter(string(b)) {
 					return true
 				}
 			}
 		}
 		return false
 	}
-
-	var openaiPaths []string
-	if p := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_FILE")); p != "" {
-		openaiPaths = append(openaiPaths, p)
-	}
-	openaiPaths = append(openaiPaths,
-		"./secrets/openai_api_key.txt",
-		"server/openai_api_key.txt",
-		"./server/openai_api_key.txt",
-		"./openai_api_key.txt",
-		"/app/secrets/openai_api_key.txt",
-		"/app/server/openai_api_key.txt",
-		"/run/secrets/openai_api_key",
-	)
 
 	var openrouterPaths []string
 	if p := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_FILE")); p != "" {
@@ -219,35 +145,10 @@ func loadAPIKeyFromSecret() {
 		"/run/secrets/openrouter_api_key",
 	)
 
-	openAIEnvCheck := func() bool { return setOpenAI(os.Getenv("OPENAI_API_KEY")) }
-
-	var checks []func() bool
-	if preferOpenRouter {
-		checks = append(checks,
-			func() bool { return tryEnv("OPENROUTER_API_KEY") },
-			func() bool { return tryPaths(openrouterPaths, true) },
-			openAIEnvCheck,
-			func() bool { return tryPaths(openaiPaths, false) },
-		)
-	} else {
-		checks = append(checks,
-			openAIEnvCheck,
-			func() bool { return tryPaths(openaiPaths, false) },
-			func() bool { return tryEnv("OPENROUTER_API_KEY") },
-			func() bool { return tryPaths(openrouterPaths, true) },
-		)
+	if tryPaths(openrouterPaths) {
+		return
 	}
 
-	for _, check := range checks {
-		if check() {
-			return
-		}
-	}
-
-	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" &&
-		strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
-		os.Setenv("OPENAI_API_KEY", key)
-	}
 }
 
 func mustEnv(keys ...string) {
@@ -309,7 +210,7 @@ func main() {
 
 	// Only require the key when not doing a pure DB migrate
 	if !migrate {
-		mustEnv("OPENAI_API_KEY")
+		mustEnv("OPENROUTER_API_KEY")
 	}
 
 	gracefulOnly := !asBool(os.Getenv("STOP_IMMEDIATE"))
@@ -425,48 +326,26 @@ type Player struct {
 }
 
 func loadPlayers(startStack int) (a, b Player) {
-	useOpenRouter := llm.PreferOpenRouter()
-	var ma, mb string
-	if useOpenRouter {
-		shared := strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
-		ma = firstNonEmpty(
-			os.Getenv("OPENROUTER_MODEL_A"),
-			os.Getenv("OPENROUTER_MODEL_SB"),
-			shared,
-		)
-		mb = firstNonEmpty(
-			os.Getenv("OPENROUTER_MODEL_B"),
-			os.Getenv("OPENROUTER_MODEL_BB"),
-			shared,
-		)
-	}
-	sharedOpenAI := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
-	if strings.TrimSpace(ma) == "" {
-		ma = firstNonEmpty(
-			os.Getenv("OPENAI_MODEL_A"),
-			os.Getenv("OPENAI_MODEL_SB"),
-			sharedOpenAI,
-		)
-	}
-	if strings.TrimSpace(mb) == "" {
-		mb = firstNonEmpty(
-			os.Getenv("OPENAI_MODEL_B"),
-			os.Getenv("OPENAI_MODEL_BB"),
-			sharedOpenAI,
-		)
-	}
+	shared := strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
+	ma := firstNonEmpty(
+		os.Getenv("OPENROUTER_MODEL_A"),
+		os.Getenv("OPENROUTER_MODEL_SB"),
+		shared,
+	)
+	mb := firstNonEmpty(
+		os.Getenv("OPENROUTER_MODEL_B"),
+		os.Getenv("OPENROUTER_MODEL_BB"),
+		shared,
+	)
 	if ma == "" || mb == "" {
-		log.Fatal("Provide model identifiers for both seats via OPENAI_MODEL_* or OPENROUTER_MODEL_*")
+		log.Fatal("Provide model identifiers for both seats via OPENROUTER_MODEL_*")
 	}
 	a = Player{Label: "A", Name: "A", Model: ma, Bank: startStack}
 	b = Player{Label: "B", Name: "B", Model: mb, Bank: startStack}
 	return
 }
 
-//
 // ===== randomness =====
-//
-
 type seedStream struct{ state uint64 }
 
 func newSeedStream(base uint64) seedStream { return seedStream{state: base} }
@@ -532,7 +411,7 @@ Rules:
 
 	// 1) Prefer tool/function calling first to force enum
 	var maxTok *int
-	if v := strings.TrimSpace(os.Getenv("OPENAI_MAX_OUTPUT_TOKENS")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OPENROUTER_MAX_OUTPUT_TOKENS")); v != "" {
 		lc := strings.ToLower(v)
 		if lc == "omit" || lc == "auto" {
 			maxTok = nil
@@ -600,7 +479,7 @@ Rules:
 		"additionalProperties": false,
 	}
 	// Reasoning effort env (validate)
-	re := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_REASONING_EFFORT")))
+	re := strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_REASONING_EFFORT")))
 	switch re {
 	case "", "low", "medium", "high":
 	default:
@@ -1601,13 +1480,13 @@ func companyLabel() string {
 	if v := strings.TrimSpace(os.Getenv("LLM_COMPANY")); v != "" {
 		return v
 	}
-	base := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_API_BASE")))
-	if base == "" {
-		base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")))
-	}
+	base := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		os.Getenv("OPENROUTER_API_BASE"),
+		os.Getenv("OPENROUTER_BASE_URL"),
+	)))
 	switch {
 	case base == "":
-		return "OpenAI"
+		return "OpenRouter"
 	case strings.Contains(base, "openrouter"):
 		return "OpenRouter"
 	case strings.Contains(base, "together"):
@@ -1816,10 +1695,10 @@ func companyForModel(model string) string {
 	if v := strings.TrimSpace(os.Getenv("LLM_COMPANY")); v != "" {
 		return v
 	}
-	base := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_API_BASE")))
-	if base == "" {
-		base = strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")))
-	}
+	base := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		os.Getenv("OPENROUTER_API_BASE"),
+		os.Getenv("OPENROUTER_BASE_URL"),
+	)))
 	if strings.Contains(base, "openrouter") {
 		m := strings.TrimSpace(model)
 		if idx := strings.Index(m, "/"); idx > 0 {
@@ -1981,7 +1860,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	}
 	if db != nil {
 		companyA, companyB := companyForModel(a.Model), companyForModel(b.Model)
-		rePtr := strptr(os.Getenv("OPENAI_REASONING_EFFORT"))
+		rePtr := strptr(os.Getenv("OPENROUTER_REASONING_EFFORT"))
 
 		// upsert bots
 		idA, err := db.UpsertBot(context.Background(), a.Model, companyA, rePtr)
@@ -2239,7 +2118,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		}
 		persistCheckpoint("end", nil)
 
-		rePtr := strptr(os.Getenv("OPENAI_REASONING_EFFORT"))
+		rePtr := strptr(os.Getenv("OPENROUTER_REASONING_EFFORT"))
 		aChk, aCall, aRaise, aFold := tallyCounts(tallies[a.Label])
 		bChk, bCall, bRaise, bFold := tallyCounts(tallies[b.Label])
 
@@ -2332,20 +2211,12 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	}
 }
 
-// runDuelMatrix runs pairwise duels for all models listed in OPENAI_MODELS (comma-separated).
-// Example: OPENAI_MODELS="gpt-4o-mini,gpt-5-mini,gpt-4.1-mini-2025-04-14"
+// runDuelMatrix runs pairwise duels for all models listed in OPENROUTER_MODELS (comma-separated).
+// Example: OPENROUTER_MODELS="meta-llama/llama-3.1-70b-instruct,mistralai/mistral-large".
 func runDuelMatrix(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
-	useOpenRouter := llm.PreferOpenRouter()
-	raw := strings.TrimSpace(os.Getenv("OPENAI_MODELS"))
-	if raw == "" && useOpenRouter {
-		raw = strings.TrimSpace(os.Getenv("OPENROUTER_MODELS"))
-	}
+	raw := strings.TrimSpace(os.Getenv("OPENROUTER_MODELS"))
 	if raw == "" {
-		if useOpenRouter {
-			log.Println("OPENROUTER_MODELS (or OPENAI_MODELS) is empty; supply a comma-separated list to use --duel-matrix.")
-		} else {
-			log.Println("OPENAI_MODELS is empty; supply a comma-separated list to use --duel-matrix.")
-		}
+		log.Println("OPENROUTER_MODELS is empty; supply a comma-separated list to use --duel-matrix.")
 		return
 	}
 	parts := []string{}
@@ -2356,7 +2227,7 @@ func runDuelMatrix(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		}
 	}
 	if len(parts) < 2 {
-		log.Println("Need at least two models in OPENAI_MODELS for --duel-matrix.")
+		log.Println("Need at least two models in OPENROUTER_MODELS for --duel-matrix.")
 		return
 	}
 
@@ -2368,15 +2239,9 @@ func runDuelMatrix(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			}
 			a := parts[i]
 			b := parts[j]
-			log.Printf("Matrix duel: A=%s vs B=%s\n", a, b)
-			// Set envs for this duel run
-			if useOpenRouter {
-				os.Setenv("OPENROUTER_MODEL_A", a)
-				os.Setenv("OPENROUTER_MODEL_B", b)
-			} else {
-				os.Setenv("OPENAI_MODEL_A", a)
-				os.Setenv("OPENAI_MODEL_B", b)
-			}
+			log.Printf("Matrix duel: A=%s vs B=%s", a, b)
+			os.Setenv("OPENROUTER_MODEL_A", a)
+			os.Setenv("OPENROUTER_MODEL_B", b)
 			runDuel(checkStop, gracefulOnly, db)
 		}
 	}

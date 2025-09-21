@@ -60,23 +60,21 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 	} else {
 		payload["response_format"] = map[string]any{"type": "json_object"}
 	}
-	applyTuningFromEnv(payload, cfg.Kind == providerOpenRouter)
+	applyTuningFromEnv(payload)
 
 	client := &http.Client{Timeout: 45 * time.Second}
 	url := cfg.BaseURL + "/chat/completions"
 	removed := map[string]bool{}
 
 	maxAttempts := 3
-	if cfg.Kind == providerOpenRouter {
-		removalCandidates := 0
-		for _, key := range []string{"response_format", "reasoning", "max_tokens"} {
-			if _, exists := payload[key]; exists {
-				removalCandidates++
-			}
+	removalCandidates := 0
+	for _, key := range []string{"response_format", "reasoning", "max_tokens"} {
+		if _, exists := payload[key]; exists {
+			removalCandidates++
 		}
-		if attemptBudget := 1 + removalCandidates; attemptBudget > maxAttempts {
-			maxAttempts = attemptBudget
-		}
+	}
+	if attemptBudget := 1 + removalCandidates; attemptBudget > maxAttempts {
+		maxAttempts = attemptBudget
 	}
 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
@@ -88,9 +86,6 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set(cfg.HeaderName, cfg.HeaderPrefix+cfg.APIKey)
-		if cfg.Organization != "" {
-			req.Header.Set("OpenAI-Organization", cfg.Organization)
-		}
 		for k, v := range cfg.ExtraHeaders {
 			setHeaderPreserveCase(req.Header, k, v)
 		}
@@ -122,11 +117,11 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 			return cc.Choices[0].Message.Content, nil
 		}
 
-		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && adjustOpenRouterPayloadForRetry(payload, cfg.Kind, body, removed) {
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && adjustOpenRouterPayloadForRetry(payload, body, removed) {
 			continue
 		}
 
-		return "", fmt.Errorf("openai http %d: %s", resp.StatusCode, truncate(string(body), 800))
+		return "", fmt.Errorf("openrouter http %d: %s", resp.StatusCode, truncate(string(body), 800))
 	}
 
 	return "", errors.New("exhausted chat completion retries")
@@ -183,18 +178,18 @@ func PingChooseAction(ctx context.Context, model, system, user string, legal []s
 	return act, amt, raw, nil
 }
 
-func applyTuningFromEnv(m map[string]any, preferOpenRouter bool) {
-	if v := envWithFallback(preferOpenRouter, "OPENAI_TEMPERATURE", "OPENROUTER_TEMPERATURE"); v != "" {
+func applyTuningFromEnv(m map[string]any) {
+	if v := strings.TrimSpace(os.Getenv("OPENROUTER_TEMPERATURE")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["temperature"] = f
 		}
 	}
-	if v := envWithFallback(preferOpenRouter, "OPENAI_TOP_P", "OPENROUTER_TOP_P"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OPENROUTER_TOP_P")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["top_p"] = f
 		}
 	}
-	if v := envWithFallback(preferOpenRouter, "OPENAI_TOP_K", "OPENROUTER_TOP_K"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OPENROUTER_TOP_K")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			m["top_k"] = n
 		}
@@ -283,11 +278,10 @@ func coerceActionMap(parsed map[string]any, legal []string, minRaiseTo, maxRaise
 
 func envPingOptions() PingOptions {
 	opts := PingOptions{}
-	preferOpenRouter := preferOpenRouterEnv()
-	if v := envWithFallback(preferOpenRouter, "OPENAI_REASONING_EFFORT", "OPENROUTER_REASONING_EFFORT"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OPENROUTER_REASONING_EFFORT")); v != "" {
 		opts.ReasoningEffort = v
 	}
-	if v := envWithFallback(preferOpenRouter, "OPENAI_MAX_OUTPUT_TOKENS", "OPENROUTER_MAX_OUTPUT_TOKENS"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OPENROUTER_MAX_OUTPUT_TOKENS")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			opts.MaxOutputTokens = &n
 		}
@@ -295,11 +289,7 @@ func envPingOptions() PingOptions {
 	return opts
 }
 
-func adjustOpenRouterPayloadForRetry(payload map[string]any, kind providerKind, body []byte, removed map[string]bool) bool {
-	if kind != providerOpenRouter {
-		return false
-	}
-
+func adjustOpenRouterPayloadForRetry(payload map[string]any, body []byte, removed map[string]bool) bool {
 	lowerMsg := strings.ToLower(string(body))
 	lowerParam := ""
 	var errBody struct {
@@ -355,19 +345,6 @@ func adjustOpenRouterPayloadForRetry(payload map[string]any, kind providerKind, 
 	return false
 }
 
-func envWithFallback(preferOpenRouter bool, openAIKey, openRouterKey string) string {
-	keys := []string{openAIKey, openRouterKey}
-	if preferOpenRouter {
-		keys[0], keys[1] = keys[1], keys[0]
-	}
-	for _, key := range keys {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func setHeaderPreserveCase(h http.Header, key, value string) {
 	k := strings.TrimSpace(key)
 	v := strings.TrimSpace(value)
@@ -382,41 +359,4 @@ func setHeaderPreserveCase(h http.Header, key, value string) {
 	h.Del(canonical)
 	h.Del(k)
 	h[k] = []string{v}
-}
-
-func preferOpenRouterEnv() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER"))) {
-	case "openrouter":
-		return true
-	case "openai":
-		return false
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) != "" && strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_API_BASE")) != "" || strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")) != "" {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL")) == "" {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_A")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_A")) == "" {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_B")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_B")) == "" {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_SB")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_SB")) == "" {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv("OPENROUTER_MODEL_BB")) != "" && strings.TrimSpace(os.Getenv("OPENAI_MODEL_BB")) == "" {
-		return true
-	}
-	if base := strings.TrimSpace(os.Getenv("OPENAI_API_BASE")); base != "" && strings.Contains(strings.ToLower(base), "openrouter") {
-		return true
-	}
-	if base := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); base != "" && strings.Contains(strings.ToLower(base), "openrouter") {
-		return true
-	}
-	return false
 }

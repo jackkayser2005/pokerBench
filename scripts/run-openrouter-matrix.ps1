@@ -1,15 +1,15 @@
-﻿Param(
+Param(
   [int]$Pairs = 75,
-  [string]$Models = "gpt-4o-mini,gpt-4o,gpt-4.1-mini-2025-04-14,gpt-5-mini",
+  [string]$Models = "meta-llama/llama-3.1-70b-instruct,mistralai/mistral-nemo",
   [string[]]$Reasoning = @("", "low", "medium", "high")
 )
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$secretPath = Join-Path $repoRoot 'secrets/openai_api_key.txt'
+$secretPath = Join-Path $repoRoot 'secrets/openrouter_api_key.txt'
 if (-not (Test-Path $secretPath)) {
-  throw "Missing OpenAI API key. Create $secretPath with your key (one line)."
+  throw "Missing OpenRouter API key. Create $secretPath with your key (one line)."
 }
-$env:OPENAI_API_SECRET_FILE = $secretPath
+$env:OPENROUTER_API_KEY_FILE = $secretPath
 
 Write-Host "Running matrix: pairs=$Pairs models=$Models reasoning=[$($Reasoning -join ', ')]"
 
@@ -19,9 +19,9 @@ $modelList = $Models.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { 
 
 foreach ($m in $modelList) {
   foreach ($effort in $Reasoning) {
-    if ($effort -ne "") { $env:OPENAI_REASONING_EFFORT = $effort } else { Remove-Item Env:OPENAI_REASONING_EFFORT -ErrorAction SilentlyContinue }
-    $env:OPENAI_MODEL_A = $m
-    $env:OPENAI_MODEL_B = $m
+    if ($effort -ne "") { $env:OPENROUTER_REASONING_EFFORT = $effort } else { Remove-Item Env:OPENROUTER_REASONING_EFFORT -ErrorAction SilentlyContinue }
+    $env:OPENROUTER_MODEL_A = $m
+    $env:OPENROUTER_MODEL_B = $m
     Write-Host "--> $m (reasoning='$effort')"
     docker compose run --rm duel /app/ai-thunderdome --duel
   }

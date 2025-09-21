@@ -37,13 +37,13 @@ func TestAdjustOpenRouterPayloadForRetryResponseFormat(t *testing.T) {
 	}
 	body := []byte(`{"error":{"message":"model does not support response_format","param":"response_format"}}`)
 	removed := map[string]bool{}
-	if !adjustOpenRouterPayloadForRetry(payload, providerOpenRouter, body, removed) {
+	if !adjustOpenRouterPayloadForRetry(payload, body, removed) {
 		t.Fatalf("expected response_format adjustment to trigger retry")
 	}
 	if _, ok := payload["response_format"]; ok {
 		t.Fatalf("response_format should have been removed from payload")
 	}
-	if adjustOpenRouterPayloadForRetry(payload, providerOpenRouter, body, removed) {
+	if adjustOpenRouterPayloadForRetry(payload, body, removed) {
 		t.Fatalf("second adjustment attempt should not trigger once removed")
 	}
 }
@@ -54,13 +54,13 @@ func TestAdjustOpenRouterPayloadForRetryReasoning(t *testing.T) {
 	}
 	body := []byte(`{"error":{"message":"reasoning parameter unsupported"}}`)
 	removed := map[string]bool{}
-	if !adjustOpenRouterPayloadForRetry(payload, providerOpenRouter, body, removed) {
+	if !adjustOpenRouterPayloadForRetry(payload, body, removed) {
 		t.Fatalf("expected reasoning adjustment to trigger retry")
 	}
 	if _, ok := payload["reasoning"]; ok {
 		t.Fatalf("reasoning should have been removed from payload")
 	}
-	if adjustOpenRouterPayloadForRetry(payload, providerOpenRouter, body, removed) {
+	if adjustOpenRouterPayloadForRetry(payload, body, removed) {
 		t.Fatalf("second adjustment attempt should not trigger once removed")
 	}
 }
