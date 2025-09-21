@@ -83,3 +83,31 @@ func TestResolveAPIConfigSiteURLLocalhost(t *testing.T) {
 		t.Fatalf("unexpected Referer: %q", got)
 	}
 }
+
+func TestResolveAPIConfigOpenAI(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENROUTER_MODEL", "")
+	t.Setenv("OPENAI_API_KEY", "openai-test-key")
+	t.Setenv("OPENAI_API_BASE", "https://api.example.com/v42")
+	t.Setenv("OPENAI_MODEL", "gpt-4o-mini")
+
+	cfg, err := resolveAPIConfig("")
+	if err != nil {
+		t.Fatalf("resolveAPIConfig returned error: %v", err)
+	}
+	if cfg.Model != "gpt-4o-mini" {
+		t.Fatalf("unexpected model: %q", cfg.Model)
+	}
+	if cfg.BaseURL != "https://api.example.com/v42" {
+		t.Fatalf("unexpected OpenAI base URL: %q", cfg.BaseURL)
+	}
+	if cfg.HeaderName != "Authorization" {
+		t.Fatalf("unexpected header name: %q", cfg.HeaderName)
+	}
+	if cfg.HeaderPrefix != "Bearer " {
+		t.Fatalf("unexpected header prefix: %q", cfg.HeaderPrefix)
+	}
+	if len(cfg.ExtraHeaders) != 0 {
+		t.Fatalf("OpenAI config should not include extra headers: %+v", cfg.ExtraHeaders)
+	}
+}
