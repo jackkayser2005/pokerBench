@@ -12,6 +12,15 @@
       document.querySelectorAll('.topnav__links a').forEach(a=>{ try{ if(location.pathname.endsWith(a.getAttribute('href').split('/').pop())) a.classList.add('active'); }catch(e){} });
     });
     const $ = s => document.querySelector(s);
+    const nf = new Intl.NumberFormat();
+    const formatNumber = n => {
+      const num = Number(n);
+      return Number.isFinite(num) ? nf.format(num) : '0';
+    };
+    let matrixTooltip;
+    let tooltipActiveCell = null;
+    let tooltipScrollHandlerAttached = false;
+    let activePinnedCell = null;
     function heat(p){
       const x = Math.max(0, Math.min(1, p));
       const hue = 240*(1-x); // blue -> red
@@ -76,18 +85,186 @@
           const handCount = hands[i][j] || 0;
           const sample = handCount > 0 ? ` (n=${handCount})` : '';
           const duelLine = `${aName} vs ${bName}: ${pct}${sample} • ${bName} vs ${aName}: ${oppPct}${sample}`;
-          const tipParts = [duelLine, `Expected (Elo): ${exp}`];
-          const tip = tipParts.join('\n');
           const style = heat(p==null?0.5:p);
           const aria = p==null
             ? `${pairLabel} — no completed hands yet`
             : `${pairLabel}: ${pct} over ${handCount} hands. Reverse: ${bName} vs ${aName} ${oppPct}. Expected (Elo) ${exp}.`;
-          html += `<td class="num" style="${style}" title="${escapeAttr(tip)}" aria-label="${escapeAttr(aria)}">${pct}</td>`;
+          const hasData = p!=null;
+          const dataAttrs = [
+            `data-a="${escapeAttr(aName)}"`,
+            `data-b="${escapeAttr(bName)}"`,
+            `data-pct="${escapeAttr(pct)}"`,
+            `data-opp="${escapeAttr(oppPct)}"`,
+            `data-hands="${escapeAttr(handCount)}"`,
+            `data-exp="${escapeAttr(exp)}"`,
+            `data-has-data="${hasData ? 'true' : 'false'}"`
+          ].join(' ');
+          html += `<td class="num matrix-cell" style="${style}" ${dataAttrs} aria-label="${escapeAttr(aria)}" tabindex="0" role="button" aria-pressed="false">${pct}</td>`;
         }
         html += '</tr>';
       });
       html += '</tbody></table></div>';
       $('#matrix').innerHTML = html;
+      initMatrixInteractions();
+    }
+    function ensureTooltip(){
+      if(!matrixTooltip){
+        matrixTooltip = document.createElement('div');
+        matrixTooltip.className = 'matrix-tooltip';
+        matrixTooltip.setAttribute('role', 'tooltip');
+        matrixTooltip.setAttribute('aria-hidden', 'true');
+        matrixTooltip.style.left = '-9999px';
+        matrixTooltip.style.top = '-9999px';
+        document.body.appendChild(matrixTooltip);
+      }
+      return matrixTooltip;
+    }
+    function hideTooltip(){
+      if(matrixTooltip){
+        matrixTooltip.classList.remove('visible');
+        matrixTooltip.setAttribute('aria-hidden', 'true');
+        matrixTooltip.style.left = '-9999px';
+        matrixTooltip.style.top = '-9999px';
+      }
+      tooltipActiveCell = null;
+    }
+    function positionTooltip(event, cell){
+      const tooltipEl = ensureTooltip();
+      if(!tooltipEl.classList.contains('visible')) return;
+      let x;
+      let y;
+      if(event && typeof event.clientX === 'number' && typeof event.clientY === 'number'){
+        x = event.clientX + 18;
+        y = event.clientY + 18;
+      }else if(cell){
+        const rect = cell.getBoundingClientRect();
+        x = rect.left + rect.width/2;
+        y = rect.top + rect.height + 18;
+      }else{
+        x = window.innerWidth/2;
+        y = window.innerHeight/2;
+      }
+      tooltipEl.style.left = '0px';
+      tooltipEl.style.top = '0px';
+      const { width, height } = tooltipEl.getBoundingClientRect();
+      const padding = 16;
+      let left = Math.min(x, window.innerWidth - width - padding);
+      let top = Math.min(y, window.innerHeight - height - padding);
+      left = Math.max(padding, left);
+      top = Math.max(padding, top);
+      tooltipEl.style.left = `${left}px`;
+      tooltipEl.style.top = `${top}px`;
+    }
+    function showTooltip(cell, event){
+      if(!cell) return;
+      const tooltipEl = ensureTooltip();
+      tooltipActiveCell = cell;
+      const a = cell.dataset.a || '—';
+      const b = cell.dataset.b || '—';
+      const pct = cell.dataset.pct || '—';
+      const opp = cell.dataset.opp || '—';
+      const exp = cell.dataset.exp || '—';
+      const handCount = Number(cell.dataset.hands || '0');
+      const hasData = cell.dataset.hasData === 'true';
+      const headline = hasData ? `${pct} win rate` : 'Awaiting results';
+      const reverseLine = hasData ? `Reverse: ${opp}` : '';
+      const sampleLine = hasData && handCount > 0
+        ? `Sample size: ${formatNumber(handCount)} hands`
+        : 'Sample size: —';
+      tooltipEl.innerHTML = `
+        <div class="matrix-tooltip__matchup">
+          <span class="matrix-tooltip__model">${escapeAttr(a)}</span>
+          <span class="matrix-tooltip__versus">vs</span>
+          <span class="matrix-tooltip__model">${escapeAttr(b)}</span>
+        </div>
+        <div class="matrix-tooltip__stat">${escapeAttr(headline)}</div>
+        ${reverseLine ? `<div class="matrix-tooltip__meta">${escapeAttr(reverseLine)}</div>` : ''}
+        <div class="matrix-tooltip__meta">${escapeAttr(sampleLine)}</div>
+        <div class="matrix-tooltip__meta">Elo expectation: ${escapeAttr(exp)}</div>
+      `;
+      tooltipEl.classList.add('visible');
+      tooltipEl.setAttribute('aria-hidden', 'false');
+      positionTooltip(event, cell);
+    }
+    function updateDetailPanel(cell){
+      const detail = $('#matrixDetails');
+      if(!detail || !cell) return;
+      const a = cell.dataset.a || '—';
+      const b = cell.dataset.b || '—';
+      const pct = cell.dataset.pct || '—';
+      const opp = cell.dataset.opp || '—';
+      const exp = cell.dataset.exp || '—';
+      const handCount = Number(cell.dataset.hands || '0');
+      const hasData = cell.dataset.hasData === 'true';
+      const sample = hasData && handCount > 0
+        ? `${formatNumber(handCount)} hands played`
+        : 'No completed hands yet';
+      detail.innerHTML = `
+        <div class="matrix-details__matchup">
+          <span class="matrix-details__model">${escapeAttr(a)}</span>
+          <span class="matrix-details__versus">vs</span>
+          <span class="matrix-details__model">${escapeAttr(b)}</span>
+        </div>
+        <div class="matrix-details__stat-line">
+          <div class="matrix-details__stat">
+            <span class="matrix-details__label">${escapeAttr(a)}</span>
+            <span class="matrix-details__value">${escapeAttr(hasData ? pct : '—')}</span>
+          </div>
+          <div class="matrix-details__stat">
+            <span class="matrix-details__label">${escapeAttr(b)}</span>
+            <span class="matrix-details__value">${escapeAttr(hasData ? opp : '—')}</span>
+          </div>
+        </div>
+        <div class="matrix-details__meta">
+          <span>${escapeAttr(sample)}</span>
+          <span>Elo expectation: ${escapeAttr(exp)}</span>
+        </div>
+      `;
+      detail.classList.add('matrix-details--active');
+      if(activePinnedCell){
+        activePinnedCell.classList.remove('matrix-cell--active');
+        activePinnedCell.setAttribute('aria-pressed', 'false');
+      }
+      cell.classList.add('matrix-cell--active');
+      cell.setAttribute('aria-pressed', 'true');
+      activePinnedCell = cell;
+    }
+    function initMatrixInteractions(){
+      const cells = document.querySelectorAll('#matrix .matrix-cell');
+      if(!cells.length) return;
+      ensureTooltip();
+      if(!tooltipScrollHandlerAttached){
+        document.addEventListener('scroll', hideTooltip, { capture: true, passive: true });
+        window.addEventListener('resize', hideTooltip, { passive: true });
+        tooltipScrollHandlerAttached = true;
+      }
+      cells.forEach(cell=>{
+        cell.addEventListener('mouseenter', event=>{
+          showTooltip(cell, event);
+        });
+        cell.addEventListener('mousemove', event=>{
+          if(tooltipActiveCell === cell){
+            positionTooltip(event, cell);
+          }
+        });
+        cell.addEventListener('mouseleave', hideTooltip);
+        cell.addEventListener('focus', ()=>{
+          showTooltip(cell);
+        });
+        cell.addEventListener('blur', hideTooltip);
+        cell.addEventListener('click', event=>{
+          event.preventDefault();
+          hideTooltip();
+          updateDetailPanel(cell);
+        });
+        cell.addEventListener('keydown', event=>{
+          if(event.key === 'Enter' || event.key === ' '){
+            event.preventDefault();
+            hideTooltip();
+            updateDetailPanel(cell);
+          }
+        });
+      });
     }
     addEventListener('DOMContentLoaded', load);
   </script>
@@ -204,12 +381,10 @@
       </div>
 
       <div class="card matrix-card">
-        <div class="matrix-card__legend" aria-hidden="true">
-          <span class="matrix-card__legend-label">0%</span>
-          <span class="matrix-card__legend-gradient"></span>
-          <span class="matrix-card__legend-label">100%</span>
-        </div>
         <div class="matrix-card__body" id="matrix">Loading…</div>
+        <div class="matrix-details" id="matrixDetails" role="status" aria-live="polite">
+          <div class="matrix-details__empty">Click a matchup to pin detailed stats.</div>
+        </div>
       </div>
     </div>
   </main>
