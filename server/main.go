@@ -1269,8 +1269,13 @@ func playHandMatch(
 				if len(h.BB.Hole) == 2 {
 					bbHole = []string{h.BB.Hole[0].String(), h.BB.Hole[1].String()}
 				}
+				potOdds := 0.0
+				denom := h.Pot + toCall
+				if toCall > 0 && denom > 0 {
+					potOdds = float64(toCall) / float64(denom)
+				}
 				_ = db.InsertActionLog(context.Background(), matchID, pairIndex, h.ID, s, curLabel, action, amount,
-					h.Pot, h.CurBet, toCall, minTo, maxTo, sbStack, bbStack, sbCom, bbCom, boardNow, sbHole, bbHole)
+					h.Pot, h.CurBet, toCall, minTo, maxTo, sbStack, bbStack, sbCom, bbCom, boardNow, sbHole, bbHole, potOdds, potOdds)
 			}
 
 			// logging adornments
@@ -1842,6 +1847,22 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	if seeds <= 0 {
 		seeds = (atoiDef(os.Getenv("DUEL_HANDS"), 10) + 1) / 2
 	}
+	seedPackPath := strings.TrimSpace(os.Getenv("SEEDPACK_PATH"))
+	if seedPackPath == "" {
+		seedPackPath = strings.TrimSpace(os.Getenv("SEEDPACK"))
+	}
+	var seedPack *SeedPack
+	if seedPackPath != "" {
+		sp, err := LoadSeedPack(seedPackPath)
+		if err != nil {
+			log.Fatalf("load seedpack: %v", err)
+		}
+		seedPack = sp
+		seeds = len(sp.Seeds)
+		if seeds <= 0 {
+			log.Fatalf("seedpack %s has no seeds", seedPackPath)
+		}
+	}
 
 	// players
 	a, b := loadPlayers(startStack)
@@ -1867,12 +1888,30 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	var pairWinsA, pairTies, pairTotal int
 	var margins []float64
 
-	// seed stream
-	base := deckSeedFromEnvOrCrypto()
-	sm := newSeedStream(base)
-
-	log.Printf("Match seed base: %d (mirrored pairs=%d)", base, seeds)
+	// seed stream or seedpack override
+	var base uint64
+	var sm seedStream
+	if seedPack != nil {
+		base = seedPack.Seeds[0]
+		meta := seedPack.Metadata()
+		log.Printf("Seedpack: %s v%s (pairs=%d sha256=%s)", meta.Name, meta.Version, meta.Count, meta.SHA256)
+	} else {
+		base = deckSeedFromEnvOrCrypto()
+		sm = newSeedStream(base)
+		log.Printf("Match seed base: %d (mirrored pairs=%d)", base, seeds)
+	}
 	fmt.Println(dim("Ctrl+C → graceful stop by default. Set STOP_IMMEDIATE=1 for hard stop."))
+
+	var seedpackMeta *store.SeedpackMeta
+	if seedPack != nil {
+		meta := seedPack.Metadata()
+		seedpackMeta = &store.SeedpackMeta{
+			Name:    meta.Name,
+			Version: meta.Version,
+			Count:   meta.Count,
+			SHA256:  meta.SHA256,
+		}
+	}
 
 	boardStr := func(bd []engine.Card) string {
 		if len(bd) < 5 {
@@ -1885,6 +1924,26 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	var matchID int64
 	var botAID, botBID int64
 	accA, accB := 0.5, 0.5
+	persistCheckpoint := func(stage string, pairIndex *int) {
+		if db == nil || matchID == 0 {
+			return
+		}
+		overrides := make(map[int64]float64, 2)
+		if botAID != 0 {
+			overrides[botAID] = gA.Rating
+		}
+		if botBID != 0 {
+			overrides[botBID] = gB.Rating
+		}
+		ranking, err := db.RankingOrder(context.Background(), overrides)
+		if err != nil {
+			log.Printf("RankingOrder failed: %v", err)
+			return
+		}
+		if err := db.InsertRatingCheckpoint(context.Background(), matchID, stage, pairIndex, ranking); err != nil {
+			log.Printf("InsertRatingCheckpoint(%s) failed: %v", stage, err)
+		}
+	}
 	if db != nil {
 		companyA, companyB := companyForModel(a.Model), companyForModel(b.Model)
 		rePtr := strptr(os.Getenv("OPENAI_REASONING_EFFORT"))
@@ -1937,7 +1996,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 
 		// create match + start rating point
 		if db != nil {
-			id, err := db.CreateMatch(context.Background(), sb, bb, startStack, seeds, int64(base), eloStart, eloK, eloPerHand, eloWeightPot)
+			id, err := db.CreateMatch(context.Background(), sb, bb, startStack, seeds, int64(base), eloStart, eloK, eloPerHand, eloWeightPot, seedpackMeta)
 			if err != nil {
 				log.Printf("CreateMatch failed: %v (disabling DB this run)", err)
 				db = nil
@@ -1950,6 +2009,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 				); err != nil {
 					log.Printf("InsertRatingPoint(start) failed: %v", err)
 				}
+				persistCheckpoint("start", nil)
 			}
 		}
 	}
@@ -1963,7 +2023,18 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			break
 		}
 
-		seed := int64(sm.next())
+		var seedVal uint64
+		if seedPack != nil {
+			v, err := seedPack.SeedAt(i)
+			if err != nil {
+				log.Printf("seedpack lookup failed at pair %d: %v", i+1, err)
+				break
+			}
+			seedVal = v
+		} else {
+			seedVal = sm.next()
+		}
+		seed := int64(seedVal)
 		fmt.Printf("%s starting pair %d/%d (seed=%d)\n", dim("▶"), i+1, seeds, seed)
 
 		// Hand 1: A=SB, B=BB
@@ -2041,6 +2112,17 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			mag("Glicko2 (pair)"), bold(fmt.Sprintf("seed %d", i+1)),
 			gA.Rating, gA.RD, gA.Volatility, gB.Rating, gB.RD, gB.Volatility)
 
+		bbPer100 := 0.0
+		if bb > 0 {
+			bbPer100 = 50.0 * float64(chipsA) / float64(bb)
+		}
+		if db != nil && matchID != 0 && botAID != 0 && botBID != 0 {
+			idx := i + 1
+			if err := db.InsertPairDelta(context.Background(), matchID, idx, botAID, botBID, bbPer100); err != nil {
+				log.Printf("InsertPairDelta(pair %d) failed: %v", idx, err)
+			}
+		}
+
 		// CI bookkeeping
 		pairTotal++
 		switch {
@@ -2062,6 +2144,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			); err != nil {
 				log.Printf("InsertRatingPoint(pair %d) failed: %v", idx, err)
 			}
+			persistCheckpoint("after_pair", &idx)
 		}
 
 		// conservation + bust
@@ -2119,6 +2202,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		); err != nil {
 			log.Printf("InsertRatingPoint(end) failed: %v", err)
 		}
+		persistCheckpoint("end", nil)
 
 		rePtr := strptr(os.Getenv("OPENAI_REASONING_EFFORT"))
 		aChk, aCall, aRaise, aFold := tallyCounts(tallies[a.Label])

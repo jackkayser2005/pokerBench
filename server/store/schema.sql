@@ -44,8 +44,18 @@ CREATE TABLE IF NOT EXISTS matches (
   elo_start        REAL NOT NULL,
   elo_k            REAL NOT NULL,
   elo_per_hand     BOOL NOT NULL,
-  elo_weight_by_pot BOOL NOT NULL
+  elo_weight_by_pot BOOL NOT NULL,
+  seedpack_name    TEXT,
+  seedpack_version TEXT,
+  seedpack_count   INT,
+  seedpack_sha256  TEXT
 );
+
+ALTER TABLE matches
+  ADD COLUMN IF NOT EXISTS seedpack_name TEXT,
+  ADD COLUMN IF NOT EXISTS seedpack_version TEXT,
+  ADD COLUMN IF NOT EXISTS seedpack_count INT,
+  ADD COLUMN IF NOT EXISTS seedpack_sha256 TEXT;
 
 -- =========================
 -- PARTICIPANTS (final snapshot per bot in a match)
@@ -195,6 +205,8 @@ CREATE TABLE IF NOT EXISTS action_logs (
   board          TEXT[] NOT NULL DEFAULT '{}',
   sb_hole        TEXT[] NOT NULL DEFAULT '{}',
   bb_hole        TEXT[] NOT NULL DEFAULT '{}',
+  pot_odds       REAL NOT NULL DEFAULT 0,
+  required_equity REAL NOT NULL DEFAULT 0,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -206,6 +218,39 @@ ALTER TABLE action_logs
   ADD COLUMN IF NOT EXISTS sb_hole TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE action_logs
   ADD COLUMN IF NOT EXISTS bb_hole TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE action_logs
+  ADD COLUMN IF NOT EXISTS pot_odds REAL NOT NULL DEFAULT 0;
+ALTER TABLE action_logs
+  ADD COLUMN IF NOT EXISTS required_equity REAL NOT NULL DEFAULT 0;
+
+-- =========================
+-- MATCH PAIR DELTAS (bb/100 per mirrored pair)
+-- =========================
+CREATE TABLE IF NOT EXISTS match_pair_deltas (
+  match_id    BIGINT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  pair_index  INT NOT NULL,
+  bot_a_id    BIGINT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  bot_b_id    BIGINT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  bb_per_100  REAL NOT NULL,
+  PRIMARY KEY (match_id, pair_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_pair_deltas_bot ON match_pair_deltas(bot_a_id, bot_b_id);
+
+-- =========================
+-- RATING CHECKPOINTS (ranking snapshots)
+-- =========================
+CREATE TABLE IF NOT EXISTS rating_checkpoints (
+  id         BIGSERIAL PRIMARY KEY,
+  match_id   BIGINT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  stage      TEXT NOT NULL CHECK (stage IN ('start','after_pair','end')),
+  pair_index INT,
+  rankings   BIGINT[] NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rating_checkpoints_match_stage_pair
+  ON rating_checkpoints (match_id, stage, COALESCE(pair_index, 0));
 
 -- =========================
 -- SOLVER EVALUATION (per action, optional)
