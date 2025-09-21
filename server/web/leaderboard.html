@@ -300,7 +300,7 @@ function rowHTML(i, r, metric){
         <td class="num">${Math.max(0,Math.min(100, Number(r.win_rate_pct||0)))}%<span class="sub">${ciTxt}</span></td>
         <td class="num">${judge.hasData ? judge.display : '—'}</td>
         <td class="num">${fmt(r.net_chips)}</td>
-        <td class="sub">${r.updated_at ? dateFmt(r.updated_at) : 'n/a'}</td>
+        <td><span class="sub">${r.updated_at ? dateFmt(r.updated_at) : 'n/a'}</span></td>
       </tr>`;
     }
 
@@ -356,6 +356,10 @@ function rowHTML(i, r, metric){
             btn.classList.toggle('is-selected', isSelected);
             btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
             btn.disabled = !compareState.enabled;
+            btn.hidden = !compareState.enabled;
+            if (!compareState.enabled && document.activeElement === btn) {
+              btn.blur();
+            }
           }
         });
         if (presentIds.size < compareState.selected.length){
