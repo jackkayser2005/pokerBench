@@ -210,6 +210,7 @@
 
     // Judge accuracy map (bot_id -> { good, total, acc }) - legacy fallback
     let judgeMap = new Map();
+    let currentRatingMode = 'elo';
 
     function judgeStatsFor(botId, row){
       const stats = { good: undefined, total: undefined, acc: undefined };
@@ -259,6 +260,30 @@
       return companyIconMarkup(company, model);
     }
 
+    function ratingValueFrom(row, mode){
+      const fields = mode === 'glicko'
+        ? ['glicko', 'g_rating', 'gRating', 'elo']
+        : ['elo', 'glicko', 'g_rating', 'gRating'];
+      for (const key of fields) {
+        if (row && Object.prototype.hasOwnProperty.call(row, key)) {
+          const val = Number(row[key]);
+          if (Number.isFinite(val)) return val;
+        }
+      }
+      return 0;
+    }
+
+    function ratingDeviationFrom(row){
+      const fields = ['glicko_rd', 'g_rd', 'gRD'];
+      for (const key of fields) {
+        if (row && Object.prototype.hasOwnProperty.call(row, key)) {
+          const val = Number(row[key]);
+          if (Number.isFinite(val)) return val;
+        }
+      }
+      return NaN;
+    }
+
 function rowHTML(i, r){
       const full  = trim1(r.model||'');
       const short = trimModelName(full);
@@ -268,6 +293,15 @@ function rowHTML(i, r){
       const ci    = wilson(wins, hands);
       const ciTxt = hands ? ` (${Math.round(ci[0]*100)}-${Math.round(ci[1]*100)}%)` : '';
       const judge = judgeStatsFor(r.bot_id, r);
+      const ratingVal = ratingValueFrom(r, currentRatingMode);
+      const ratingTxt = Number.isFinite(ratingVal) ? ratingVal.toFixed(1) : '—';
+      let ratingExtra = '';
+      if (currentRatingMode === 'glicko') {
+        const rdVal = ratingDeviationFrom(r);
+        if (Number.isFinite(rdVal) && rdVal > 0) {
+          ratingExtra = `<span class="sub">±${Math.round(rdVal)}</span>`;
+        }
+      }
       return `<tr class="lb-row" data-href="/web/bot.html?id=${r.bot_id}">
         <td class="num">${i+1}</td>
         <td>
@@ -276,7 +310,7 @@ function rowHTML(i, r){
             <a href="/web/bot.html?id=${r.bot_id}" class="name" title="${title}">${short}</a>
           </div>
         </td>
-        <td class="num">${Number(r.elo||0).toFixed(1)}</td>
+        <td class="num">${ratingTxt}${ratingExtra}</td>
         <td>${orgCell(r.company, r.model)}</td>
         <td class="num">${fmt(hands)}</td>
         <td class="num">${Math.max(0,Math.min(100, Number(r.win_rate_pct||0)))}%<span class="sub">${ciTxt}</span></td>
@@ -312,8 +346,30 @@ function rowHTML(i, r){
         }
       } catch {}
 
-      let sortKey = 'elo';
+      let ratingMode = 'elo';
+      let sortKey = 'rating';
       let sortDesc = true;
+
+      const ratingButtons = Array.from(document.querySelectorAll('[data-rating-mode]'));
+      const ratingHeader = document.querySelector('[data-rating-column]');
+      const ratingLabel = ratingHeader ? ratingHeader.querySelector('.rating-label') : null;
+      const ratingHelp = document.querySelector('[data-rating-help]');
+      const ratingLabelText = () => ratingMode === 'glicko' ? 'Glicko' : 'Elo';
+
+      function updateRatingUI(){
+        const label = ratingLabelText();
+        ratingButtons.forEach(btn => {
+          const mode = btn.getAttribute('data-rating-mode');
+          btn.classList.toggle('is-active', mode === ratingMode);
+        });
+        if (ratingLabel) ratingLabel.textContent = label;
+        if (ratingHeader) ratingHeader.setAttribute('title', `Sort by ${label} rating`);
+        if (ratingHelp) {
+          ratingHelp.textContent = ratingMode === 'glicko'
+            ? 'Glicko rating with live uncertainty (RD) for each bot.'
+            : 'Elo rating with career results across PokerBench matches.';
+        }
+      }
 
       function setHeaderIndicators(){
         document.querySelectorAll('.lb-table thead th.sortable').forEach(th=>{
@@ -324,9 +380,17 @@ function rowHTML(i, r){
       }
 
       function render(){
+        currentRatingMode = ratingMode;
         const out = rows.slice().sort((a,b)=>{
           const num = (x)=>Number(x||0);
-          if (sortKey === 'elo')     return (sortDesc? -1:1) * (num(a.elo) - num(b.elo));
+          if (sortKey === 'rating' || sortKey === 'elo' || sortKey === 'glicko') {
+            const mode = sortKey === 'glicko' ? 'glicko' : ratingMode;
+            const valA = ratingValueFrom(a, mode);
+            const valB = ratingValueFrom(b, mode);
+            const diff = valA - valB;
+            if (!Number.isFinite(diff)) return 0;
+            return (sortDesc ? -1 : 1) * diff;
+          }
           if (sortKey === 'hands')   return (sortDesc? -1:1) * (num(a.hands||a.career_hands) - num(b.hands||b.career_hands));
           if (sortKey === 'win')     return (sortDesc? -1:1) * (num(a.win_rate_pct) - num(b.win_rate_pct));
           if (sortKey === 'net')     return (sortDesc? -1:1) * (num(a.net_chips) - num(b.net_chips));
@@ -401,16 +465,30 @@ function rowHTML(i, r){
         }catch{}
       }
 
+      ratingButtons.forEach(btn => {
+        btn.addEventListener('click', ()=>{
+          const mode = btn.getAttribute('data-rating-mode');
+          if (!mode || mode === ratingMode) return;
+          ratingMode = mode;
+          sortKey = 'rating';
+          sortDesc = true;
+          updateRatingUI();
+          render();
+        });
+      });
+
       // header click sorting
       document.querySelectorAll('.lb-table thead th.sortable').forEach(th=>{
         th.addEventListener('click', ()=>{
           const key = th.getAttribute('data-sort');
           if (!key) return;
           if (sortKey === key) { sortDesc = !sortDesc; } else { sortKey = key; sortDesc = true; }
+          updateRatingUI();
           render();
         });
       });
 
+      updateRatingUI();
       render();
       setInterval(refreshJudgeAccuracy, 10000);
 
@@ -427,7 +505,7 @@ function rowHTML(i, r){
 <body>
   <header class="site-header">
     <div class="topnav">
-      <a class="brand" href="/web/index.html" aria-label="PokerBench home">
+      <a class="brand" href="/web/leaderboard.html" aria-label="PokerBench home">
         <span class="brand__mark logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>
@@ -448,9 +526,13 @@ function rowHTML(i, r){
     <div class="wrap wrap--wide">
       <div class="card lb-card">
         <div class="lb-card__header">
-          <div>
+          <div class="lb-card__title">
             <h1>Leaderboard</h1>
-            <div class="muted">Elo with career hands, win%, and net chips.</div>
+            <p class="muted" data-rating-help>Ranking by Elo across active PokerBench bots.</p>
+          </div>
+          <div class="lb-controls" role="group" aria-label="Rating metric">
+            <button type="button" class="toggle is-active" data-rating-mode="elo">Elo</button>
+            <button type="button" class="toggle" data-rating-mode="glicko">Glicko</button>
           </div>
         </div>
         <div class="lb-card__body">
@@ -469,15 +551,15 @@ function rowHTML(i, r){
             </colgroup>
             <thead>
               <tr>
-                <th class="num">#</th>
-                <th>Model</th>
-                <th class="num sortable" data-sort="elo" title="Sort by Elo">Elo</th>
-                <th>Org</th>
-                <th class="num sortable" data-sort="hands" title="Sort by Hands">Hands</th>
-                <th class="num sortable" data-sort="win" title="Sort by Win %">Win%</th>
-                <th class="num sortable" data-sort="acc" title="Sort by Judge Accuracy">Acc</th>
-                <th class="num sortable" data-sort="net" title="Sort by Net">Net</th>
-                <th class="sortable" data-sort="updated" title="Sort by Updated">Updated</th>
+                <th scope="col" class="num">#</th>
+                <th scope="col">Model</th>
+                <th scope="col" class="num sortable" data-sort="rating" data-rating-column title="Sort by Elo rating"><span class="rating-label">Elo</span></th>
+                <th scope="col">Org</th>
+                <th scope="col" class="num sortable" data-sort="hands" title="Sort by Hands">Hands</th>
+                <th scope="col" class="num sortable" data-sort="win" title="Sort by Win %">Win%</th>
+                <th scope="col" class="num sortable" data-sort="acc" title="Sort by Judge Accuracy">Acc</th>
+                <th scope="col" class="num sortable" data-sort="net" title="Sort by Net">Net</th>
+                <th scope="col" class="sortable" data-sort="updated" title="Sort by Updated">Updated</th>
               </tr>
             </thead>
             <tbody id="tbody"><tr><td colspan="9">Loading...</td></tr></tbody>
@@ -490,7 +572,7 @@ function rowHTML(i, r){
 
   <footer class="site-footer">
     <div class="site-footer__inner">
-      <a class="site-footer__brand" href="/web/index.html">
+      <a class="site-footer__brand" href="/web/leaderboard.html">
         <span class="logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>

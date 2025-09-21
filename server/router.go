@@ -230,22 +230,24 @@ func Router(db *store.DB) http.Handler {
 	// Leaderboard: top bots by Elo (career stats, org)
 	mux.HandleFunc("/api/leaderboard", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		type Row struct {
-			BotID       int64     `json:"bot_id"`
-			Model       string    `json:"model"`
-			Company     string    `json:"company"`
-			Elo         float64   `json:"elo"`
-			Matches     int       `json:"matches"`
-			Hands       int       `json:"hands"`
-			Updated     time.Time `json:"updated_at"`
-			CareerWins  int       `json:"career_wins"`
-			CareerHands int       `json:"career_hands"`
-			WinRatePct  int       `json:"win_rate_pct"`
-			NetChips    int       `json:"net_chips"`
-			Good        int       `json:"good"`
-			Total       int       `json:"total"`
-			Acc         float64   `json:"acc"`
-		}
+                type Row struct {
+                        BotID       int64     `json:"bot_id"`
+                        Model       string    `json:"model"`
+                        Company     string    `json:"company"`
+                        Elo         float64   `json:"elo"`
+                        Glicko      float64   `json:"glicko"`
+                        GlickoRD    float64   `json:"glicko_rd"`
+                        Matches     int       `json:"matches"`
+                        Hands       int       `json:"hands"`
+                        Updated     time.Time `json:"updated_at"`
+                        CareerWins  int       `json:"career_wins"`
+                        CareerHands int       `json:"career_hands"`
+                        WinRatePct  int       `json:"win_rate_pct"`
+                        NetChips    int       `json:"net_chips"`
+                        Good        int       `json:"good"`
+                        Total       int       `json:"total"`
+                        Acc         float64   `json:"acc"`
+                }
 		const leaderboardSQL = `
             WITH summary AS (
                 SELECT bot_id,
@@ -260,6 +262,8 @@ func Router(db *store.DB) http.Handler {
                    c.name AS model,
                    c.company AS company,
                    COALESCE(c.elo, 1500)         AS elo,
+                   COALESCE(c.g_rating, 1500)    AS glicko,
+                   COALESCE(c.g_rd, 350)         AS glicko_rd,
                    COALESCE(c.matches, 0)        AS matches,
                    COALESCE(c.hands, 0)          AS hands,
                    COALESCE(c.updated_at, now()) AS updated_at,
@@ -293,6 +297,8 @@ func Router(db *store.DB) http.Handler {
                    c.name AS model,
                    c.company AS company,
                    COALESCE(c.elo, 1500)         AS elo,
+                   COALESCE(c.g_rating, 1500)    AS glicko,
+                   COALESCE(c.g_rd, 350)         AS glicko_rd,
                    COALESCE(c.matches, 0)        AS matches,
                    COALESCE(c.hands, 0)          AS hands,
                    COALESCE(c.updated_at, now()) AS updated_at,
@@ -322,7 +328,7 @@ func Router(db *store.DB) http.Handler {
 		out := []Row{}
 		for rows.Next() {
 			var x Row
-			if err := rows.Scan(&x.BotID, &x.Model, &x.Company, &x.Elo, &x.Matches, &x.Hands, &x.Updated, &x.CareerWins, &x.CareerHands, &x.WinRatePct, &x.NetChips, &x.Good, &x.Total, &x.Acc); err != nil {
+                        if err := rows.Scan(&x.BotID, &x.Model, &x.Company, &x.Elo, &x.Glicko, &x.GlickoRD, &x.Matches, &x.Hands, &x.Updated, &x.CareerWins, &x.CareerHands, &x.WinRatePct, &x.NetChips, &x.Good, &x.Total, &x.Acc); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
