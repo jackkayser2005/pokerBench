@@ -8,9 +8,33 @@
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/app.js" defer></script>
   <script>
-    const state = { rows: [], sortKey: 'created_at', sortDir: 'desc' };
+    const UNKNOWN_MODEL = '__unknown__';
+    const UNKNOWN_BLINDS = '__unknown__';
+    const deltaFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0, signDisplay: 'always' });
+
+    const state = {
+      rows: [],
+      sortKey: 'created_at',
+      sortDir: 'desc',
+      filters: {
+        modelA: 'all',
+        modelB: 'all',
+        blinds: 'all',
+        dateFrom: '',
+        dateTo: '',
+        deltaMin: '',
+        deltaMax: ''
+      },
+      options: {
+        modelA: [],
+        modelB: [],
+        blinds: []
+      }
+    };
     const $ = (selector) => document.querySelector(selector);
     const formatNumber = (value) => Number(value ?? 0).toLocaleString();
+    const HTML_ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, ch => HTML_ESCAPE[ch] || ch);
     const formatDate = (value) => {
       if (!value) return '—';
       try { return new Date(value).toLocaleString(); } catch (_) { return '—'; }
@@ -23,6 +47,7 @@
       blinds: (a, b) => (a.sb ?? 0) - (b.sb ?? 0),
       start_stack: (a, b) => (a.start_stack ?? 0) - (b.start_stack ?? 0),
       duel_seeds: (a, b) => (a.duel_seeds ?? 0) - (b.duel_seeds ?? 0),
+      result_delta: (a, b) => (a.result_delta ?? 0) - (b.result_delta ?? 0),
     };
 
     async function getJSON(url, fallback) {
@@ -54,32 +79,261 @@
       return rows;
     }
 
+    function normalizeModelValue(value) {
+      const trimmed = String(value ?? '').trim();
+      return trimmed ? trimmed : UNKNOWN_MODEL;
+    }
+
+    function modelLabel(value) {
+      return value === UNKNOWN_MODEL ? 'Unknown' : value;
+    }
+
+    function normalizeBlindsValue(row) {
+      if (row == null) return UNKNOWN_BLINDS;
+      const sb = Number(row.sb);
+      const bb = Number(row.bb);
+      if (!Number.isFinite(sb) || !Number.isFinite(bb)) return UNKNOWN_BLINDS;
+      return `${sb}/${bb}`;
+    }
+
+    function blindsLabel(value) {
+      return value === UNKNOWN_BLINDS ? 'Unknown' : value;
+    }
+
+    function formatBlinds(row) {
+      const value = normalizeBlindsValue(row);
+      return value === UNKNOWN_BLINDS ? '—' : value;
+    }
+
+    function formatDelta(value) {
+      if (!Number.isFinite(value)) return '±0';
+      const rounded = Math.round(value);
+      if (rounded === 0) return '±0';
+      return deltaFormatter.format(rounded);
+    }
+
+    function deltaClass(value) {
+      if (!Number.isFinite(value)) return 'neutral';
+      if (value > 0) return 'positive';
+      if (value < 0) return 'negative';
+      return 'neutral';
+    }
+
+    function parseDateInput(value) {
+      if (!value) return null;
+      const parts = String(value).split('-').map(part => Number(part));
+      if (parts.length !== 3 || parts.some(num => Number.isNaN(num))) return null;
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    function addDays(date, days) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+      const copy = new Date(date.getTime());
+      copy.setDate(copy.getDate() + days);
+      return copy;
+    }
+
+    function buildFilterOptions(rows) {
+      const modelsA = new Map();
+      const modelsB = new Map();
+      const blinds = new Map();
+      rows.forEach(row => {
+        const normA = normalizeModelValue(row.model_a);
+        const normB = normalizeModelValue(row.model_b);
+        const blindKey = normalizeBlindsValue(row);
+        if (!modelsA.has(normA)) modelsA.set(normA, modelLabel(normA));
+        if (!modelsB.has(normB)) modelsB.set(normB, modelLabel(normB));
+        if (!blinds.has(blindKey)) blinds.set(blindKey, blindsLabel(blindKey));
+      });
+      const sortAlpha = (a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+      const sortBlinds = (a, b) => {
+        if (a.value === UNKNOWN_BLINDS) return 1;
+        if (b.value === UNKNOWN_BLINDS) return -1;
+        const [asb, abb] = a.value.split('/').map(Number);
+        const [bsb, bbb] = b.value.split('/').map(Number);
+        if (asb !== bsb) return asb - bsb;
+        return abb - bbb;
+      };
+      const options = {
+        modelA: Array.from(modelsA.entries()).map(([value, label]) => ({ value, label })).sort((a, b) => {
+          if (a.value === UNKNOWN_MODEL) return 1;
+          if (b.value === UNKNOWN_MODEL) return -1;
+          return sortAlpha(a, b);
+        }),
+        modelB: Array.from(modelsB.entries()).map(([value, label]) => ({ value, label })).sort((a, b) => {
+          if (a.value === UNKNOWN_MODEL) return 1;
+          if (b.value === UNKNOWN_MODEL) return -1;
+          return sortAlpha(a, b);
+        }),
+        blinds: Array.from(blinds.entries()).map(([value, label]) => ({ value, label })).sort(sortBlinds)
+      };
+      state.options = options;
+    }
+
+    function ensureFilterValues() {
+      ['modelA', 'modelB', 'blinds'].forEach(key => {
+        const options = state.options[key] || [];
+        const allowed = new Set(options.map(opt => opt.value));
+        const current = state.filters[key];
+        if (current !== 'all' && !allowed.has(current)) {
+          state.filters[key] = 'all';
+        }
+      });
+    }
+
+    function renderFilterOptions() {
+      const renderSelect = (id, options) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const opts = [`<option value="all">All</option>`]
+          .concat(options.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`));
+        el.innerHTML = opts.join('');
+      };
+      renderSelect('filterModelA', state.options.modelA);
+      renderSelect('filterModelB', state.options.modelB);
+      renderSelect('filterBlinds', state.options.blinds);
+    }
+
+    function syncFilterControls() {
+      const { filters } = state;
+      const assign = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = value ?? '';
+      };
+      assign('filterModelA', filters.modelA);
+      assign('filterModelB', filters.modelB);
+      assign('filterBlinds', filters.blinds);
+      assign('filterDateFrom', filters.dateFrom);
+      assign('filterDateTo', filters.dateTo);
+      assign('filterDeltaMin', filters.deltaMin);
+      assign('filterDeltaMax', filters.deltaMax);
+    }
+
+    function setFilter(key, value) {
+      if (!(key in state.filters)) return;
+      state.filters[key] = value;
+      render();
+    }
+
+    function resetFilters() {
+      state.filters = {
+        modelA: 'all',
+        modelB: 'all',
+        blinds: 'all',
+        dateFrom: '',
+        dateTo: '',
+        deltaMin: '',
+        deltaMax: ''
+      };
+      syncFilterControls();
+      render();
+    }
+
+    function bindFilterControls() {
+      const modelA = document.getElementById('filterModelA');
+      const modelB = document.getElementById('filterModelB');
+      const blinds = document.getElementById('filterBlinds');
+      const dateFrom = document.getElementById('filterDateFrom');
+      const dateTo = document.getElementById('filterDateTo');
+      const deltaMin = document.getElementById('filterDeltaMin');
+      const deltaMax = document.getElementById('filterDeltaMax');
+      const resetBtn = document.getElementById('filterReset');
+
+      if (modelA && !modelA.dataset.bound) {
+        modelA.addEventListener('change', evt => setFilter('modelA', evt.target.value || 'all'));
+        modelA.dataset.bound = 'true';
+      }
+      if (modelB && !modelB.dataset.bound) {
+        modelB.addEventListener('change', evt => setFilter('modelB', evt.target.value || 'all'));
+        modelB.dataset.bound = 'true';
+      }
+      if (blinds && !blinds.dataset.bound) {
+        blinds.addEventListener('change', evt => setFilter('blinds', evt.target.value || 'all'));
+        blinds.dataset.bound = 'true';
+      }
+      if (dateFrom && !dateFrom.dataset.bound) {
+        dateFrom.addEventListener('change', evt => setFilter('dateFrom', evt.target.value || ''));
+        dateFrom.dataset.bound = 'true';
+      }
+      if (dateTo && !dateTo.dataset.bound) {
+        dateTo.addEventListener('change', evt => setFilter('dateTo', evt.target.value || ''));
+        dateTo.dataset.bound = 'true';
+      }
+      if (deltaMin && !deltaMin.dataset.bound) {
+        deltaMin.addEventListener('input', evt => setFilter('deltaMin', evt.target.value));
+        deltaMin.dataset.bound = 'true';
+      }
+      if (deltaMax && !deltaMax.dataset.bound) {
+        deltaMax.addEventListener('input', evt => setFilter('deltaMax', evt.target.value));
+        deltaMax.dataset.bound = 'true';
+      }
+      if (resetBtn && !resetBtn.dataset.bound) {
+        resetBtn.addEventListener('click', resetFilters);
+        resetBtn.dataset.bound = 'true';
+      }
+    }
+
+    function filterRows(list) {
+      const rows = Array.isArray(list) ? list : [];
+      const { filters } = state;
+      const modelAFilter = filters.modelA;
+      const modelBFilter = filters.modelB;
+      const blindFilter = filters.blinds;
+      const dateFrom = parseDateInput(filters.dateFrom);
+      const dateTo = parseDateInput(filters.dateTo);
+      const dateToExclusive = dateTo ? addDays(dateTo, 1) : null;
+      const deltaMin = filters.deltaMin !== '' ? Number(filters.deltaMin) : null;
+      const deltaMax = filters.deltaMax !== '' ? Number(filters.deltaMax) : null;
+
+      return rows.filter(row => {
+        if (modelAFilter !== 'all' && normalizeModelValue(row.model_a) !== modelAFilter) return false;
+        if (modelBFilter !== 'all' && normalizeModelValue(row.model_b) !== modelBFilter) return false;
+        if (blindFilter !== 'all' && normalizeBlindsValue(row) !== blindFilter) return false;
+
+        if (dateFrom) {
+          const created = row.created_at ? new Date(row.created_at) : null;
+          if (!created || created < dateFrom) return false;
+        }
+        if (dateToExclusive) {
+          const created = row.created_at ? new Date(row.created_at) : null;
+          if (!created || created >= dateToExclusive) return false;
+        }
+
+        const delta = Number(row.result_delta ?? 0);
+        if (deltaMin != null && Number.isFinite(deltaMin) && delta < deltaMin) return false;
+        if (deltaMax != null && Number.isFinite(deltaMax) && delta > deltaMax) return false;
+
+        return true;
+      });
+    }
+
     function rowMarkup(m) {
       const status = statusMeta(m);
-      const blinds = (m.sb != null && m.bb != null) ? `${m.sb}/${m.bb}` : '—';
+      const blinds = formatBlinds(m);
+      const deltaValue = Number(m.result_delta ?? 0);
+      const deltaLabel = formatDelta(deltaValue);
+      const deltaState = deltaClass(deltaValue);
+      const modelALabel = m.model_a ? escapeHtml(m.model_a) : 'Unknown';
+      const modelBLabel = m.model_b ? escapeHtml(m.model_b) : 'Unknown';
       return `
-        <tr>
+        <tr class="history-row" data-match-id="${m.id}" tabindex="0" role="link" aria-label="Open replay for match ${m.id}">
           <td class="history-table__cell num mono">${m.id}</td>
           <td class="history-table__cell">
             <div class="history-date">
               <div class="history-date__primary">${formatDate(m.created_at)}</div>
+              <div class="history-date__meta">
+                <span class="history-date__secondary">${formatDate(m.ended_at)}</span>
+                <span class="${status.className}"><span class="history-status__dot"></span>${status.label}</span>
+              </div>
             </div>
           </td>
-          <td class="history-table__cell">
-            <div class="history-date">
-              <div class="history-date__primary">${formatDate(m.ended_at)}</div>
-              <span class="${status.className}"><span class="history-status__dot"></span>${status.label}</span>
-            </div>
-          </td>
-          <td class="history-table__cell">
-            <div class="history-models">
-              <span>${m.model_a || 'A'}</span>
-              <span class="history-models__vs">vs</span>
-              <span>${m.model_b || 'B'}</span>
-            </div>
-          </td>
+          <td class="history-table__cell history-model">${modelALabel}</td>
+          <td class="history-table__cell history-model">${modelBLabel}</td>
           <td class="history-table__cell num history-blinds">${blinds}</td>
-          <td class="history-table__cell num history-blinds">${formatNumber(m.start_stack)}</td>
+          <td class="history-table__cell history-delta">
+            <span class="history-delta__badge history-delta__badge--${deltaState}">${deltaLabel}</span>
+          </td>
           <td class="history-table__cell num history-blinds">${formatNumber(m.duel_seeds)}</td>
           <td class="history-table__cell history-table__actions">
             <a class="pill accent" href="/web/replay.html?match_id=${m.id}">Replay</a>
@@ -109,7 +363,13 @@
         updateHeaderState();
         return;
       }
-      const sorted = sortRows(state.rows);
+      const filtered = filterRows(state.rows);
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td class="history-table__cell" colspan="8">No matches match the current filters.</td></tr>`;
+        updateHeaderState();
+        return;
+      }
+      const sorted = sortRows(filtered);
       tbody.innerHTML = sorted.map(rowMarkup).join('');
       updateHeaderState();
     }
@@ -127,9 +387,45 @@
       render();
     }
 
+    function navigateToReplay(matchId) {
+      if (!matchId) return;
+      const url = `/web/replay.html?match_id=${encodeURIComponent(matchId)}`;
+      window.location.href = url;
+    }
+
+    function bindTableInteractions() {
+      const tbody = $('#tbody');
+      if (!tbody || tbody.dataset.bound === 'true') return;
+      tbody.addEventListener('click', evt => {
+        const targetLink = evt.target.closest('a, button');
+        if (targetLink) return;
+        const row = evt.target.closest('tr[data-match-id]');
+        if (!row) return;
+        const matchId = row.getAttribute('data-match-id');
+        navigateToReplay(matchId);
+      });
+      tbody.addEventListener('keydown', evt => {
+        if (evt.key !== 'Enter' && evt.key !== ' ') return;
+        if (evt.target.closest('a, button')) return;
+        const row = evt.target.closest('tr[data-match-id]');
+        if (!row) return;
+        evt.preventDefault();
+        const matchId = row.getAttribute('data-match-id');
+        navigateToReplay(matchId);
+      });
+      tbody.dataset.bound = 'true';
+    }
+
     async function load() {
       const data = await getJSON('/api/matches', '/web/data/matches.json');
-      state.rows = data.rows || [];
+      state.rows = (data.rows || []).map(row => ({
+        ...row,
+        result_delta: Number(row.result_delta ?? 0)
+      }));
+      buildFilterOptions(state.rows);
+      ensureFilterValues();
+      renderFilterOptions();
+      syncFilterControls();
       render();
     }
 
@@ -137,6 +433,8 @@
       document.querySelectorAll('th[data-sort]').forEach((th) => {
         th.addEventListener('click', handleSortClick);
       });
+      bindFilterControls();
+      bindTableInteractions();
       load();
     });
   </script>
@@ -258,21 +556,54 @@
       </div>
 
       <div class="history-table">
-        <table class="table">
-          <thead>
-            <tr>
-              <th class="num sortable" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
-              <th class="sortable" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
-              <th class="sortable" data-sort="ended_at" title="Sort by ended date">Ended</th>
-              <th>Models</th>
-              <th class="num sortable" data-sort="blinds" title="Sort by blinds">Blinds</th>
-              <th class="num sortable" data-sort="start_stack" title="Sort by start stack">Start</th>
-              <th class="num sortable" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
-              <th class="num">Replay</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"><tr><td class="history-table__cell" colspan="8">Loading…</td></tr></tbody>
-        </table>
+        <div class="history-filters" role="region" aria-label="Match filters">
+          <div class="history-filter">
+            <label for="filterModelA">Model A</label>
+            <select id="filterModelA" name="filterModelA"></select>
+          </div>
+          <div class="history-filter">
+            <label for="filterModelB">Model B</label>
+            <select id="filterModelB" name="filterModelB"></select>
+          </div>
+          <div class="history-filter">
+            <label for="filterBlinds">Blinds</label>
+            <select id="filterBlinds" name="filterBlinds"></select>
+          </div>
+          <div class="history-filter history-filter--range history-filter--span-2">
+            <label for="filterDateFrom">Date range</label>
+            <div class="history-filter__inputs">
+              <input type="date" id="filterDateFrom" name="filterDateFrom"/>
+              <span aria-hidden="true">–</span>
+              <input type="date" id="filterDateTo" name="filterDateTo"/>
+            </div>
+          </div>
+          <div class="history-filter history-filter--range history-filter--span-2">
+            <label for="filterDeltaMin">Result Δ (chips)</label>
+            <div class="history-filter__inputs">
+              <input type="number" id="filterDeltaMin" name="filterDeltaMin" placeholder="Min" inputmode="numeric"/>
+              <span aria-hidden="true">–</span>
+              <input type="number" id="filterDeltaMax" name="filterDeltaMax" placeholder="Max" inputmode="numeric"/>
+            </div>
+          </div>
+          <button id="filterReset" class="history-filters__reset" type="button">Reset filters</button>
+        </div>
+        <div class="history-table__wrapper">
+          <table class="table history-table__grid">
+            <thead>
+              <tr>
+                <th class="num sortable" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
+                <th class="sortable" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
+                <th>Model A</th>
+                <th>Model B</th>
+                <th class="num sortable" data-sort="blinds" title="Sort by blinds">Blinds</th>
+                <th class="num sortable" data-sort="result_delta" title="Sort by result delta">Result Δ</th>
+                <th class="num sortable" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
+                <th class="num">Replay</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"><tr><td class="history-table__cell" colspan="8">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </main>

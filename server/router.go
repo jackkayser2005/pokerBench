@@ -206,16 +206,18 @@ func Router(db *store.DB) http.Handler {
 			Seeds           int        `json:"duel_seeds"`
 			ModelA          string     `json:"model_a"`
 			ModelB          string     `json:"model_b"`
+			ResultDelta     int        `json:"result_delta"`
 			SeedpackName    *string    `json:"seedpack_name,omitempty"`
 			SeedpackVersion *string    `json:"seedpack_version,omitempty"`
 			SeedpackCount   *int       `json:"seedpack_count,omitempty"`
 			SeedpackSHA     *string    `json:"seedpack_sha256,omitempty"`
 		}
 		rows, err := db.Query(ctx, `
-            SELECT m.id, m.created_at, m.ended_at, m.sb, m.bb, m.start_stack, m.duel_seeds,
-                   MAX(CASE WHEN p.label='A' THEN p.name_snapshot END) AS model_a,
-                   MAX(CASE WHEN p.label='B' THEN p.name_snapshot END) AS model_b,
-                   m.seedpack_name, m.seedpack_version, m.seedpack_count, m.seedpack_sha256
+           SELECT m.id, m.created_at, m.ended_at, m.sb, m.bb, m.start_stack, m.duel_seeds,
+                  MAX(CASE WHEN p.label='A' THEN p.name_snapshot END) AS model_a,
+                  MAX(CASE WHEN p.label='B' THEN p.name_snapshot END) AS model_b,
+                  MAX(CASE WHEN p.label='A' THEN p.net_chips END) AS result_delta,
+                  m.seedpack_name, m.seedpack_version, m.seedpack_count, m.seedpack_sha256
               FROM matches m
               LEFT JOIN match_participants p ON p.match_id = m.id
              GROUP BY m.id
@@ -231,7 +233,7 @@ func Router(db *store.DB) http.Handler {
 		for rows.Next() {
 			var x Row
 			if err := rows.Scan(&x.ID, &x.CreatedAt, &x.EndedAt, &x.SBA, &x.BBA, &x.Start, &x.Seeds, &x.ModelA, &x.ModelB,
-				&x.SeedpackName, &x.SeedpackVersion, &x.SeedpackCount, &x.SeedpackSHA); err != nil {
+				&x.ResultDelta, &x.SeedpackName, &x.SeedpackVersion, &x.SeedpackCount, &x.SeedpackSHA); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
