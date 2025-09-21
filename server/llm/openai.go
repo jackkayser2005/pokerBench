@@ -62,50 +62,61 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 	}
 	applyTuningFromEnv(payload, cfg.Kind == providerOpenRouter)
 
-	b, _ := json.Marshal(payload)
-	url := cfg.BaseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set(cfg.HeaderName, cfg.HeaderPrefix+cfg.APIKey)
-	if cfg.Organization != "" {
-		req.Header.Set("OpenAI-Organization", cfg.Organization)
-	}
-	for k, v := range cfg.ExtraHeaders {
-		setHeaderPreserveCase(req.Header, k, v)
-	}
-
 	client := &http.Client{Timeout: 45 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
+	url := cfg.BaseURL + "/chat/completions"
+	removed := map[string]bool{}
 
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(resp.Body)
-	body := buf.Bytes()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	for attempts := 0; attempts < 3; attempts++ {
+		b, _ := json.Marshal(payload)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set(cfg.HeaderName, cfg.HeaderPrefix+cfg.APIKey)
+		if cfg.Organization != "" {
+			req.Header.Set("OpenAI-Organization", cfg.Organization)
+		}
+		for k, v := range cfg.ExtraHeaders {
+			setHeaderPreserveCase(req.Header, k, v)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(resp.Body)
+		body := buf.Bytes()
+		resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			var cc struct {
+				Choices []struct {
+					Message struct {
+						Content string `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal(body, &cc); err != nil {
+				return "", err
+			}
+			if len(cc.Choices) == 0 {
+				return "", errors.New("no choices returned")
+			}
+			return cc.Choices[0].Message.Content, nil
+		}
+
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && adjustOpenRouterPayloadForRetry(payload, cfg.Kind, body, removed) {
+			continue
+		}
+
 		return "", fmt.Errorf("openai http %d: %s", resp.StatusCode, truncate(string(body), 800))
 	}
 
-	var cc struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(body, &cc); err != nil {
-		return "", err
-	}
-	if len(cc.Choices) == 0 {
-		return "", errors.New("no choices returned")
-	}
-	return cc.Choices[0].Message.Content, nil
+	return "", errors.New("exhausted chat completion retries")
 }
 
 // PingChooseAction requests a structured JSON action from the model.
@@ -269,6 +280,66 @@ func envPingOptions() PingOptions {
 		}
 	}
 	return opts
+}
+
+func adjustOpenRouterPayloadForRetry(payload map[string]any, kind providerKind, body []byte, removed map[string]bool) bool {
+	if kind != providerOpenRouter {
+		return false
+	}
+
+	lowerMsg := strings.ToLower(string(body))
+	lowerParam := ""
+	var errBody struct {
+		Error struct {
+			Message string `json:"message"`
+			Param   string `json:"param"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errBody); err == nil {
+		if strings.TrimSpace(errBody.Error.Message) != "" {
+			lowerMsg = strings.ToLower(errBody.Error.Message)
+		}
+		lowerParam = strings.ToLower(errBody.Error.Param)
+	}
+
+	match := func(field string, aliases ...string) bool {
+		if removed[field] {
+			return false
+		}
+		if _, exists := payload[field]; !exists {
+			return false
+		}
+		if lowerParam != "" && (lowerParam == field || strings.Contains(lowerParam, field)) {
+			return true
+		}
+		if strings.Contains(lowerMsg, field) {
+			return true
+		}
+		for _, alias := range aliases {
+			if strings.Contains(lowerMsg, alias) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if match("response_format", "json_schema", "structured outputs", "structured_output") {
+		delete(payload, "response_format")
+		removed["response_format"] = true
+		return true
+	}
+	if match("reasoning", "internal reasoning", "reasoning_effort") {
+		delete(payload, "reasoning")
+		removed["reasoning"] = true
+		return true
+	}
+	if match("max_tokens", "max_output_tokens") {
+		delete(payload, "max_tokens")
+		removed["max_tokens"] = true
+		return true
+	}
+
+	return false
 }
 
 func envWithFallback(preferOpenRouter bool, openAIKey, openRouterKey string) string {
