@@ -293,7 +293,7 @@
 <body class="replay-theme">
   <header class="site-header">
     <div class="topnav">
-      <a class="brand" href="/web/live.html" aria-label="PokerBench latest match">
+      <a class="brand" href="/web/replay.html" aria-label="PokerBench latest match">
         <span class="brand__mark logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>
@@ -397,14 +397,16 @@
         <div class="muted">Latest match loads automatically. Switch below.</div>
         <div class="replay__intro">
           <label class="muted" for="matchSel">Match</label>
-          <select id="matchSel" class="select-pill"></select>
+          <div class="select-pill__wrap">
+            <select id="matchSel" class="select-pill"></select>
+          </div>
           <div id="map" class="replay__map"></div>
         </div>
       </div>
 
       <div class="card replay">
         <div class="replay__controls">
-          <div class="group replay__btn-group">
+          <div class="replay__btn-group">
             <button class="pill" id="play" type="button">Play</button>
             <button class="pill" id="pause" type="button">Pause</button>
             <button class="pill" id="next" type="button">Next</button>
@@ -415,12 +417,14 @@
           </div>
           <div class="replay__holes">
             <label class="muted" for="holesSel">Holes</label>
-            <select id="holesSel" class="select-pill select-pill--condensed">
-              <option value="both">Both</option>
-              <option value="sb">SB Only</option>
-              <option value="bb">BB Only</option>
-              <option value="none">Hidden</option>
-            </select>
+            <div class="select-pill__wrap">
+              <select id="holesSel" class="select-pill select-pill--condensed">
+                <option value="both">Both</option>
+                <option value="sb">SB Only</option>
+                <option value="bb">BB Only</option>
+                <option value="none">Hidden</option>
+              </select>
+            </div>
           </div>
           <div class="replay__progress">
             <label class="muted" for="prog">Timeline</label>
@@ -481,7 +485,7 @@
 
   <footer class="site-footer">
     <div class="site-footer__inner">
-      <a class="site-footer__brand" href="/web/live.html">
+      <a class="site-footer__brand" href="/web/replay.html">
         <span class="logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>

@@ -17,6 +17,13 @@
       const hue = 240*(1-x); // blue -> red
       return `background-color: hsl(${hue} 70% 42% / .22)`;
     }
+    function escapeAttr(s = ''){
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
     function shortName(s){
       s = (s||'').trim().replace(/^"+|"+$/g,'');
       s = s.replace(/[\-_.]20\d{2}(?:[\-_.]?\d{2}){0,2}$/,'');
@@ -55,9 +62,20 @@
           const p = wins[i][j];
           const pct = p==null? '-' : Math.round(100*p)+'%';
           const exp = Math.round(100*eloProb(elo[i], elo[j]))+'%';
-          const tip = hands[i][j] ? `${pct} actual of ${hands[i][j]} hands\n${exp} expected (Elo)` : `${pct} actual\n${exp} expected (Elo)`;
+          const aName = bots[i]?.name || '—';
+          const bName = bots[j]?.name || '—';
+          const pairLabel = `${aName} vs ${bName}`;
+          const tipParts = [pairLabel];
+          if (hands[i][j]) {
+            tipParts.push(`${pct} actual of ${hands[i][j]} hands`);
+          } else {
+            tipParts.push(`${pct} actual`);
+          }
+          tipParts.push(`${exp} expected (Elo)`);
+          const tip = tipParts.join('\n');
           const style = heat(p==null?0.5:p);
-          html += `<td class="num" style="${style}" title="${tip}">${pct}</td>`;
+          const aria = pct === '-' ? `${pairLabel}` : `${pct} win rate — ${pairLabel}`;
+          html += `<td class="num" style="${style}" title="${escapeAttr(tip)}" aria-label="${escapeAttr(aria)}">${pct}</td>`;
         }
         html += '</tr>';
       });
@@ -70,7 +88,7 @@
 <body>
   <header class="site-header">
     <div class="topnav">
-      <a class="brand" href="/web/live.html" aria-label="PokerBench latest match">
+      <a class="brand" href="/web/replay.html" aria-label="PokerBench latest match">
         <span class="brand__mark logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>
@@ -180,7 +198,7 @@
 
   <footer class="site-footer">
     <div class="site-footer__inner">
-      <a class="site-footer__brand" href="/web/live.html">
+      <a class="site-footer__brand" href="/web/replay.html">
         <span class="logo-badge logo-badge--sm">
           <img src="/web/img/pokerBenchlogo.svg" alt="PokerBench logo"/>
         </span>
