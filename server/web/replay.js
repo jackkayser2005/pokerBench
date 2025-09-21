@@ -23,6 +23,7 @@ const ReplayPage = (() => {
     prevHoles: { SB: '', BB: '' },
     prevHandId: null,
     dealerSeat: 'SB',
+    prevDealerSeat: null,
     winnerSeat: null,
     startStacks: { SB: 0, BB: 0 },
     baseEquity: { SB: 0, BB: 0 },
@@ -425,23 +426,40 @@ const ReplayPage = (() => {
   }
 
   function updateDealerIndicator() {
-    const seat = state.dealerSeat;
-    if (els.sbDealer) {
-      const isDealer = seat === 'SB';
-      els.sbDealer.hidden = !isDealer;
-      els.sbDealer.setAttribute('aria-hidden', isDealer ? 'false' : 'true');
-    }
-    if (els.bbDealer) {
-      const isDealer = seat === 'BB';
-      els.bbDealer.hidden = !isDealer;
-      els.bbDealer.setAttribute('aria-hidden', isDealer ? 'false' : 'true');
-    }
+    const seat = state.dealerSeat === 'SB' || state.dealerSeat === 'BB' ? state.dealerSeat : null;
+    const prevSeat = state.prevDealerSeat;
+    const shouldAnimate = seat && seat !== prevSeat;
+
+    const syncDealerChip = (el, isDealer) => {
+      if (!el) return;
+      if (isDealer) {
+        el.hidden = false;
+        el.setAttribute('aria-hidden', 'false');
+        if (shouldAnimate) {
+          el.classList.remove('dealer-move');
+          void el.offsetWidth; // force reflow to restart animation
+          el.classList.add('dealer-move');
+        } else {
+          el.classList.remove('dealer-move');
+        }
+      } else {
+        el.hidden = true;
+        el.setAttribute('aria-hidden', 'true');
+        el.classList.remove('dealer-move');
+      }
+    };
+
+    syncDealerChip(els.sbDealer, seat === 'SB');
+    syncDealerChip(els.bbDealer, seat === 'BB');
+
     if (els.sbZone) {
       els.sbZone.classList.toggle('seat-card--dealer', seat === 'SB');
     }
     if (els.bbZone) {
       els.bbZone.classList.toggle('seat-card--dealer', seat === 'BB');
     }
+
+    state.prevDealerSeat = seat;
   }
 
   function updateWinnerGlow() {
@@ -1025,6 +1043,7 @@ const ReplayPage = (() => {
     state.prevHandId = null;
     state.winnerSeat = null;
     state.dealerSeat = 'SB';
+    state.prevDealerSeat = null;
     state.actionButtons = [];
     updateDealerIndicator();
     updateWinnerGlow();
