@@ -19,21 +19,34 @@ type apiConfig struct {
 }
 
 func resolveAPIConfig(model string) (apiConfig, error) {
+	trimmedModel := strings.TrimSpace(model)
+	if trimmedModel == "" {
+		trimmedModel = firstNonEmpty(
+			os.Getenv("OPENROUTER_MODEL"),
+			os.Getenv("OPENAI_MODEL"),
+		)
+	}
+	if trimmedModel == "" {
+		return apiConfig{}, errors.New("model missing: set OPENROUTER_MODEL/OPENAI_MODEL or pass a value")
+	}
+
+	if key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")); key != "" {
+		return resolveOpenRouterConfig(trimmedModel, key)
+	}
+	if key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); key != "" {
+		return resolveOpenAIConfig(trimmedModel, key)
+	}
+
+	return apiConfig{}, errors.New("API key missing: set OPENROUTER_API_KEY or OPENAI_API_KEY (or provide the secrets file)")
+}
+
+func resolveOpenRouterConfig(model, key string) (apiConfig, error) {
 	cfg := apiConfig{
-		Model:        strings.TrimSpace(model),
+		APIKey:       key,
+		Model:        model,
+		HeaderName:   "Authorization",
+		HeaderPrefix: "Bearer ",
 		ExtraHeaders: map[string]string{},
-	}
-
-	if cfg.Model == "" {
-		cfg.Model = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
-	}
-	if cfg.Model == "" {
-		return apiConfig{}, errors.New("model missing: set OPENROUTER_MODEL or pass a value")
-	}
-
-	cfg.APIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-	if cfg.APIKey == "" {
-		return apiConfig{}, errors.New("API key missing: set OPENROUTER_API_KEY or provide secrets/openrouter_api_key.txt")
 	}
 
 	base := firstNonEmpty(
@@ -47,15 +60,14 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 	cfg.BaseURL = strings.TrimRight(base, "/")
 
 	headerName := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY_HEADER"))
-	if headerName == "" {
-		headerName = "Authorization"
+	if headerName != "" {
+		cfg.HeaderName = headerName
 	}
-	prefix := os.Getenv("OPENROUTER_API_KEY_PREFIX")
-	if headerName == "Authorization" && strings.TrimSpace(prefix) == "" {
-		prefix = "Bearer "
+	if prefix := os.Getenv("OPENROUTER_API_KEY_PREFIX"); prefix != "" {
+		cfg.HeaderPrefix = prefix
+	} else if cfg.HeaderName != "Authorization" {
+		cfg.HeaderPrefix = ""
 	}
-	cfg.HeaderName = headerName
-	cfg.HeaderPrefix = prefix
 
 	siteURL, err := resolveOpenRouterSiteURL()
 	if err != nil {
@@ -77,6 +89,28 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 	if title != "" {
 		cfg.ExtraHeaders["X-Title"] = title
 	}
+
+	return cfg, nil
+}
+
+func resolveOpenAIConfig(model, key string) (apiConfig, error) {
+	cfg := apiConfig{
+		APIKey:       key,
+		Model:        model,
+		HeaderName:   "Authorization",
+		HeaderPrefix: "Bearer ",
+		ExtraHeaders: map[string]string{},
+	}
+
+	base := firstNonEmpty(
+		os.Getenv("OPENAI_API_BASE"),
+		os.Getenv("OPENAI_BASE_URL"),
+	)
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "https://api.openai.com/v1"
+	}
+	cfg.BaseURL = strings.TrimRight(base, "/")
 
 	return cfg, nil
 }
