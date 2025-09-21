@@ -669,7 +669,10 @@ const ReplayPage = (() => {
       state.prevHandId = row.hand_id;
       state.winnerSeat = null;
       updateWinnerGlow();
-      state.dealerSeat = state.dealerSeat === 'SB' ? 'BB' : 'SB';
+      const nextDealer = isAOnSB(row.hand_id) ? 'SB' : 'BB';
+      if (nextDealer === 'SB' || nextDealer === 'BB') {
+        state.dealerSeat = nextDealer;
+      }
       updateDealerIndicator();
       if (els.handBanner) {
         els.handBanner.textContent = '';
