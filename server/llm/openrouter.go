@@ -179,13 +179,35 @@ func resolveOpenRouterSiteURL() (string, error) {
 			siteURL = "http://localhost"
 		}
 	}
-	siteURL = strings.TrimRight(siteURL, "/")
 
-	if siteURL == "" {
+	normalized, err := normalizeOpenRouterSiteURL(siteURL)
+	if err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+func normalizeOpenRouterSiteURL(siteURL string) (string, error) {
+	trimmed := strings.TrimSpace(siteURL)
+	if trimmed == "" {
 		return "", errors.New("missing OpenRouter site URL: set OPENROUTER_SITE_URL or SITE_URL")
 	}
+	trimmed = strings.TrimRight(trimmed, "/")
 
-	parsed, err := url.Parse(siteURL)
+	if !strings.Contains(trimmed, "://") {
+		lower := strings.ToLower(trimmed)
+		switch {
+		case strings.HasPrefix(lower, "localhost"),
+			strings.HasPrefix(lower, "127."),
+			strings.HasPrefix(lower, "[::1]"),
+			strings.HasPrefix(lower, "[0:0:0:0:0:0:0:1]"):
+			trimmed = "http://" + trimmed
+		default:
+			trimmed = "https://" + trimmed
+		}
+	}
+
+	parsed, err := url.Parse(trimmed)
 	if err != nil {
 		return "", fmt.Errorf("invalid OpenRouter site URL %q: %w", siteURL, err)
 	}
@@ -196,7 +218,10 @@ func resolveOpenRouterSiteURL() (string, error) {
 		return "", fmt.Errorf("invalid OpenRouter site URL %q: host missing", siteURL)
 	}
 
-	return parsed.String(), nil
+	parsed.Fragment = ""
+	normalized := parsed.String()
+	normalized = strings.TrimRight(normalized, "/")
+	return normalized, nil
 }
 
 func PreferOpenRouter() bool {
