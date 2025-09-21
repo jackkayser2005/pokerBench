@@ -684,75 +684,77 @@
 
       if (!plots.length) return;
 
-      const createMetric = (labelText, valueText, modifier) => {
-        const metric = document.createElement('div');
-        metric.className = 'chart-legend__metric';
-        if (modifier && modifier !== 'neutral') {
-          metric.classList.add(`is-${modifier}`);
-        } else if (modifier === 'neutral') {
-          metric.classList.add('is-neutral');
-        }
-        const valueEl = document.createElement('span');
-        valueEl.className = 'chart-legend__metric-value';
-        valueEl.textContent = valueText;
-        const labelEl = document.createElement('span');
-        labelEl.className = 'chart-legend__metric-label';
-        labelEl.textContent = labelText;
-        metric.appendChild(valueEl);
-        metric.appendChild(labelEl);
-        return metric;
-      };
+      const latestValues = plots
+        .map(plot => (Number.isFinite(plot.stats?.latestElo) ? plot.stats.latestElo : null))
+        .filter(value => value != null);
+      const maxLatest = latestValues.length ? Math.max(...latestValues) : 0;
 
       plots.forEach(plot => {
+        const stats = plot.stats || {};
         const item = document.createElement('div');
-        item.className = 'chart-legend__item';
-        item.style.setProperty('--legend-color', plot.color);
+        item.className = 'elo-bars__item';
+        item.setAttribute('role', 'listitem');
 
         const header = document.createElement('div');
-        header.className = 'chart-legend__header';
-
-        const swatch = document.createElement('span');
-        swatch.className = 'chart-legend__swatch';
-        header.appendChild(swatch);
+        header.className = 'elo-bars__header';
 
         const label = document.createElement('div');
-        label.className = 'chart-legend__label';
+        label.className = 'elo-bars__label';
         const iconEl = createIconElement(plot.meta.iconMarkup);
         if (iconEl) label.appendChild(iconEl);
 
         const textWrap = document.createElement('div');
-        textWrap.className = 'chart-legend__text';
+        textWrap.className = 'elo-bars__text';
         const modelEl = document.createElement('span');
-        modelEl.className = 'chart-legend__model';
+        modelEl.className = 'elo-bars__model';
         modelEl.textContent = plot.meta.model || 'Unknown';
         modelEl.style.color = plot.color;
         const companyEl = document.createElement('span');
-        companyEl.className = 'chart-legend__company';
+        companyEl.className = 'elo-bars__company';
         companyEl.textContent = plot.meta.company || 'Unknown';
         companyEl.style.color = colorWithAlpha(plot.color, 0.7);
         textWrap.appendChild(modelEl);
         textWrap.appendChild(companyEl);
-
         label.appendChild(textWrap);
-        header.appendChild(label);
-        item.appendChild(header);
 
-        const metrics = document.createElement('div');
-        metrics.className = 'chart-legend__metrics';
-        const stats = plot.stats || {};
+        const metaWrap = document.createElement('div');
+        metaWrap.className = 'elo-bars__meta';
 
-        metrics.appendChild(createMetric('Latest Elo', formatEloValue(stats.latestElo)));
-        const deltaMetric = createMetric('Δ overall', formatDeltaValue(stats.deltaFromFirst), deltaModifier(stats.deltaFromFirst));
-        metrics.appendChild(deltaMetric);
-        const matchesValue = Number.isFinite(stats.matches) ? String(stats.matches) : '–';
-        metrics.appendChild(createMetric('Matches', matchesValue));
+        const valueEl = document.createElement('span');
+        valueEl.className = 'elo-bars__value';
+        valueEl.textContent = formatEloValue(stats.latestElo);
+        metaWrap.appendChild(valueEl);
 
-        if (stats.lastUpdated instanceof Date) {
-          const updatedLabel = shortDate.format(stats.lastUpdated);
-          metrics.appendChild(createMetric('Last duel', updatedLabel));
+        const deltaValue = formatDeltaValue(stats.deltaFromFirst);
+        const deltaClass = deltaModifier(stats.deltaFromFirst) || 'neutral';
+        const deltaEl = document.createElement('span');
+        deltaEl.className = `elo-bars__delta is-${deltaClass}`;
+        deltaEl.textContent = deltaValue;
+        metaWrap.appendChild(deltaEl);
+
+        if (Number.isFinite(stats.matches)) {
+          const matchesEl = document.createElement('span');
+          matchesEl.className = 'elo-bars__matches';
+          const count = stats.matches;
+          matchesEl.textContent = count === 1 ? '1 match' : `${count} matches`;
+          metaWrap.appendChild(matchesEl);
         }
 
-        item.appendChild(metrics);
+        header.appendChild(label);
+        header.appendChild(metaWrap);
+        item.appendChild(header);
+
+        const bar = document.createElement('div');
+        bar.className = 'elo-bars__bar';
+        const fill = document.createElement('div');
+        fill.className = 'elo-bars__fill';
+        const latest = Number.isFinite(stats.latestElo) ? stats.latestElo : 0;
+        const pct = maxLatest > 0 ? Math.max(0, Math.min(1, latest / maxLatest)) : 0;
+        fill.style.width = `${(pct * 100).toFixed(2)}%`;
+        fill.style.background = `linear-gradient(135deg, ${colorWithAlpha(plot.color, 0.25)} 0%, ${colorWithAlpha(plot.color, 0.6)} 50%, ${plot.color} 100%)`;
+        bar.appendChild(fill);
+        item.appendChild(bar);
+
         legend.appendChild(item);
       });
 
@@ -1283,7 +1285,7 @@
             <div class="chart-tooltip__series"></div>
           </div>
         </div>
-        <div id="legend" class="chart-legend"></div>
+        <div id="legend" class="elo-bars" role="list"></div>
       </div>
       </div>
     </div>
