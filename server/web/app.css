@@ -1144,6 +1144,10 @@ p {
   gap: 18px;
 }
 
+.compare-drawer[hidden] {
+  display: none !important;
+}
+
 .compare-drawer__header {
   display: flex;
   align-items: center;
