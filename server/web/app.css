@@ -4644,12 +4644,11 @@ body.tooltips-disabled .inline-tip {
   margin: 0 auto;
 }
 
-.board-display__cards > *:nth-child(4) {
-  grid-column: 2;
-}
-
-.board-display__cards > *:nth-child(5) {
-  grid-column: 3;
+.board-display__cards::after {
+  content: '';
+  display: block;
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .board-display__label {
