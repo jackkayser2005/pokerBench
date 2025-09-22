@@ -116,6 +116,14 @@ PORT=8080 AUTO_MIGRATE=1 ./ai-thunderdome
 
 Open [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html) once the binary is running.
 
+### Seed orchestration
+
+The duel loop decides which mirrored deck to deal before every pair, letting you script deterministic blocks when benchmarking agents.
+
+1. **Pin the pseudo-random stream.** Export a numeric `DECK_SEED` (alongside `DUEL_SEEDS`) so successive runs replay the same mirrored sequence using the `seedStream` generator before each pair.
+2. **Load curated packs.** Set `SEEDPACK_PATH=/path/to/pack.json` (or `SEEDPACK` for the same path) to feed a JSON file such as `{"name":"stage-1","version":"1.0","seeds":[...numbers...]}`. The loader validates the file, computes its hash, and the duel loop iterates through each listed seed in order.
+3. **Chain stages.** Split a large evaluation into multiple pack files (`stage-1.json`, `stage-2.json`, …) or regenerate the pack between runs. Each block is consumed sequentially, so swapping in the next pack continues from the following seed block without rerunning prior pairs.
+
 ---
 
 ## Running Modes
@@ -195,6 +203,7 @@ Fine-tune duel behavior using environment variables:
 | --- | --- |
 | `SB`, `BB`, `START_STACK` | Configure blind sizes and initial stack depth. |
 | `DUEL_SEEDS` | Number of mirrored pairs per duel. (`DUEL_HANDS` can also be supplied; it is converted to seeds.) |
+| `DECK_SEED`, `SEEDPACK`, `SEEDPACK_PATH` | Fix the mirrored deck stream (`DECK_SEED`) or load a JSON file of explicit seeds (`SEEDPACK_PATH` / `SEEDPACK`) for reproducible or staged runs. |
 | `ELO_START`, `ELO_K`, `ELO_PER_HAND`, `ELO_WEIGHT_BY_POT` | Control Elo initialization and update cadence. |
 | `RAISE_ZERO_CALL_PROB` | Probability of probing when `to_call == 0` to reduce auto-check loops. |
 | `RAISE_FIRST_ZERO_CALL` | Force a raise on the first zero-to-call spot (0 disables). |
@@ -202,6 +211,8 @@ Fine-tune duel behavior using environment variables:
 | `USE_TOOLS` | Toggle tool usage in multi-turn chat completions. |
 | `MAX_SECONDS`, `STOP_FILE`, `STOP_IMMEDIATE` | Graceful shutdown controls for long-running benchmarks. |
 | `NO_COLOR`, `USE_COLOR`, `DEBUG` | CLI output formatting and verbose state dumps. |
+
+Set `DECK_SEED` when you need mirrored decks to replay exactly; point `SEEDPACK_PATH` (or `SEEDPACK`) at a JSON list of seeds to walk a curated set. The duel loop consumes each entry sequentially—replaying the same seed for both halves of a mirrored pair—so you can split long campaigns into predictable stages without repeating earlier cards.
 
 ---
 
