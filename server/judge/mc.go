@@ -8,6 +8,7 @@ import (
 
 	"ai-thunderdome/server/engine"
 	"ai-thunderdome/server/store"
+	"github.com/jackc/pgx/v5/pgtype"
 	poker "github.com/paulhankin/poker"
 	"math"
 )
@@ -58,9 +59,11 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		Board      []string
 		SBHole     []string
 		BBHole     []string
+		Action     string
+		Amount     pgtype.Int4
 	}
 	rows, err := conn.Query(ctx, `
-        SELECT id, hand_id, actor_label, pot, to_call, board, sb_hole, bb_hole
+        SELECT id, hand_id, actor_label, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
          WHERE match_id = $1 AND street = 'river'
          ORDER BY id
@@ -72,7 +75,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 
 	for rows.Next() {
 		var r Row
-		if err := rows.Scan(&r.ID, &r.HandID, &r.ActorLabel, &r.Pot, &r.ToCall, &r.Board, &r.SBHole, &r.BBHole); err != nil {
+		if err := rows.Scan(&r.ID, &r.HandID, &r.ActorLabel, &r.Pot, &r.ToCall, &r.Board, &r.SBHole, &r.BBHole, &r.Action, &r.Amount); err != nil {
 			return err
 		}
 		if len(r.Board) < 5 || len(r.SBHole) != 2 || len(r.BBHole) != 2 {
@@ -251,10 +254,13 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			}
 
 			// chosen
-			// Fetch chosen action and amount from the same row using the same connection
-			var chosenAction string
+			// Use the action and amount captured in the main query for comparison.
+			chosenAction := r.Action
 			var chosenTo *int
-			_ = conn.QueryRow(ctx, `SELECT LOWER(action), amount FROM action_logs WHERE id=$1`, r.ID).Scan(&chosenAction, &chosenTo)
+			if r.Amount.Valid {
+				v := int(r.Amount.Int32)
+				chosenTo = &v
+			}
 
 			if chosenAction != "call" && chosenAction != "fold" {
 				continue
@@ -341,9 +347,12 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				evBest = evCheck
 			}
 
-			var chosenAction string
+			chosenAction := r.Action
 			var chosenTo *int
-			_ = conn.QueryRow(ctx, `SELECT LOWER(action), amount FROM action_logs WHERE id=$1`, r.ID).Scan(&chosenAction, &chosenTo)
+			if r.Amount.Valid {
+				v := int(r.Amount.Int32)
+				chosenTo = &v
+			}
 
 			if chosenAction != "check" && chosenAction != "raise" {
 				continue
@@ -414,6 +423,9 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				return err
 			}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	return nil
 }
