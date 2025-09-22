@@ -101,7 +101,7 @@ func sub(title string)      { fmt.Printf("%s %s\n", dim("•"), bold(title)) }
 //
 
 // The loader looks for pre-exported env vars first, then falls back to common
-// file hints. Both OpenRouter and OpenAI secrets are supported.
+// file hints for OpenRouter secrets.
 func loadAPIKeyFromSecret() {
 	setKey := func(envKey, raw string, defaults ...string) bool {
 		raw = strings.TrimSpace(raw)
@@ -132,9 +132,6 @@ func loadAPIKeyFromSecret() {
 
 	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
 		setKey("OPENROUTER_API_KEY", key, "OPENROUTER_API_BASE", "https://openrouter.ai/api/v1", "OPENROUTER_BASE_URL")
-	}
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		setKey("OPENAI_API_KEY", key, "OPENAI_API_BASE", "https://api.openai.com/v1", "OPENAI_BASE_URL")
 	}
 
 	tryPaths := func(paths []string, setter func(string) bool) bool {
@@ -167,26 +164,6 @@ func loadAPIKeyFromSecret() {
 			return setKey("OPENROUTER_API_KEY", raw, "OPENROUTER_API_BASE", "https://openrouter.ai/api/v1", "OPENROUTER_BASE_URL")
 		})
 	}
-
-	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
-		var openaiPaths []string
-		if p := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_FILE")); p != "" {
-			openaiPaths = append(openaiPaths, p)
-		}
-		openaiPaths = append(openaiPaths,
-			"./secrets/openai_api_key.txt",
-			"server/openai_api_key.txt",
-			"./server/openai_api_key.txt",
-			"./openai_api_key.txt",
-			"/app/secrets/openai_api_key.txt",
-			"/app/server/openai_api_key.txt",
-			"/run/secrets/openai_api_key",
-		)
-
-		tryPaths(openaiPaths, func(raw string) bool {
-			return setKey("OPENAI_API_KEY", raw, "OPENAI_API_BASE", "https://api.openai.com/v1", "OPENAI_BASE_URL")
-		})
-	}
 }
 
 func mustEnv(keys ...string) {
@@ -201,10 +178,7 @@ func mustHaveAPIKey() {
 	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) != "" {
 		return
 	}
-	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" {
-		return
-	}
-	log.Fatal("Missing required API key. Set OPENROUTER_API_KEY or OPENAI_API_KEY (or place the secret file).")
+	log.Fatal("Missing required API key. Set OPENROUTER_API_KEY (or place the secret file).")
 }
 func getenv(k, def string) string {
 	if v := os.Getenv(k); v != "" {
