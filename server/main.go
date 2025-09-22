@@ -1225,6 +1225,7 @@ func playHandMatch(
 				}
 				sbStack, bbStack := h.SB.Stack, h.BB.Stack
 				sbCom, bbCom := h.SB.Committed, h.BB.Committed
+				sbBank, bbBank := sbP.Bank, bbP.Bank
 				sbHole := []string{}
 				bbHole := []string{}
 				if len(h.SB.Hole) == 2 {
@@ -1239,7 +1240,7 @@ func playHandMatch(
 					potOdds = float64(toCall) / float64(denom)
 				}
 				_ = db.InsertActionLog(context.Background(), matchID, pairIndex, h.ID, s, curLabel, action, amount,
-					h.Pot, h.CurBet, toCall, minTo, maxTo, sbStack, bbStack, sbCom, bbCom, boardNow, sbHole, bbHole, potOdds, potOdds)
+					h.Pot, h.CurBet, toCall, minTo, maxTo, sbStack, bbStack, sbCom, bbCom, sbBank, bbBank, boardNow, sbHole, bbHole, potOdds, potOdds)
 			}
 
 			// logging adornments
@@ -1497,6 +1498,30 @@ PAYOUT:
 		fmt.Printf("%s %s %s | %s\n", good("Winner by fold →"), seatTag(winner), good(fmt.Sprintf("(%s)", winModel)), potTag(pot))
 	}
 	fmt.Printf("%s %s:%d  %s:%d\n\n", bold("Seat banks →"), cyan("SB"), sbP.Bank, warn("BB"), bbP.Bank)
+
+	if db != nil && matchID != 0 {
+		boardNow := make([]string, 0, len(h.Board))
+		for _, c := range h.Board {
+			if s := c.String(); s != "" {
+				boardNow = append(boardNow, s)
+			}
+		}
+		sbHole := []string{}
+		bbHole := []string{}
+		if len(h.SB.Hole) == 2 {
+			sbHole = []string{h.SB.Hole[0].String(), h.SB.Hole[1].String()}
+		}
+		if len(h.BB.Hole) == 2 {
+			bbHole = []string{h.BB.Hole[0].String(), h.BB.Hole[1].String()}
+		}
+		actorLabel := sbP.Label
+		if winner == engine.BB {
+			actorLabel = bbP.Label
+		}
+		_ = db.InsertActionLog(context.Background(), matchID, pairIndex, h.ID, "summary", actorLabel, "hand_complete", nil,
+			pot, 0, 0, 0, 0, h.SB.Stack, h.BB.Stack, 0, 0, sbP.Bank, bbP.Bank,
+			boardNow, sbHole, bbHole, 0, 0)
+	}
 
 	// deltas (this is what your callers use)
 	deltaSB := sbP.Bank - startSB

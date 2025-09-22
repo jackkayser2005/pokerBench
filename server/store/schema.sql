@@ -202,6 +202,8 @@ CREATE TABLE IF NOT EXISTS action_logs (
   bb_stack       INT NOT NULL,
   sb_committed   INT NOT NULL,
   bb_committed   INT NOT NULL,
+  sb_bank        INT NOT NULL DEFAULT 0,
+  bb_bank        INT NOT NULL DEFAULT 0,
   board          TEXT[] NOT NULL DEFAULT '{}',
   sb_hole        TEXT[] NOT NULL DEFAULT '{}',
   bb_hole        TEXT[] NOT NULL DEFAULT '{}',
@@ -222,6 +224,10 @@ ALTER TABLE action_logs
   ADD COLUMN IF NOT EXISTS pot_odds REAL NOT NULL DEFAULT 0;
 ALTER TABLE action_logs
   ADD COLUMN IF NOT EXISTS required_equity REAL NOT NULL DEFAULT 0;
+ALTER TABLE action_logs
+  ADD COLUMN IF NOT EXISTS sb_bank INT NOT NULL DEFAULT 0;
+ALTER TABLE action_logs
+  ADD COLUMN IF NOT EXISTS bb_bank INT NOT NULL DEFAULT 0;
 
 -- =========================
 -- MATCH PAIR DELTAS (bb/100 per mirrored pair)

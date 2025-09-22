@@ -560,6 +560,7 @@ func (db *DB) InsertActionLog(
 	amount *int,
 	pot, curBet, toCall, minTo, maxTo int,
 	sbStack, bbStack, sbCommitted, bbCommitted int,
+	sbBank, bbBank int,
 	board []string,
 	sbHole []string,
 	bbHole []string,
@@ -576,6 +577,7 @@ func (db *DB) InsertActionLog(
             actor_label, action, amount,
             pot, cur_bet, to_call, min_raise_to, max_raise_to,
             sb_stack, bb_stack, sb_committed, bb_committed,
+            sb_bank, bb_bank,
             board, sb_hole, bb_hole,
             pot_odds, required_equity
         ) VALUES (
@@ -583,14 +585,16 @@ func (db *DB) InsertActionLog(
             $5,$6,$7,
             $8,$9,$10,$11,$12,
             $13,$14,$15,$16,
-            $17,$18,$19,
-            $20,$21
+            $17,$18,
+            $19,$20,$21,
+            $22,$23
         )
     `,
 		matchID, pairIndex, handID, street,
 		actorLabel, action, amt,
 		pot, curBet, toCall, minTo, maxTo,
 		sbStack, bbStack, sbCommitted, bbCommitted,
+		sbBank, bbBank,
 		board, sbHole, bbHole,
 		potOdds, requiredEquity,
 	)

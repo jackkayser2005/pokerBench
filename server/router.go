@@ -637,6 +637,8 @@ func Router(db *store.DB) http.Handler {
 			BBStack     int       `json:"bb_stack"`
 			SBCommitted int       `json:"sb_committed"`
 			BBCommitted int       `json:"bb_committed"`
+			SBBank      int       `json:"sb_bank"`
+			BBBank      int       `json:"bb_bank"`
 			Board       []string  `json:"board"`
 			SBHole      []string  `json:"sb_hole"`
 			BBHole      []string  `json:"bb_hole"`
@@ -680,7 +682,7 @@ func Router(db *store.DB) http.Handler {
 				rows, err := db.Query(ctx, `
                     SELECT id, pair_index, hand_id, street, actor_label, action, amount,
                            pot, cur_bet, to_call, min_raise_to, max_raise_to,
-                           sb_stack, bb_stack, sb_committed, bb_committed,
+                           sb_stack, bb_stack, sb_committed, bb_committed, sb_bank, bb_bank,
                            board, pot_odds, required_equity, created_at
                       FROM action_logs
                      WHERE match_id = $1 AND id > $2
@@ -695,8 +697,8 @@ func Router(db *store.DB) http.Handler {
 					var r Row
 					if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 						&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
-						&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
-						&r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
+                                                &r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted, &r.SBBank, &r.BBBank,
+                                                &r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
 						rows.Close()
 						http.Error(w, err.Error(), 500)
 						return
@@ -1172,6 +1174,8 @@ func Router(db *store.DB) http.Handler {
 			BBStack     int       `json:"bb_stack"`
 			SBCommitted int       `json:"sb_committed"`
 			BBCommitted int       `json:"bb_committed"`
+			SBBank      int       `json:"sb_bank"`
+			BBBank      int       `json:"bb_bank"`
 			Board       []string  `json:"board"`
 			SBHole      []string  `json:"sb_hole"`
 			BBHole      []string  `json:"bb_hole"`
@@ -1193,6 +1197,7 @@ func Router(db *store.DB) http.Handler {
             SELECT a.id, a.pair_index, a.hand_id, a.street, a.actor_label, a.action, a.amount,
                    a.pot, a.cur_bet, a.to_call, a.min_raise_to, a.max_raise_to,
                    a.sb_stack, a.bb_stack, a.sb_committed, a.bb_committed,
+                   a.sb_bank, a.bb_bank,
                    a.board, a.sb_hole, a.bb_hole, a.pot_odds, a.required_equity, a.created_at,
                    e.solver, e.solver_version, e.best_action, e.best_amount_to, e.ev_gap_bb, e.correctness_prob, e.is_top_action
               FROM action_logs a
@@ -1211,6 +1216,7 @@ func Router(db *store.DB) http.Handler {
 			if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 				&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
 				&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
+				&r.SBBank, &r.BBBank,
 				&r.Board, &r.SBHole, &r.BBHole, &r.PotOdds, &r.RequiredEq, &r.CreatedAt,
 				&r.Solver, &r.SolverVersion, &r.EvalBestAction, &r.EvalBestTo, &r.EvalGapBB, &r.EvalCorrectProb, &r.EvalIsTop); err != nil {
 				http.Error(w, err.Error(), 500)
@@ -1278,36 +1284,61 @@ func Router(db *store.DB) http.Handler {
 			}
 			return nil
 		}
+		winnerFromFold := func(r Row) *string {
+			if !strings.EqualFold(r.Action, "fold") || r.ActorLabel == "" {
+				return nil
+			}
+			actor := strings.ToUpper(r.ActorLabel)
+			aIsSB := strings.HasSuffix(strings.ToUpper(r.HandID), "A")
+			var seat string
+			switch actor {
+			case "A":
+				if aIsSB {
+					seat = "BB"
+				} else {
+					seat = "SB"
+				}
+			case "B":
+				if aIsSB {
+					seat = "SB"
+				} else {
+					seat = "BB"
+				}
+			case "SB":
+				seat = "BB"
+			case "BB":
+				seat = "SB"
+			}
+			if seat == "" {
+				return nil
+			}
+			return &seat
+		}
 		for idx := range out {
 			isLast := idx == len(out)-1
 			boundary := isLast || out[idx+1].HandID != out[idx].HandID
 			if !boundary {
 				continue
 			}
-			// Prefer showdown if available
+			// Prefer showdown from the final row
 			if ws := computeShowdown(out[idx]); ws != nil {
 				out[idx].WinnerSeat = ws
 				continue
 			}
-			// Fold fallback: last action was a fold -> winner is other label mapped by hand suffix
-			r := out[idx]
-			if strings.EqualFold(r.Action, "fold") && r.ActorLabel != "" {
-				aIsSB := strings.HasSuffix(strings.ToUpper(r.HandID), "A")
-				var seat string
-				if r.ActorLabel == "A" { // A folded -> B wins
-					if aIsSB {
-						seat = "BB"
-					} else {
-						seat = "SB"
-					}
-				} else { // B folded -> A wins
-					if aIsSB {
-						seat = "SB"
-					} else {
-						seat = "BB"
-					}
+			// Try to infer from previous action in the same hand (for summaries)
+			if idx > 0 && out[idx-1].HandID == out[idx].HandID {
+				prev := out[idx-1]
+				if ws := computeShowdown(prev); ws != nil {
+					out[idx].WinnerSeat = ws
+					continue
 				}
-				out[idx].WinnerSeat = &seat
+				if ws := winnerFromFold(prev); ws != nil {
+					out[idx].WinnerSeat = ws
+					continue
+				}
+			}
+			if ws := winnerFromFold(out[idx]); ws != nil {
+				out[idx].WinnerSeat = ws
 			}
 		}
 		writeJSON(w, map[string]any{"rows": out})
