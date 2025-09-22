@@ -4719,7 +4719,19 @@ body.tooltips-disabled .inline-tip {
 .stage-insights {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1024px) {
+  .stage-insights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .stage-insights {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .insight {
