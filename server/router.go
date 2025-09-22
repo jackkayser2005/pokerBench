@@ -697,8 +697,8 @@ func Router(db *store.DB) http.Handler {
 					var r Row
 					if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 						&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
-                                                &r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted, &r.SBBank, &r.BBBank,
-                                                &r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
+						&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted, &r.SBBank, &r.BBBank,
+						&r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
 						rows.Close()
 						http.Error(w, err.Error(), 500)
 						return
@@ -1117,14 +1117,16 @@ func Router(db *store.DB) http.Handler {
 			MatchID int64     `json:"match_id"`
 			When    time.Time `json:"when"`
 			Elo     float64   `json:"elo"`
+			GRating float64   `json:"glicko_rating"`
 		}
 		rows, err := db.Query(ctx, `
-            SELECT p.bot_id,
-                   p.name_snapshot AS model,
-                   p.company_snapshot AS company,
-                   m.id AS match_id,
-                   m.created_at,
-                   CASE WHEN p.label = 'A' THEN rh.elo_a ELSE rh.elo_b END AS elo
+           SELECT p.bot_id,
+                  p.name_snapshot AS model,
+                  p.company_snapshot AS company,
+                  m.id AS match_id,
+                  m.created_at,
+                  CASE WHEN p.label = 'A' THEN rh.elo_a ELSE rh.elo_b END AS elo,
+                  CASE WHEN p.label = 'A' THEN rh.g_a_rating ELSE rh.g_b_rating END AS glicko_rating
               FROM rating_history rh
               JOIN matches m ON m.id = rh.match_id
               JOIN match_participants p ON p.match_id = m.id
@@ -1139,7 +1141,7 @@ func Router(db *store.DB) http.Handler {
 		out := []Row{}
 		for rows.Next() {
 			var x Row
-			if err := rows.Scan(&x.BotID, &x.Model, &x.Company, &x.MatchID, &x.When, &x.Elo); err != nil {
+			if err := rows.Scan(&x.BotID, &x.Model, &x.Company, &x.MatchID, &x.When, &x.Elo, &x.GRating); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
