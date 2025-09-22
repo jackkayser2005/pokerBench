@@ -41,6 +41,7 @@
   --fs-5: clamp(2.15rem, 3vw, 2.85rem);
   --transition: 160ms ease;
   --gutter: 32px;
+  --z-tooltip: 9999;
 
   /* Legacy tokens kept for replay + specialty UI */
   --bg: var(--page-bg);
@@ -1909,7 +1910,7 @@ p {
 
 .matrix-tooltip {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-tooltip);
   display: grid;
   gap: 6px;
   min-width: 220px;
@@ -2510,7 +2511,7 @@ n);
 }
 
 .elo-chart .chart-tooltip {
-  z-index: 2;
+  z-index: var(--z-tooltip);
 }
 
 .elo-bars {
@@ -2675,7 +2676,7 @@ n);
   opacity: 0;
   transform: translateY(10px);
   transition: opacity var(--transition), transform var(--transition);
-  z-index: 3;
+  z-index: var(--z-tooltip);
 }
 
 .chart-tooltip.visible {
@@ -3301,7 +3302,7 @@ body.replay-theme {
   max-width: 280px;
   text-align: left;
   transition: opacity var(--transition), transform var(--transition);
-  z-index: 40;
+  z-index: var(--z-tooltip);
   background-clip: padding-box;
 }
 
@@ -3320,7 +3321,7 @@ body.replay-theme {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--transition), transform var(--transition);
-  z-index: 39;
+  z-index: var(--z-tooltip);
 }
 
 .inline-tip:hover::after,
@@ -3355,7 +3356,7 @@ body.tooltips-disabled .inline-tip {
   box-shadow: var(--shadow-md);
   font-size: var(--fs-1);
   color: var(--text);
-  z-index: 50;
+  z-index: var(--z-tooltip);
 }
 
 .tooltip-pop.show {
