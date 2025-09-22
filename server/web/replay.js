@@ -26,6 +26,7 @@ const ReplayPage = (() => {
     prevDealerSeat: null,
     winnerSeat: null,
     startStacks: { SB: 0, BB: 0 },
+    startBanks: { SB: Number.NaN, BB: Number.NaN },
     baseEquity: { SB: 0, BB: 0 },
     actionButtons: [],
   };
@@ -343,6 +344,8 @@ const ReplayPage = (() => {
 
   function describeActor(row) {
     if (!row) return '';
+    const actionName = String(row.action || '').toLowerCase();
+    if (actionName === 'hand_complete') return '';
     const seat = seatForLabel(row.actor_label, row);
     const name = labelName(row.actor_label);
     if (!name) return '';
@@ -351,6 +354,14 @@ const ReplayPage = (() => {
 
   function fmtAction(row) {
     if (!row) return '—';
+    const actionName = String(row.action || '').toLowerCase();
+    if (actionName === 'hand_complete') {
+      const winner = String(row?.winner_seat || '').toUpperCase();
+      if (winner === 'SB' || winner === 'BB') {
+        return `Hand complete — ${winner} wins`;
+      }
+      return 'Hand complete';
+    }
     const parts = [];
     const actor = describeActor(row);
     if (actor) parts.push(actor);
@@ -514,8 +525,25 @@ const ReplayPage = (() => {
     if (stackEl) {
       stackEl.textContent = fmtChips(Number.isFinite(stack) ? stack : 0);
     }
-    const base = state.startStacks[seatKey] ?? stack;
-    updateDeltaElement(deltaEl, Number.isFinite(stack) ? stack - base : 0, { precision: 0 });
+    const bank = Number(isSB ? row?.sb_bank : row?.bb_bank);
+    let baseBank = state.startBanks[seatKey];
+    const hasBank = Number.isFinite(bank);
+    if (!Number.isFinite(baseBank) && hasBank) {
+      baseBank = bank;
+      state.startBanks[seatKey] = bank;
+    }
+    if (deltaEl) {
+      if (hasBank && Number.isFinite(baseBank)) {
+        const delta = bank - baseBank;
+        const deltaText = fmtSigned(delta, '±0', 0);
+        deltaEl.textContent = `Bank ${fmtChips(bank)} (${deltaText})`;
+        deltaEl.classList.toggle('positive', delta > 0);
+        deltaEl.classList.toggle('negative', delta < 0);
+      } else {
+        deltaEl.textContent = 'Bank —';
+        deltaEl.classList.remove('positive', 'negative');
+      }
+    }
 
     const eq = computeEquity(row, seatKey);
     if (evAmountEl) {
@@ -689,7 +717,8 @@ const ReplayPage = (() => {
 
     updateInsights(row);
 
-    const actorSeat = seatForLabel(row.actor_label, row);
+    const actionName = String(row?.action || '').toLowerCase();
+    const actorSeat = actionName === 'hand_complete' ? null : seatForLabel(row.actor_label, row);
     updateSeatFocus(actorSeat);
   }
 
@@ -1046,6 +1075,9 @@ const ReplayPage = (() => {
     state.dealerSeat = 'SB';
     state.prevDealerSeat = null;
     state.actionButtons = [];
+    state.startStacks = { SB: 0, BB: 0 };
+    state.startBanks = { SB: Number.NaN, BB: Number.NaN };
+    state.baseEquity = { SB: 0, BB: 0 };
     updateDealerIndicator();
     updateWinnerGlow();
     renderEmptyActionList('Loading actions…');
@@ -1075,8 +1107,14 @@ const ReplayPage = (() => {
       return;
     }
     const first = state.rows[0];
-    state.startStacks.SB = Number(first?.sb_stack ?? 0);
-    state.startStacks.BB = Number(first?.bb_stack ?? 0);
+    const firstSbStack = Number(first?.sb_stack ?? 0);
+    const firstBbStack = Number(first?.bb_stack ?? 0);
+    state.startStacks.SB = Number.isFinite(firstSbStack) ? firstSbStack : 0;
+    state.startStacks.BB = Number.isFinite(firstBbStack) ? firstBbStack : 0;
+    const firstSbBank = Number(first?.sb_bank ?? firstSbStack);
+    const firstBbBank = Number(first?.bb_bank ?? firstBbStack);
+    state.startBanks.SB = Number.isFinite(firstSbBank) ? firstSbBank : state.startStacks.SB;
+    state.startBanks.BB = Number.isFinite(firstBbBank) ? firstBbBank : state.startStacks.BB;
     const startPot = Number(first?.pot ?? 0) / 2;
     state.baseEquity.SB = state.startStacks.SB + startPot;
     state.baseEquity.BB = state.startStacks.BB + startPot;
