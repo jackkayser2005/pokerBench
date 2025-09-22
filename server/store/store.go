@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"log"
 	"sort"
 	"strings"
 
@@ -364,7 +365,11 @@ func (db *DB) InsertParticipantsAndTallies(
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx) // safe if already committed
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("tx rollback: %v", err)
+		}
+	}()
 
 	// participants
 	var reAParam any

@@ -108,7 +108,10 @@ func loadAPIKeyFromSecret() {
 		if raw == "" {
 			return false
 		}
-		os.Setenv(envKey, raw)
+		if err := os.Setenv(envKey, raw); err != nil {
+			log.Printf("failed to set %s: %v", envKey, err)
+			return false
+		}
 		if len(defaults) >= 2 {
 			baseEnv, fallback := defaults[0], defaults[1]
 			skip := false
@@ -119,7 +122,9 @@ func loadAPIKeyFromSecret() {
 				}
 			}
 			if !skip && strings.TrimSpace(os.Getenv(baseEnv)) == "" {
-				os.Setenv(baseEnv, fallback)
+				if err := os.Setenv(baseEnv, fallback); err != nil {
+					log.Printf("failed to set %s: %v", baseEnv, err)
+				}
 			}
 		}
 		return true
@@ -462,9 +467,11 @@ Rules:
 			maxTok = &n
 		}
 	}
-	useToolsEnv := strings.TrimSpace(os.Getenv("USE_TOOLS"))
 	useTools := true
-	if useToolsEnv != "" && !(useToolsEnv == "1" || strings.EqualFold(useToolsEnv, "true") || strings.EqualFold(useToolsEnv, "yes")) {
+	if useToolsEnv := strings.TrimSpace(os.Getenv("USE_TOOLS")); useToolsEnv != "" &&
+		useToolsEnv != "1" &&
+		!strings.EqualFold(useToolsEnv, "true") &&
+		!strings.EqualFold(useToolsEnv, "yes") {
 		useTools = false
 	}
 	if useTools {
@@ -1457,15 +1464,16 @@ PAYOUT:
 	}
 
 	// exact chip flow (incl. split)
-	if winner == engine.SB {
+	switch winner {
+	case engine.SB:
 		sbP.Bank += pot - sbC.total
 		bbP.Bank -= bbC.total
 		sbP.Wins++
-	} else if winner == engine.BB {
+	case engine.BB:
 		bbP.Bank += pot - bbC.total
 		sbP.Bank -= sbC.total
 		bbP.Wins++
-	} else {
+	default:
 		half := pot / 2
 		rem := pot % 2
 		sbP.Bank += half + rem - sbC.total
@@ -1563,9 +1571,7 @@ func extractJSONObject(s string) string {
 			s = s[i+1:]
 		}
 	}
-	if strings.HasSuffix(s, "```") {
-		s = strings.TrimSuffix(s, "```")
-	}
+	s = strings.TrimSuffix(s, "```")
 	// Find first '{' and matching last '}'
 	start := strings.IndexByte(s, '{')
 	if start < 0 {
@@ -2283,8 +2289,14 @@ func runDuelMatrix(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			a := parts[i]
 			b := parts[j]
 			log.Printf("Matrix duel: A=%s vs B=%s", a, b)
-			os.Setenv("OPENROUTER_MODEL_A", a)
-			os.Setenv("OPENROUTER_MODEL_B", b)
+			if err := os.Setenv("OPENROUTER_MODEL_A", a); err != nil {
+				log.Printf("failed to set OPENROUTER_MODEL_A: %v", err)
+				return
+			}
+			if err := os.Setenv("OPENROUTER_MODEL_B", b); err != nil {
+				log.Printf("failed to set OPENROUTER_MODEL_B: %v", err)
+				return
+			}
 			runDuel(checkStop, gracefulOnly, db)
 		}
 	}
@@ -2333,12 +2345,6 @@ func seatLabel(s engine.Seat) string {
 		return "BB"
 	}
 	return ""
-}
-func stackOf(h *engine.Hand, seat engine.Seat) int {
-	if seat == engine.SB {
-		return h.SB.Stack
-	}
-	return h.BB.Stack
 }
 func handScore(w engine.Seat, aWasSB bool) (sa, sb float64) {
 	switch w {

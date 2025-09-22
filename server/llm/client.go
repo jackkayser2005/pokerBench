@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -96,9 +97,13 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 		}
 
 		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(resp.Body)
+		if _, err := buf.ReadFrom(resp.Body); err != nil {
+			return "", fmt.Errorf("read chat response: %w", err)
+		}
 		body := buf.Bytes()
-		resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Printf("llm: closing response body: %v", cerr)
+		}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			var cc struct {

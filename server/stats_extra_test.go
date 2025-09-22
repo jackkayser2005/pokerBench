@@ -2,13 +2,11 @@ package main
 
 import (
 	"math"
-	mrand "math/rand"
 	"testing"
 )
 
 func TestPairedBootstrapCI(t *testing.T) {
 	deltas := []float64{-5, -2.5, 0, 2.5, 5}
-	mrand.Seed(123)
 	mean, lo, hi := PairedBootstrapCI(deltas, 2000, 0.05)
 	if math.Abs(mean-0) > 1e-9 {
 		t.Fatalf("expected mean 0, got %f", mean)
