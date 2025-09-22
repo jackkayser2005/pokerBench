@@ -2242,12 +2242,6 @@ ion);
   border-bottom-color: rgba(71, 89, 128, 0.45);
 }
 
-@media (min-width: 960px) {
-  .elo-card__header {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-  }
-}
 
 .elo-card__heading {
   display: flex;
@@ -2264,13 +2258,28 @@ ion);
 .elo-card__filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px 20px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 16px 20px;
 }
 
+.elo-card__filters > * {
+  flex-shrink: 0;
+}
+
+.elo-card__filters #ratingMetricControl,
 .elo-card__filters .sort-control {
+  align-self: flex-start;
+}
+
+.elo-card__filters label.sort-control {
   margin-left: auto;
+}
+
+.elo-card__filters .filter-group {
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
 }
 
 .page-elo .topnav__links .pill {
