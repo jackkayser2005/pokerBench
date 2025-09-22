@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>AI Poker Lab — Elo Over Time</title>
+  <title>AI Poker Lab — Ratings Over Time</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/theme-init.js"></script>
@@ -21,15 +21,45 @@
       companies: [],
       selectedCompany: 'all',
       sortMode: 'company',
+      ratingMetric: 'elo',
       colorAssignments: new Map(),
       nextColorIndex: 0,
       resizeTimer: null,
       resizeBound: null,
       lastHoverKey: null
     };
+    const RATING_LABELS = { elo: 'Elo', glicko: 'Glicko-2' };
+    const DEFAULT_RATING_METRIC = 'elo';
     const dateFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const shortDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
     const $ = (sel) => document.querySelector(sel);
+
+    function getActiveMetric() {
+      const metric = state.ratingMetric;
+      return Object.prototype.hasOwnProperty.call(RATING_LABELS, metric) ? metric : DEFAULT_RATING_METRIC;
+    }
+
+    function getMetricLabel(metric = getActiveMetric()) {
+      return RATING_LABELS[metric] || 'Rating';
+    }
+
+    function getMetricKey(metric = getActiveMetric()) {
+      return metric === 'glicko' ? 'glicko' : 'elo';
+    }
+
+    function toNumberOrNull(value) {
+      if (value === null || value === undefined || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    }
+
+    function getPointMetricValue(point, metric = getActiveMetric()) {
+      if (!point) return null;
+      const key = getMetricKey(metric);
+      const raw = point[key];
+      if (Number.isFinite(raw)) return raw;
+      return toNumberOrNull(raw);
+    }
 
     const COMPANY_ICON_DATA = {
       openai:      { path: '/web/img/openai-dark.svg', alt: 'OpenAI' },
@@ -219,7 +249,7 @@
       return s;
     }
 
-    function formatEloValue(value) {
+    function formatRatingValue(value) {
       if (!Number.isFinite(value)) return '–';
       return Math.round(value).toString();
     }
@@ -240,6 +270,8 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       highlightNav();
+      updateMetricControl();
+      updateMetricDescription();
       load();
     });
 
@@ -290,7 +322,7 @@
       return state.colorAssignments.get(key);
     }
 
-    function computeSeriesStats(entry) {
+    function computeSeriesStats(entry, metric = getActiveMetric()) {
       const pts = Array.isArray(entry?.pts) ? entry.pts : [];
       const stats = {
         matches: pts.length,
@@ -306,45 +338,103 @@
       };
 
       if (!pts.length) {
-        entry.stats = stats;
+        return stats;
+      }
+
+      const values = pts
+        .map(pt => ({ value: getPointMetricValue(pt, metric), point: pt }))
+        .filter(item => Number.isFinite(item.value));
+
+      if (!values.length) {
         return stats;
       }
 
       let best = -Infinity;
       let worst = Infinity;
-      pts.forEach(pt => {
-        if (!pt || typeof pt.elo !== 'number') return;
-        if (pt.elo > best) best = pt.elo;
-        if (pt.elo < worst) worst = pt.elo;
+      values.forEach(item => {
+        if (item.value > best) best = item.value;
+        if (item.value < worst) worst = item.value;
       });
 
-      const first = pts[0];
-      const last = pts[pts.length - 1];
-      const prev = pts.length > 1 ? pts[pts.length - 2] : null;
+      const first = values[0];
+      const last = values[values.length - 1];
+      const prev = values.length > 1 ? values[values.length - 2] : null;
 
       stats.bestElo = Number.isFinite(best) ? best : null;
       stats.worstElo = Number.isFinite(worst) ? worst : null;
-      stats.firstElo = first ? Number(first.elo) : null;
-      stats.latestElo = last ? Number(last.elo) : null;
+      stats.firstElo = first ? Number(first.value) : null;
+      stats.latestElo = last ? Number(last.value) : null;
       stats.deltaFromFirst = Number.isFinite(stats.latestElo) && Number.isFinite(stats.firstElo)
         ? stats.latestElo - stats.firstElo
         : null;
-      stats.deltaFromPrevious = prev && Number.isFinite(stats.latestElo) && Number.isFinite(prev.elo)
-        ? stats.latestElo - Number(prev.elo)
+      stats.deltaFromPrevious = prev && Number.isFinite(stats.latestElo)
+        ? stats.latestElo - Number(prev.value)
         : null;
-      stats.lastUpdated = last?.t instanceof Date ? last.t : (last ? new Date(last.t) : null);
-      stats.firstSeen = first?.t instanceof Date ? first.t : (first ? new Date(first.t) : null);
+      stats.lastUpdated = last?.point?.t instanceof Date ? last.point.t : (last ? new Date(last.point.t) : null);
+      stats.firstSeen = first?.point?.t instanceof Date ? first.point.t : (first ? new Date(first.point.t) : null);
       stats.range = Number.isFinite(stats.bestElo) && Number.isFinite(stats.worstElo)
         ? stats.bestElo - stats.worstElo
         : null;
 
+      return stats;
+    }
+
+    function ensureMetricStats(entry, metric = getActiveMetric()) {
+      if (!entry) return null;
+      const safeMetric = Object.prototype.hasOwnProperty.call(RATING_LABELS, metric) ? metric : DEFAULT_RATING_METRIC;
+      if (!entry.metricStats) entry.metricStats = {};
+      if (!entry.metricStats[safeMetric]) {
+        entry.metricStats[safeMetric] = computeSeriesStats(entry, safeMetric);
+      }
+      return entry.metricStats[safeMetric];
+    }
+
+    function applyMetricStats(entry, metric = getActiveMetric()) {
+      if (!entry) return null;
+      const safeMetric = Object.prototype.hasOwnProperty.call(RATING_LABELS, metric) ? metric : DEFAULT_RATING_METRIC;
+      const stats = ensureMetricStats(entry, safeMetric);
+      if (!stats) return stats;
       entry.stats = stats;
+      entry.meta = entry.meta || {};
       entry.meta.latestElo = stats.latestElo;
       entry.meta.lastUpdated = stats.lastUpdated;
       entry.meta.matches = stats.matches;
       entry.meta.deltaFromFirst = stats.deltaFromFirst;
       entry.meta.deltaFromPrevious = stats.deltaFromPrevious;
+      entry.meta.bestElo = stats.bestElo;
+      entry.meta.worstElo = stats.worstElo;
+      entry.meta.activeMetric = safeMetric;
       return stats;
+    }
+
+    function updateMetricControl() {
+      const active = getActiveMetric();
+      document.querySelectorAll('[data-metric]').forEach(btn => {
+        const key = btn.getAttribute('data-metric');
+        const isActive = key === active;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+    }
+
+    function updateMetricDescription() {
+      const label = getMetricLabel();
+      const desc = document.querySelector('.elo-card__heading .muted');
+      if (desc) {
+        desc.textContent = `End-of-match ${label} per bot across all duels.`;
+      }
+      const sortSelect = document.getElementById('sortMode');
+      if (sortSelect) {
+        sortSelect.setAttribute('aria-label', `Sort ${label} series`);
+      }
+    }
+
+    function setActiveMetric(metric) {
+      const safeMetric = Object.prototype.hasOwnProperty.call(RATING_LABELS, metric) ? metric : DEFAULT_RATING_METRIC;
+      state.ratingMetric = safeMetric;
+      (state.fullSeries || []).forEach(entry => applyMetricStats(entry, safeMetric));
+      updateMetricControl();
+      updateMetricDescription();
     }
 
     function groupByBot(rows) {
@@ -376,12 +466,20 @@
         }
         const when = new Date(r.when);
         if (Number.isNaN(when.getTime())) return;
-        entry.pts.push({ t: when, elo: Number(r.elo || 0) });
+        entry.pts.push({
+          t: when,
+          elo: toNumberOrNull(r.elo),
+          glicko: toNumberOrNull(r.glicko_rating ?? r.g_rating)
+        });
       });
       map.forEach(entry => {
         entry.pts.sort((a, b) => a.t - b.t);
-        computeSeriesStats(entry);
+        entry.metricStats = {};
+        Object.keys(RATING_LABELS).forEach(metric => {
+          entry.metricStats[metric] = computeSeriesStats(entry, metric);
+        });
       });
+      map.forEach(entry => applyMetricStats(entry, getActiveMetric()));
       return Array.from(map.values());
     }
 
@@ -408,6 +506,7 @@
       const tooltipTime = tooltip.querySelector('.chart-tooltip__time');
       const tooltipSeries = tooltip.querySelector('.chart-tooltip__series');
       const legend = document.getElementById('legend');
+      const metric = getActiveMetric();
 
       state.currentSeries = Array.isArray(series) ? series.slice() : [];
 
@@ -443,7 +542,13 @@
       state.lastHoverKey = null;
 
       const allPts = [];
-      series.forEach(entry => entry.pts.forEach(p => allPts.push(p)));
+      series.forEach(entry => {
+        entry.pts.forEach(p => {
+          const value = getPointMetricValue(p, metric);
+          if (!Number.isFinite(value)) return;
+          allPts.push({ t: p.t, value });
+        });
+      });
       if (!allPts.length) {
         const msg = mk('text');
         msg.setAttribute('x', String(pad.left));
@@ -461,9 +566,9 @@
       const uniqueTimes = Array.from(new Set(times)).sort((a, b) => a - b);
       const indexByTime = new Map();
       uniqueTimes.forEach((ms, idx) => indexByTime.set(ms, idx));
-      const elos = allPts.map(p => p.elo);
-      const rawMin = Math.min(...elos);
-      const rawMax = Math.max(...elos);
+      const ratings = allPts.map(p => p.value);
+      const rawMin = Math.min(...ratings);
+      const rawMax = Math.max(...ratings);
       const yPad = Math.max(10, (rawMax - rawMin) * 0.08);
       let yMin = rawMin - yPad;
       let yMax = rawMax + yPad;
@@ -578,25 +683,34 @@
         if (!entry.pts.length) return;
         const stroke = getSeriesColor(entry, seriesIndex);
 
-        const group = mk('g');
-        svg.appendChild(group);
-
-        const pts = entry.pts.map((pt, idx) => {
-          const prev = idx > 0 ? entry.pts[idx - 1] : null;
-          const delta = prev ? pt.elo - prev.elo : null;
+        const pts = [];
+        let previousValue = null;
+        entry.pts.forEach(pt => {
+          const value = getPointMetricValue(pt, metric);
+          if (!Number.isFinite(value)) return;
           const timeMs = pt.t.getTime();
-          return {
+          const xVal = x(timeMs);
+          const yVal = y(value);
+          const delta = Number.isFinite(previousValue) ? value - previousValue : null;
+          const plotPoint = {
             time: pt.t,
             timeMs,
-            elo: pt.elo,
+            elo: value,
             delta,
-            x: x(timeMs),
-            y: y(pt.elo),
+            x: xVal,
+            y: yVal,
             meta: entry.meta,
             color: stroke,
             runIndex: (indexByTime.get(timeMs) ?? 0) + 1
           };
+          pts.push(plotPoint);
+          previousValue = value;
         });
+
+        if (!pts.length) return;
+
+        const group = mk('g');
+        svg.appendChild(group);
 
         const pathData = pts.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ');
 
@@ -680,7 +794,8 @@
 
         const valueEl = document.createElement('span');
         valueEl.className = 'elo-bars__value';
-        valueEl.textContent = formatEloValue(stats.latestElo);
+        valueEl.textContent = formatRatingValue(stats.latestElo);
+        valueEl.title = getMetricLabel();
         metaWrap.appendChild(valueEl);
 
         const deltaValue = formatDeltaValue(stats.deltaFromFirst);
@@ -771,6 +886,7 @@
           const eloEl = document.createElement('span');
           eloEl.className = 'chart-tooltip__elo';
           eloEl.textContent = Math.round(pt.elo).toString();
+          eloEl.title = getMetricLabel();
           value.appendChild(eloEl);
 
           const deltaEl = document.createElement('span');
@@ -1027,6 +1143,20 @@
       select.dataset.bound = 'true';
     }
 
+    function bindMetricControl() {
+      const host = document.getElementById('ratingMetricControl');
+      if (!host || host.dataset.bound === 'true') return;
+      host.addEventListener('click', evt => {
+        const btn = evt.target.closest('[data-metric]');
+        if (!btn) return;
+        const metric = btn.getAttribute('data-metric');
+        if (!metric || metric === getActiveMetric()) return;
+        setActiveMetric(metric);
+        applyFilters();
+      });
+      host.dataset.bound = 'true';
+    }
+
     function updateSortControl() {
       const select = document.getElementById('sortMode');
       if (!select) return;
@@ -1067,7 +1197,8 @@
         model: r.model,
         company: r.company,
         when: r.when,
-        elo: r.elo
+        elo: r.elo,
+        glicko_rating: r.glicko_rating ?? r.g_rating
       }));
       const grouped = groupByBot(rows);
       state.fullSeries = grouped;
@@ -1079,7 +1210,9 @@
       renderCompanyFilters();
       bindFilterEvents();
       bindSortControl();
+      bindMetricControl();
       updateSortControl();
+      setActiveMetric(state.ratingMetric || DEFAULT_RATING_METRIC);
       if (!state.resizeBound) {
         state.resizeBound = handleResize;
         window.addEventListener('resize', state.resizeBound);
@@ -1199,12 +1332,17 @@
         <div class="elo-card__intro">
           <div class="elo-card__brand">
             <div class="elo-card__heading">
-              <h1>Elo Over Time</h1>
-              <div class="muted">End-of-match Elo per bot across all duels.</div>
+              <h1>Ratings Over Time</h1>
+              <div class="muted">End-of-match rating per bot across all duels.</div>
             </div>
           </div>
         </div>
         <div class="elo-card__filters">
+          <div class="sort-control" id="ratingMetricControl" role="group" aria-label="Rating metric">
+            <span class="sort-control__label">Rating</span>
+            <button type="button" class="active" data-metric="elo" aria-pressed="true">Elo</button>
+            <button type="button" data-metric="glicko" aria-pressed="false">Glicko-2</button>
+          </div>
           <div class="filter-group" aria-label="Company filters">
             <span class="filter-group__label">
               <svg viewBox="0 0 24 24" role="presentation">
@@ -1221,10 +1359,10 @@
           </div>
           <label class="sort-control" for="sortMode">
             <span class="sort-control__label">Sort by</span>
-            <select id="sortMode" name="sortMode" aria-label="Sort Elo series">
+            <select id="sortMode" name="sortMode" aria-label="Sort rating series">
               <option value="company">Company (A → Z)</option>
-              <option value="latest-desc">Latest Elo (high → low)</option>
-              <option value="latest-asc">Latest Elo (low → high)</option>
+              <option value="latest-desc">Latest rating (high → low)</option>
+              <option value="latest-asc">Latest rating (low → high)</option>
               <option value="recent">Most recent activity</option>
               <option value="delta-desc">Biggest climb (Δ overall)</option>
               <option value="delta-asc">Biggest drop (Δ overall)</option>
