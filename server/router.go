@@ -682,7 +682,7 @@ func Router(db *store.DB) http.Handler {
 				rows, err := db.Query(ctx, `
                     SELECT id, pair_index, hand_id, street, actor_label, action, amount,
                            pot, cur_bet, to_call, min_raise_to, max_raise_to,
-                           sb_stack, bb_stack, sb_committed, bb_committed,
+                           sb_stack, bb_stack, sb_committed, bb_committed, sb_bank, bb_bank,
                            board, pot_odds, required_equity, created_at
                       FROM action_logs
                      WHERE match_id = $1 AND id > $2
@@ -697,8 +697,8 @@ func Router(db *store.DB) http.Handler {
 					var r Row
 					if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 						&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
-						&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
-						&r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
+                                                &r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted, &r.SBBank, &r.BBBank,
+                                                &r.Board, &r.PotOdds, &r.RequiredEq, &r.CreatedAt); err != nil {
 						rows.Close()
 						http.Error(w, err.Error(), 500)
 						return
