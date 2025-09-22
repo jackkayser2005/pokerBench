@@ -288,27 +288,39 @@
 
           <div class="stage-insights" id="insightGrid">
             <div class="insight" id="insightPotOdds">
-              <span class="insight__label">Pot odds</span>
+              <span class="insight__label">Pot odds
+                <button class="inline-tip" type="button" data-tip="Share of the final pot you must invest to call. Compare it against your equity before calling." aria-label="Tip: pot odds definition">i</button>
+              </span>
               <span class="insight__value" id="potOdds">—</span>
             </div>
             <div class="insight" id="insightRequiredEq">
-              <span class="insight__label">Required equity</span>
+              <span class="insight__label">Required equity
+                <button class="inline-tip" type="button" data-tip="Minimum equity needed to break even on a call with the current pot odds." aria-label="Tip: required equity definition">i</button>
+              </span>
               <span class="insight__value" id="requiredEq">—</span>
             </div>
             <div class="insight" id="insightToCall">
-              <span class="insight__label">To call</span>
+              <span class="insight__label">To call
+                <button class="inline-tip" type="button" data-tip="Chip amount you must invest to match the current bet." aria-label="Tip: to call definition">i</button>
+              </span>
               <span class="insight__value" id="toCall">—</span>
             </div>
             <div class="insight" id="insightMinRaise">
-              <span class="insight__label">Min raise</span>
+              <span class="insight__label">Min raise
+                <button class="inline-tip" type="button" data-tip="Smallest legal raise-to amount available for this action." aria-label="Tip: minimum raise definition">i</button>
+              </span>
               <span class="insight__value" id="minRaise">—</span>
             </div>
             <div class="insight" id="insightRaiseWindow">
-              <span class="insight__label">Raise window</span>
+              <span class="insight__label">Raise window
+                <button class="inline-tip" type="button" data-tip="Legal range for raise-to amounts on this street, combining the minimum and maximum if available." aria-label="Tip: raise window definition">i</button>
+              </span>
               <span class="insight__value" id="raiseWindow">—</span>
             </div>
             <div class="insight insight--solver" id="insightSolver">
-              <span class="insight__label">Solver guidance</span>
+              <span class="insight__label">Solver guidance
+                <button class="inline-tip" type="button" data-tip="Shows solver recommendations, best action, and confidence when evaluation data is available." aria-label="Tip: solver guidance definition">i</button>
+              </span>
               <span class="insight__value" id="solverText">—</span>
             </div>
           </div>
