@@ -396,18 +396,36 @@ const ReplayPage = (() => {
     return { equity, share, delta };
   }
 
-  function updateDeltaElement(el, value, { zeroLabel = '±0', precision } = {}) {
+  function updateDeltaElement(el, value, { zeroLabel = '±0', precision, label } = {}) {
     if (!el) return;
     const num = Number(value);
     if (!Number.isFinite(num) || Math.abs(num) < 1e-6) {
       el.textContent = zeroLabel;
       el.classList.remove('positive', 'negative');
+      if (label) {
+        const desc = `${label}: no change`;
+        el.setAttribute('title', desc);
+        el.setAttribute('aria-label', desc);
+      } else {
+        el.removeAttribute('title');
+        el.removeAttribute('aria-label');
+      }
       return;
     }
     const positive = num >= 0;
     el.textContent = fmtSigned(num, zeroLabel, precision);
     el.classList.toggle('positive', positive);
     el.classList.toggle('negative', !positive);
+    if (label) {
+      const amountText = fmtChips(Math.abs(num));
+      const direction = positive ? 'up' : 'down';
+      const desc = `${label}: ${direction} ${amountText}`;
+      el.setAttribute('title', desc);
+      el.setAttribute('aria-label', desc);
+    } else {
+      el.removeAttribute('title');
+      el.removeAttribute('aria-label');
+    }
   }
 
   function updateStatus(mode) {
@@ -504,6 +522,7 @@ const ReplayPage = (() => {
     const evDeltaEl = isSB ? els.sbEvDelta : els.bbEvDelta;
     const evMeter = isSB ? els.sbEvMeter : els.bbEvMeter;
     const evFill = isSB ? els.sbEvFill : els.bbEvFill;
+    const seatLabel = isSB ? 'Small blind' : 'Big blind';
 
     const cards = isSB ? row?.sb_hole : row?.bb_hole;
     const key = (Array.isArray(cards) ? cards : []).join(',');
@@ -547,12 +566,20 @@ const ReplayPage = (() => {
 
     const eq = computeEquity(row, seatKey);
     if (evAmountEl) {
-      evAmountEl.textContent = fmtChips(eq.equity);
+      const equityText = fmtChips(eq.equity);
+      evAmountEl.textContent = equityText;
+      const amountLabel = `${seatLabel} chip equity ${equityText}`;
+      evAmountEl.setAttribute('title', amountLabel);
+      evAmountEl.setAttribute('aria-label', amountLabel);
     }
     if (evShareEl) {
-      evShareEl.textContent = `${(eq.share * 100).toFixed(1)}%`;
+      const sharePct = `${(eq.share * 100).toFixed(1)}%`;
+      evShareEl.textContent = sharePct;
+      const shareLabel = `${seatLabel} equity share ${sharePct}`;
+      evShareEl.setAttribute('title', shareLabel);
+      evShareEl.setAttribute('aria-label', shareLabel);
     }
-    updateDeltaElement(evDeltaEl, eq.delta, { precision: 1 });
+    updateDeltaElement(evDeltaEl, eq.delta, { precision: 1, label: `${seatLabel} equity change` });
     if (evMeter) {
       evMeter.style.setProperty('--ev-pct', `${Math.max(0, Math.min(100, eq.share * 100))}%`);
     }
@@ -570,39 +597,91 @@ const ReplayPage = (() => {
     const reqEqValue = computeRequiredEquityValue(row);
     const reqEq = formatPercent(reqEqValue);
     const toCall = Number(row?.to_call);
+    const pot = Number(row?.pot);
     const minRaise = Number(row?.min_raise_to);
     const maxRaise = Number(row?.max_raise_to);
+    const hasPotContext = Number.isFinite(toCall) && Number.isFinite(pot);
+    const totalAfterCall = hasPotContext ? pot + toCall : null;
 
     if (els.potOdds) {
-      els.potOdds.textContent = potOdds ?? '—';
-      els.potOdds.parentElement?.classList.toggle('is-empty', !potOdds);
+      const hasPotOdds = typeof potOdds === 'string';
+      els.potOdds.textContent = hasPotOdds ? potOdds : '—';
+      els.potOdds.parentElement?.classList.toggle('is-empty', !hasPotOdds);
+      if (hasPotOdds) {
+        const tooltip = hasPotContext && Number.isFinite(totalAfterCall)
+          ? `Call ${fmtChips(toCall)} to win ${fmtChips(totalAfterCall)} (${potOdds}).`
+          : `Pot odds ${potOdds}.`;
+        els.potOdds.setAttribute('title', tooltip);
+        els.potOdds.setAttribute('aria-label', tooltip);
+      } else {
+        els.potOdds.removeAttribute('title');
+        els.potOdds.removeAttribute('aria-label');
+      }
     }
     if (els.requiredEq) {
-      els.requiredEq.textContent = reqEq ?? '—';
-      els.requiredEq.parentElement?.classList.toggle('is-empty', !reqEq);
+      const hasReqEq = typeof reqEq === 'string';
+      els.requiredEq.textContent = hasReqEq ? reqEq : '—';
+      els.requiredEq.parentElement?.classList.toggle('is-empty', !hasReqEq);
+      if (hasReqEq) {
+        const tooltip = `Break-even call equity: ${reqEq}.`;
+        els.requiredEq.setAttribute('title', tooltip);
+        els.requiredEq.setAttribute('aria-label', tooltip);
+      } else {
+        els.requiredEq.removeAttribute('title');
+        els.requiredEq.removeAttribute('aria-label');
+      }
     }
     if (els.toCall) {
-      const text = Number.isFinite(toCall) ? fmtChips(toCall) : '—';
+      const hasToCall = Number.isFinite(toCall);
+      const text = hasToCall ? fmtChips(toCall) : '—';
       els.toCall.textContent = text;
-      els.toCall.parentElement?.classList.toggle('is-empty', !Number.isFinite(toCall));
+      els.toCall.parentElement?.classList.toggle('is-empty', !hasToCall);
+      if (hasToCall) {
+        const tooltip = `Call amount: ${text}`;
+        els.toCall.setAttribute('title', tooltip);
+        els.toCall.setAttribute('aria-label', tooltip);
+      } else {
+        els.toCall.removeAttribute('title');
+        els.toCall.removeAttribute('aria-label');
+      }
     }
     if (els.minRaise) {
-      const text = Number.isFinite(minRaise) ? fmtChips(minRaise) : '—';
+      const hasMinRaise = Number.isFinite(minRaise);
+      const text = hasMinRaise ? fmtChips(minRaise) : '—';
       els.minRaise.textContent = text;
-      els.minRaise.parentElement?.classList.toggle('is-empty', !Number.isFinite(minRaise));
+      els.minRaise.parentElement?.classList.toggle('is-empty', !hasMinRaise);
+      if (hasMinRaise) {
+        const tooltip = `Minimum raise-to: ${text}`;
+        els.minRaise.setAttribute('title', tooltip);
+        els.minRaise.setAttribute('aria-label', tooltip);
+      } else {
+        els.minRaise.removeAttribute('title');
+        els.minRaise.removeAttribute('aria-label');
+      }
     }
     if (els.raiseWindow) {
       let text = '—';
+      let hasValue = false;
       if (Number.isFinite(minRaise) && Number.isFinite(maxRaise)) {
         text = `${fmtChips(minRaise)} – ${fmtChips(maxRaise)}`;
+        hasValue = true;
       } else if (Number.isFinite(minRaise)) {
         text = `≥ ${fmtChips(minRaise)}`;
+        hasValue = true;
       } else if (Number.isFinite(maxRaise)) {
         text = `≤ ${fmtChips(maxRaise)}`;
+        hasValue = true;
       }
       els.raiseWindow.textContent = text;
-      const hasValue = Number.isFinite(minRaise) || Number.isFinite(maxRaise);
       els.raiseWindow.parentElement?.classList.toggle('is-empty', !hasValue);
+      if (hasValue) {
+        const tooltip = `Raise window: ${text}`;
+        els.raiseWindow.setAttribute('title', tooltip);
+        els.raiseWindow.setAttribute('aria-label', tooltip);
+      } else {
+        els.raiseWindow.removeAttribute('title');
+        els.raiseWindow.removeAttribute('aria-label');
+      }
     }
 
     if (els.solverText) {
@@ -632,6 +711,14 @@ const ReplayPage = (() => {
       const text = parts.join(' • ');
       els.solverText.textContent = text || '—';
       els.solverText.parentElement?.classList.toggle('is-empty', !text);
+      if (text) {
+        const tooltip = `Solver guidance: ${text}`;
+        els.solverText.setAttribute('title', tooltip);
+        els.solverText.setAttribute('aria-label', tooltip);
+      } else {
+        els.solverText.removeAttribute('title');
+        els.solverText.removeAttribute('aria-label');
+      }
     }
   }
 

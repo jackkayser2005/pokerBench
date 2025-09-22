@@ -4373,9 +4373,9 @@ body.tooltips-disabled .inline-tip {
 
 .seat-card {
   position: relative;
-  display: grid;
-  grid-template-rows: auto auto auto 1fr;
-  gap: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   padding: 24px;
   border-radius: var(--radius-lg);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -4524,7 +4524,6 @@ body.tooltips-disabled .inline-tip {
   border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.18);
   background: rgba(248, 250, 252, 0.82);
-  margin-top: auto;
 }
 
 :root[data-theme='dark'] .seat-card__ev,
@@ -4630,14 +4629,23 @@ body.tooltips-disabled .inline-tip {
 .board-display__cards {
   position: relative;
   z-index: 1;
-  gap: 18px;
-  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, var(--card-w)));
   justify-content: center;
-  flex-wrap: wrap;
-  row-gap: 28px;
-  max-width: calc((var(--card-w) * 3) + (18px * 2));
-  margin: 0 auto;
+  justify-items: center;
   align-content: center;
+  column-gap: 18px;
+  row-gap: 24px;
+  width: min(100%, calc((var(--card-w) * 3) + (18px * 2)));
+  margin: 0 auto;
+}
+
+.board-display__cards > *:nth-child(4) {
+  grid-column: 2;
+}
+
+.board-display__cards > *:nth-child(5) {
+  grid-column: 3;
 }
 
 .board-display__label {
@@ -4690,9 +4698,9 @@ body.tooltips-disabled .inline-tip {
   }
 
   .board-display__cards {
-    gap: 14px;
+    column-gap: 14px;
     row-gap: 20px;
-    max-width: calc((var(--card-w) * 3) + (14px * 2));
+    width: min(100%, calc((var(--card-w) * 3) + (14px * 2)));
   }
 }
 
@@ -4814,11 +4822,18 @@ body.tooltips-disabled .inline-tip {
 }
 
 .insight__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: var(--fs-0);
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--muted);
   font-weight: 600;
+}
+
+.insight__label .inline-tip {
+  margin-left: 0;
 }
 
 .insight__value {
