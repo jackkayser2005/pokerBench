@@ -13,17 +13,76 @@
     const q = new URLSearchParams(location.search);
     const matchId = q.get('match_id');
     let since = 0;
+    let initialSBBank = null;
+    let initialBBBank = null;
+    let sbBankEl;
+    let sbDeltaEl;
+    let bbBankEl;
+    let bbDeltaEl;
+    const deltaClasses = ['live-scoreboard__delta--up', 'live-scoreboard__delta--down'];
+    const amountFormatter = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    });
+
+    function formatAmount(value){
+      return amountFormatter.format(value);
+    }
+
+    function setScoreRow(bankEl, deltaEl, current, initial){
+      if (!bankEl || !deltaEl){ return; }
+      deltaEl.classList.remove(...deltaClasses);
+      if (typeof current !== 'number' || typeof initial !== 'number'){
+        bankEl.textContent = '—';
+        deltaEl.textContent = '—';
+        return;
+      }
+      bankEl.textContent = formatAmount(current);
+      const delta = current - initial;
+      if (Math.abs(delta) < 1e-9){
+        deltaEl.textContent = '0';
+        return;
+      }
+      if (delta > 0){
+        deltaEl.textContent = `+${formatAmount(delta)}`;
+        deltaEl.classList.add('live-scoreboard__delta--up');
+        return;
+      }
+      deltaEl.textContent = `-${formatAmount(Math.abs(delta))}`;
+      deltaEl.classList.add('live-scoreboard__delta--down');
+    }
+
+    function updateScoreboard(r){
+      if (typeof r.sb_bank === 'number' && initialSBBank === null){
+        initialSBBank = r.sb_bank;
+      }
+      if (typeof r.bb_bank === 'number' && initialBBBank === null){
+        initialBBBank = r.bb_bank;
+      }
+      setScoreRow(sbBankEl, sbDeltaEl, r.sb_bank, initialSBBank);
+      setScoreRow(bbBankEl, bbDeltaEl, r.bb_bank, initialBBBank);
+    }
+
     function line(r){
       const amt = (r.amount==null? '' : ` ${r.action==='call'?'for':'to'} ${r.amount}`);
       const board = (r.board||[]).join(' ');
       return `[${r.id}] pair ${r.pair_index} ${r.hand_id} ${r.street} | ${r.actor_label} ${r.action}${amt} | pot=${r.pot} to=${r.cur_bet} tc=${r.to_call} min=${r.min_raise_to} max=${r.max_raise_to} | SB:${r.sb_stack}/${r.sb_committed} BB:${r.bb_stack}/${r.bb_committed} | ${board}`;
     }
     function start(){
+      sbBankEl = $('#sbBank');
+      sbDeltaEl = $('#sbDelta');
+      bbBankEl = $('#bbBank');
+      bbDeltaEl = $('#bbDelta');
+      initialSBBank = null;
+      initialBBBank = null;
+      setScoreRow(sbBankEl, sbDeltaEl);
+      setScoreRow(bbBankEl, bbDeltaEl);
       if (!matchId){ $('.log').textContent = 'Provide ?match_id=123'; return; }
       const es = new EventSource(`/api/live?match_id=${encodeURIComponent(matchId)}&since=${since}`);
       es.addEventListener('action', e => {
         const r = JSON.parse(e.data);
         since = r.id;
+        updateScoreboard(r);
         const el = $('.log');
         el.textContent += line(r) + '\n';
         el.scrollTop = el.scrollHeight;
@@ -147,6 +206,22 @@
       </div>
 
       <div class="card">
+        <div class="live-scoreboard" aria-live="polite">
+          <div class="live-scoreboard__row">
+            <span class="live-scoreboard__label">Small Blind</span>
+            <span class="live-scoreboard__values">
+              <span class="mono live-scoreboard__bank" id="sbBank">—</span>
+              <span class="mono live-scoreboard__delta" id="sbDelta">—</span>
+            </span>
+          </div>
+          <div class="live-scoreboard__row">
+            <span class="live-scoreboard__label">Big Blind</span>
+            <span class="live-scoreboard__values">
+              <span class="mono live-scoreboard__bank" id="bbBank">—</span>
+              <span class="mono live-scoreboard__delta" id="bbDelta">—</span>
+            </span>
+          </div>
+        </div>
         <div class="log"></div>
       </div>
     </div>
