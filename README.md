@@ -81,10 +81,9 @@ printf 'or-key-...' > secrets/openrouter_api_key.txt
 docker compose up --build
 ```
 
-`docker compose` binds `./secrets` into every container. Supplying either
-`OPENROUTER_API_KEY`/`secrets/openrouter_api_key.txt` or
-`OPENAI_API_KEY`/`secrets/openai_api_key.txt` is enough for both the server and
-the duel runner.
+`docker compose` binds `./secrets` into every container. Supplying
+`OPENROUTER_API_KEY` or `secrets/openrouter_api_key.txt` is enough for both the
+server and the duel runner.
 
 The server becomes available at [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/leaderboard.html).
 `docker compose` also spins up:
@@ -96,15 +95,13 @@ The server becomes available at [http://localhost:8080/web/leaderboard.html](htt
 
 ### Option B — Local Go
 
-Requirements: Go 1.21+, PostgreSQL 15+, and either an OpenRouter or OpenAI API
-key.
+Requirements: Go 1.21+, PostgreSQL 15+, and an OpenRouter API key.
 
 ```bash
 # 1) install dependencies
 go mod download
 
 # 2) set environment (either export or place in a local .env)
-# (OPENROUTER_API_KEY shown; OPENAI_API_KEY also works.)
 export OPENROUTER_API_KEY=or-key-...
 export DATABASE_URL="postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
 export OPENROUTER_MODEL_A="meta-llama/llama-3.1-70b-instruct"
@@ -319,7 +316,7 @@ Use the leaderboard’s **Acc** column as a regression check whenever you tweak 
   git config core.autocrlf false
   git add --renormalize .
   ```
-- **Secret file missing:** Ensure `./secrets/openai_api_key.txt` or `./secrets/openrouter_api_key.txt` exists (one line with your key) or export the env var directly.
+- **Secret file missing:** Ensure `./secrets/openrouter_api_key.txt` exists (one line with your key) or export the env var directly.
 
 ---
 

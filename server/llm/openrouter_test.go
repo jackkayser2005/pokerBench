@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveAPIConfigDefaults(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "test-key")
@@ -84,30 +87,24 @@ func TestResolveAPIConfigSiteURLLocalhost(t *testing.T) {
 	}
 }
 
-func TestResolveAPIConfigOpenAI(t *testing.T) {
+func TestResolveAPIConfigMissingKey(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "")
-	t.Setenv("OPENROUTER_MODEL", "")
-	t.Setenv("OPENAI_API_KEY", "openai-test-key")
-	t.Setenv("OPENAI_API_BASE", "https://api.example.com/v42")
-	t.Setenv("OPENAI_MODEL", "gpt-4o-mini")
+	t.Setenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-70b-instruct")
 
-	cfg, err := resolveAPIConfig("")
-	if err != nil {
-		t.Fatalf("resolveAPIConfig returned error: %v", err)
+	if _, err := resolveAPIConfig(""); err == nil {
+		t.Fatalf("expected error when OPENROUTER_API_KEY is missing")
+	} else if !strings.Contains(err.Error(), "OPENROUTER_API_KEY") {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Model != "gpt-4o-mini" {
-		t.Fatalf("unexpected model: %q", cfg.Model)
-	}
-	if cfg.BaseURL != "https://api.example.com/v42" {
-		t.Fatalf("unexpected OpenAI base URL: %q", cfg.BaseURL)
-	}
-	if cfg.HeaderName != "Authorization" {
-		t.Fatalf("unexpected header name: %q", cfg.HeaderName)
-	}
-	if cfg.HeaderPrefix != "Bearer " {
-		t.Fatalf("unexpected header prefix: %q", cfg.HeaderPrefix)
-	}
-	if len(cfg.ExtraHeaders) != 0 {
-		t.Fatalf("OpenAI config should not include extra headers: %+v", cfg.ExtraHeaders)
+}
+
+func TestResolveAPIConfigMissingModel(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("OPENROUTER_MODEL", "")
+
+	if _, err := resolveAPIConfig(""); err == nil {
+		t.Fatalf("expected error when OPENROUTER_MODEL is missing")
+	} else if !strings.Contains(err.Error(), "OPENROUTER_MODEL") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
