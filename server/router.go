@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -570,8 +571,6 @@ func Router(db *store.DB) http.Handler {
 			style = "FISH"
 		case raisePct >= 22 && callPct <= 35 && foldPct <= 50:
 			style = "TAG"
-		default:
-			style = "TAG"
 		}
 
 		writeJSON(w, map[string]any{
@@ -647,14 +646,27 @@ func Router(db *store.DB) http.Handler {
 		}
 
 		enc := json.NewEncoder(w)
-		send := func(rows []Row) {
+		send := func(rows []Row) bool {
 			for _, r := range rows {
-				w.Write([]byte("event: action\n"))
-				w.Write([]byte("data: "))
-				_ = enc.Encode(r)
-				w.Write([]byte("\n"))
+				if _, err := w.Write([]byte("event: action\n")); err != nil {
+					log.Printf("sse write event: %v", err)
+					return false
+				}
+				if _, err := w.Write([]byte("data: ")); err != nil {
+					log.Printf("sse write data prefix: %v", err)
+					return false
+				}
+				if err := enc.Encode(r); err != nil {
+					log.Printf("sse encode row: %v", err)
+					return false
+				}
+				if _, err := w.Write([]byte("\n")); err != nil {
+					log.Printf("sse write newline: %v", err)
+					return false
+				}
 			}
 			flusher.Flush()
+			return true
 		}
 
 		// tail loop
@@ -694,7 +706,9 @@ func Router(db *store.DB) http.Handler {
 				}
 				rows.Close()
 				if len(batch) > 0 {
-					send(batch)
+					if !send(batch) {
+						return
+					}
 				}
 			}
 		}

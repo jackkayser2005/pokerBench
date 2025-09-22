@@ -7,12 +7,23 @@ import (
 
 func TestSetHeaderPreserveCase(t *testing.T) {
 	hdr := http.Header{}
-	setHeaderPreserveCase(hdr, "HTTP-Referer", "https://example.com/app")
-	if vals := hdr["HTTP-Referer"]; len(vals) != 1 || vals[0] != "https://example.com/app" {
-		t.Fatalf("expected HTTP-Referer slice to be preserved, got %+v", vals)
+	const rawKey = "X-HTTP-Referer"
+	setHeaderPreserveCase(hdr, rawKey, "https://example.com/app")
+	canonical := http.CanonicalHeaderKey(rawKey)
+	found := false
+	for k, vals := range hdr {
+		if k == rawKey {
+			found = true
+			if len(vals) != 1 || vals[0] != "https://example.com/app" {
+				t.Fatalf("expected %s slice to be preserved, got %+v", rawKey, vals)
+			}
+		}
+		if canonical != rawKey && k == canonical {
+			t.Fatalf("unexpected canonical header variant present: %+v", hdr)
+		}
 	}
-	if _, exists := hdr["Http-Referer"]; exists {
-		t.Fatalf("unexpected canonical header variant present: %+v", hdr)
+	if !found {
+		t.Fatalf("expected to find %s key in header map", rawKey)
 	}
 
 	setHeaderPreserveCase(hdr, "Referer", "https://example.com/app")
