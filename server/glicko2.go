@@ -38,7 +38,7 @@ func toMuPhi(r, rd float64) (mu, phi float64)   { return (r - 1500.0) / g2Scale,
 func fromMuPhi(mu, phi float64) (r, rd float64) { return mu*g2Scale + 1500.0, phi * g2Scale }
 
 // g(phi_j) and E(mu, mu_j, phi_j)
-func g(phi float64) float64 { return 1.0 / math.Sqrt(1.0+3.0*q*q*phi*phi/pi2) }
+func g(phi float64) float64 { return 1.0 / math.Sqrt(1.0+3.0*phi*phi/pi2) }
 func gExp(mu, muj, phij float64) float64 {
 	return 1.0 / (1.0 + math.Exp(-g(phij)*(mu-muj)))
 }
@@ -82,14 +82,14 @@ func (a *Glicko2) UpdateBatch(results []OpponentResult, tau float64) {
 		sumG2E += (gB * gB) * Eab * (1.0 - Eab)
 		sumGSE += gB * (r.S - Eab)
 	}
-	v := 1.0 / (q * q * sumG2E)
-	delta := v * q * sumGSE
+	v := 1.0 / sumG2E
+	delta := v * sumGSE
 
 	// If delta is effectively zero, skip volatility root-finding but still shrink RD.
 	if math.Abs(delta) < 1e-12 {
 		phiStar := math.Sqrt(phiA*phiA + a.Volatility*a.Volatility)
 		phiNew := 1.0 / math.Sqrt(1.0/(phiStar*phiStar)+1.0/v)
-		muNew := muA + (phiNew*phiNew)*q*sumGSE
+		muNew := muA + (phiNew*phiNew)*sumGSE
 		a.Rating, a.RD = fromMuPhi(muNew, phiNew)
 		a.Games++
 		return
@@ -136,7 +136,7 @@ func (a *Glicko2) UpdateBatch(results []OpponentResult, tau float64) {
 	newVol := math.Exp(B / 2.0)
 	phiStar := math.Sqrt(phiA*phiA + newVol*newVol)
 	phiNew := 1.0 / math.Sqrt(1.0/(phiStar*phiStar)+1.0/v)
-	muNew := muA + (phiNew*phiNew)*q*sumGSE
+	muNew := muA + (phiNew*phiNew)*sumGSE
 
 	a.Rating, a.RD = fromMuPhi(muNew, phiNew)
 	a.Volatility = newVol
