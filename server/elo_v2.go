@@ -4,14 +4,17 @@ import "math"
 
 // Elo holds ratings for model A and B (per *mirrored pair*).
 type Elo struct {
-	A, B  float64 // ratings
-	K     float64 // base K
-	Games int     // mirrored pairs processed (pair-mode only)
-	AccA  float64 // historical judge accuracy [0,1]
-	AccB  float64 // historical judge accuracy [0,1]
+	A, B          float64 // ratings
+	K             float64 // base K
+	WeightMirrors bool    // scale mirrored pairs by pot?
+	Games         int     // mirrored pairs processed (pair-mode only)
+	AccA          float64 // historical judge accuracy [0,1]
+	AccB          float64 // historical judge accuracy [0,1]
 }
 
-func NewElo(start, k float64) Elo { return Elo{A: start, B: start, K: k, AccA: 0.5, AccB: 0.5} }
+func NewElo(start, k float64, weightMirrors bool) Elo {
+	return Elo{A: start, B: start, K: k, WeightMirrors: weightMirrors, AccA: 0.5, AccB: 0.5}
+}
 
 func (e Elo) expect() (ea, eb float64) {
 	ea = 1.0 / (1.0 + math.Pow(10, (e.B-e.A)/400.0))
@@ -75,7 +78,10 @@ func (e *Elo) UpdateFromMirror(
 
 	avgAcc := (e.AccA + e.AccB) * 0.5
 	volAdj := clamp(0.85+0.3*avgAcc, 0.75, 1.15)
-	kEff := e.K * mirrorWeight(potSum, bb) * volAdj * decay(e.Games)
+	kEff := e.K * volAdj * decay(e.Games)
+	if e.WeightMirrors {
+		kEff *= mirrorWeight(potSum, bb)
+	}
 
 	dA = kEff * (sA - ea)
 	dB = kEff * (sB - eb)

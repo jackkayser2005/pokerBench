@@ -1840,7 +1840,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	}
 	eloPerHand := false
 	eloWeightPot := asBool(os.Getenv("ELO_WEIGHT_BY_POT"))
-	elo := NewElo(eloStart, eloK)
+	elo := NewElo(eloStart, eloK, eloWeightPot)
 
 	gA := NewGlicko2()
 	gB := NewGlicko2()
