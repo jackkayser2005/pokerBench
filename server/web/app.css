@@ -3772,6 +3772,53 @@ body.tooltips-disabled .inline-tip {
   flex-wrap: wrap;
 }
 
+.live-scoreboard {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-scoreboard__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.live-scoreboard__label {
+  font-size: var(--fs-1);
+  color: var(--muted);
+}
+
+.live-scoreboard__values {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-scoreboard__bank {
+  font-weight: 600;
+}
+
+.live-scoreboard__delta {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--muted);
+  transition: color var(--transition);
+}
+
+.live-scoreboard__delta--up {
+  color: var(--ok);
+}
+
+.live-scoreboard__delta--down {
+  color: var(--bad);
+}
+
 .log {
   font-size: var(--fs-1);
   color: var(--muted);
