@@ -8,6 +8,9 @@ func TestResolveAPIConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
 	}
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("unexpected provider: %q", cfg.Provider)
+	}
 	if cfg.BaseURL != "https://openrouter.ai/api/v1" {
 		t.Fatalf("unexpected default base URL: %q", cfg.BaseURL)
 	}
@@ -30,6 +33,9 @@ func TestResolveAPIConfigOverrides(t *testing.T) {
 	cfg, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct")
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
+	}
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("unexpected provider: %q", cfg.Provider)
 	}
 	if cfg.BaseURL != "https://router.example.com/v1" {
 		t.Fatalf("unexpected base URL: %q", cfg.BaseURL)
@@ -60,6 +66,9 @@ func TestResolveAPIConfigSiteURLNormalization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
 	}
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("unexpected provider: %q", cfg.Provider)
+	}
 	if got := cfg.ExtraHeaders["HTTP-Referer"]; got != "https://app.example.com/bench" {
 		t.Fatalf("unexpected HTTP-Referer: %q", got)
 	}
@@ -74,6 +83,9 @@ func TestResolveAPIConfigSiteURLLocalhost(t *testing.T) {
 	cfg, err := resolveAPIConfig("meta-llama/llama-3.1-70b-instruct")
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
+	}
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("unexpected provider: %q", cfg.Provider)
 	}
 	want := "http://localhost:3000/ui"
 	if got := cfg.ExtraHeaders["HTTP-Referer"]; got != want {
@@ -94,6 +106,9 @@ func TestResolveAPIConfigOpenAI(t *testing.T) {
 	cfg, err := resolveAPIConfig("")
 	if err != nil {
 		t.Fatalf("resolveAPIConfig returned error: %v", err)
+	}
+	if cfg.Provider != "openai" {
+		t.Fatalf("unexpected provider: %q", cfg.Provider)
 	}
 	if cfg.Model != "gpt-4o-mini" {
 		t.Fatalf("unexpected model: %q", cfg.Model)

@@ -126,7 +126,14 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 			continue
 		}
 
-		return "", fmt.Errorf("openrouter http %d: %s", resp.StatusCode, truncate(string(body), 800))
+		provider := strings.TrimSpace(cfg.Provider)
+		if provider == "" {
+			provider = strings.TrimSpace(cfg.BaseURL)
+			if provider == "" {
+				provider = "llm provider"
+			}
+		}
+		return "", fmt.Errorf("%s http %d: %s", provider, resp.StatusCode, truncate(string(body), 800))
 	}
 
 	return "", errors.New("exhausted chat completion retries")

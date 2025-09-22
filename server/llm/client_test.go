@@ -1,7 +1,10 @@
 package llm
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +76,45 @@ func TestAdjustOpenRouterPayloadForRetryReasoning(t *testing.T) {
 	}
 	if adjustOpenRouterPayloadForRetry(payload, body, removed) {
 		t.Fatalf("second adjustment attempt should not trigger once removed")
+	}
+}
+
+func TestPingTextWithOptsErrorIncludesProviderOpenRouter(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("OPENAI_API_KEY", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("OPENROUTER_API_BASE", srv.URL)
+
+	_, err := PingTextWithOpts(context.Background(), "meta-llama/llama-3.1-70b-instruct", "", "", PingOptions{})
+	if err == nil {
+		t.Fatalf("expected error from ping")
+	}
+	if !strings.Contains(err.Error(), "openrouter http 500") {
+		t.Fatalf("expected error to mention openrouter provider, got %q", err)
+	}
+}
+
+func TestPingTextWithOptsErrorIncludesProviderOpenAI(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENROUTER_MODEL", "")
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("OPENAI_MODEL", "gpt-4o-mini")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("OPENAI_API_BASE", srv.URL)
+
+	_, err := PingTextWithOpts(context.Background(), "", "", "", PingOptions{})
+	if err == nil {
+		t.Fatalf("expected error from ping")
+	}
+	if !strings.Contains(err.Error(), "openai http 500") {
+		t.Fatalf("expected error to mention openai provider, got %q", err)
 	}
 }

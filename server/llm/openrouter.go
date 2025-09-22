@@ -10,6 +10,7 @@ import (
 )
 
 type apiConfig struct {
+	Provider     string
 	APIKey       string
 	Model        string
 	BaseURL      string
@@ -42,6 +43,7 @@ func resolveAPIConfig(model string) (apiConfig, error) {
 
 func resolveOpenRouterConfig(model, key string) (apiConfig, error) {
 	cfg := apiConfig{
+		Provider:     "openrouter",
 		APIKey:       key,
 		Model:        model,
 		HeaderName:   "Authorization",
@@ -95,6 +97,7 @@ func resolveOpenRouterConfig(model, key string) (apiConfig, error) {
 
 func resolveOpenAIConfig(model, key string) (apiConfig, error) {
 	cfg := apiConfig{
+		Provider:     "openai",
 		APIKey:       key,
 		Model:        model,
 		HeaderName:   "Authorization",
