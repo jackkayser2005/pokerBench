@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -138,30 +139,45 @@ func (db *DB) AllJudgeAccuracy(ctx context.Context) (map[int64]JudgeAccuracy, er
 
 func (db *DB) SyncJudgeAccuracy(ctx context.Context, botIDs ...int64) error {
 	ids := uniquePositiveInt64(botIDs)
-	if len(ids) == 0 {
-		return nil
-	}
 	res := make(map[int64]JudgeAccuracy, len(ids))
-	for _, id := range ids {
-		m, err := db.judgeAccuracy(ctx, " AND p.bot_id = $1", id)
-		if err != nil {
-			return err
-		}
-		for k, v := range m {
-			res[k] = v
-		}
+	var (
+		live map[int64]JudgeAccuracy
+		err  error
+	)
+	if len(ids) > 0 {
+		arr := pgtype.Array[int64]{Elements: ids, Valid: true}
+		live, err = db.judgeAccuracy(ctx, " AND p.bot_id = ANY($1)", &arr)
+	} else {
+		live, err = db.judgeAccuracy(ctx, "")
 	}
+	if err != nil {
+		return err
+	}
+	for k, v := range live {
+		res[k] = v
+	}
+
 	if err := db.fillJudgeAccuracyFromRatings(ctx, res, ids); err != nil {
 		return err
 	}
-	for _, id := range ids {
+	targets := ids
+	if len(targets) == 0 {
+		targets = make([]int64, 0, len(res))
+		for id := range res {
+			targets = append(targets, id)
+		}
+		sort.Slice(targets, func(i, j int) bool { return targets[i] < targets[j] })
+	}
+	for _, id := range targets {
 		acc, ok := res[id]
 		if !ok {
-			// Nothing new for this bot — keep existing values.
+			continue
+		}
+		if acc.Total < 0 {
 			continue
 		}
 		if acc.Total <= 0 {
-			if good, total, err := db.GetJudgeAccuracy(ctx, id); err == nil && total > 0 {
+			if good, total, err := db.GetJudgeAccuracy(ctx, id); err == nil && total >= 0 {
 				acc = JudgeAccuracy{Good: good, Total: total}
 			}
 		}
@@ -170,7 +186,7 @@ func (db *DB) SyncJudgeAccuracy(ctx context.Context, botIDs ...int64) error {
                        SET judge_good = $2,
                            judge_total = $3,
                            updated_at = now()
-                     WHERE bot_id = $1
+                 WHERE bot_id = $1
             `, id, acc.Good, acc.Total); err != nil {
 			return err
 		}
@@ -226,7 +242,7 @@ func (db *DB) fillJudgeAccuracyFromRatings(ctx context.Context, dest map[int64]J
 			if err := rows.Scan(&id, &good, &total); err != nil {
 				return err
 			}
-			if total <= 0 {
+			if total < 0 {
 				continue
 			}
 			if existing, ok := dest[id]; !ok || existing.Total <= 0 {
@@ -247,7 +263,7 @@ func (db *DB) fillJudgeAccuracyFromRatings(ctx context.Context, dest map[int64]J
 			}
 			return err
 		}
-		if total <= 0 {
+		if total < 0 {
 			continue
 		}
 		if existing, ok := dest[id]; !ok || existing.Total <= 0 {
