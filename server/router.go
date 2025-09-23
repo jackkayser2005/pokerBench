@@ -546,7 +546,7 @@ func Router(db *store.DB) http.Handler {
 			return
 		}
 		total := checkCT + callCT + raiseCT + foldCT
-		// Guard against division by zero
+		// Guard against division by zero for display percentages.
 		pct := func(x int) int {
 			if total == 0 {
 				return 0
@@ -558,19 +558,30 @@ func Router(db *store.DB) http.Handler {
 		raisePct := pct(raiseCT)
 		foldPct := pct(foldCT)
 
-		// Heuristic playstyle classification
+		// Derive a classification using only the non-check actions so
+		// ultra-passive agents don't get defaulted to TAG.
+		aggressivePool := callCT + raiseCT + foldCT
 		style := "TAG"
-		switch {
-		case total == 0:
+		if aggressivePool == 0 {
 			style = "N/A"
-		case foldPct >= 55 && raisePct < 20:
-			style = "NIT"
-		case raisePct >= 35 && foldPct <= 45:
-			style = "LAG"
-		case callPct >= 40 && raisePct <= 20:
-			style = "FISH"
-		case raisePct >= 22 && callPct <= 35 && foldPct <= 50:
-			style = "TAG"
+		} else {
+			toPct := func(x int) float64 {
+				return (float64(x) / float64(aggressivePool)) * 100.0
+			}
+			callShare := toPct(callCT)
+			raiseShare := toPct(raiseCT)
+			foldShare := toPct(foldCT)
+
+			switch {
+			case foldShare >= 55 && raiseShare < 18:
+				style = "NIT"
+			case raiseShare >= 38 && foldShare <= 40:
+				style = "LAG"
+			case callShare >= 45 && raiseShare <= 22:
+				style = "FISH"
+			default:
+				style = "TAG"
+			}
 		}
 
 		writeJSON(w, map[string]any{
