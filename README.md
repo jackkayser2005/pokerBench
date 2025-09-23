@@ -121,8 +121,8 @@ Open [http://localhost:8080/web/leaderboard.html](http://localhost:8080/web/lead
 The duel loop decides which mirrored deck to deal before every pair, letting you script deterministic blocks when benchmarking agents.
 
 1. **Pin the pseudo-random stream.** Export a numeric `DECK_SEED` (alongside `DUEL_SEEDS`) so successive runs replay the same mirrored sequence using the `seedStream` generator before each pair.
-2. **Load curated packs.** Set `SEEDPACK_PATH=/path/to/pack.json` (or `SEEDPACK` for the same path) to feed a JSON file such as `{"name":"stage-1","version":"1.0","seeds":[...numbers...]}`. The loader validates the file, computes its hash, and the duel loop iterates through each listed seed in order.
-3. **Chain stages.** Split a large evaluation into multiple pack files (`stage-1.json`, `stage-2.json`, …) or regenerate the pack between runs. Each block is consumed sequentially, so swapping in the next pack continues from the following seed block without rerunning prior pairs.
+2. **Load curated packs.** Set `SEEDPACK_PATH=/path/to/pack.json` (or `SEEDPACK` for the same path) to feed a JSON file such as `{"name":"stage-1","version":"1.0","seeds":[...numbers...]}`. The loader validates the file, computes its hash, and the duel loop iterates through each listed seed in order. Sample packs for the staged workflow described in this README live under [`seedpacks/`](seedpacks) (`S0-smoke.json`, `S1-200.json`, … `F4-500.json`).
+3. **Chain stages.** Split a large evaluation into multiple pack files (`stage-1.json`, `stage-2.json`, …) or regenerate the pack between runs. Each block is consumed sequentially, so swapping in the next pack continues from the following seed block without rerunning prior pairs. The CLI commands in [Runs & staging](#runs--staging) assume those sample file names.
 
 ### Runs & staging
 
@@ -186,6 +186,30 @@ OPENROUTER_MODELS='meta-llama/llama-3.1-70b-instruct,mistralai/mistral-nemo' \
 DUEL_SEEDS=5 \
 ./ai-thunderdome --duel-matrix
 ```
+
+### Runs & staging
+
+Use the sample seed packs under [`seedpacks/`](seedpacks) to reproduce the staged evaluation workflow:
+
+```bash
+# Smoke (S0, 50 pairs; stop when complete)
+ENV_FILE=compose.env docker compose run --rm duel \
+  SEEDPACK=seedpacks/S0-smoke.json STOP_IMMEDIATE=1
+
+# Stages A–D (add 200 pairs at a time)
+ENV_FILE=compose.env docker compose run --rm duel SEEDPACK=seedpacks/S1-200.json
+ENV_FILE=compose.env docker compose run --rm duel SEEDPACK=seedpacks/S2-200.json
+ENV_FILE=compose.env docker compose run --rm duel SEEDPACK=seedpacks/S3-200.json
+ENV_FILE=compose.env docker compose run --rm duel SEEDPACK=seedpacks/S4-200.json
+
+# Finals (500 pairs per block; run per finalist pairing)
+for pack in F1-500 F2-500 F3-500 F4-500; do
+  ENV_FILE=compose.env docker compose run --rm duel \
+    SEEDPACK=seedpacks/${pack}.json
+done
+```
+
+All of the commands above also work with `SEEDPACK_PATH` (which takes precedence when both are set). Swap in your own pack files or tweak the mirrored pair counts as needed while keeping the deterministic seeds per block.
 
 Set `OPENROUTER_MODELS` when you want the duel matrix to cycle through a list of vendors/models via OpenRouter.
 
