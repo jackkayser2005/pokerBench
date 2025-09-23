@@ -124,6 +124,32 @@ The duel loop decides which mirrored deck to deal before every pair, letting you
 2. **Load curated packs.** Set `SEEDPACK_PATH=/path/to/pack.json` (or `SEEDPACK` for the same path) to feed a JSON file such as `{"name":"stage-1","version":"1.0","seeds":[...numbers...]}`. The loader validates the file, computes its hash, and the duel loop iterates through each listed seed in order.
 3. **Chain stages.** Split a large evaluation into multiple pack files (`stage-1.json`, `stage-2.json`, …) or regenerate the pack between runs. Each block is consumed sequentially, so swapping in the next pack continues from the following seed block without rerunning prior pairs.
 
+### Runs & staging
+
+Compose’s `duel` service can be triggered ad hoc for staged evaluations while keeping the mirrored seed stream deterministic. Pass overrides with `-e` so they become environment variables instead of clobbering the container command.
+
+```bash
+# Stage 1: run a curated pack and exit once finished
+docker compose run --rm \
+  -e SEEDPACK=./seedpacks/stage-1.json \
+  -e STOP_IMMEDIATE=1 \
+  duel
+
+# Stage 2: continue with the next pack using the same settings
+docker compose run --rm \
+  -e SEEDPACK=./seedpacks/stage-2.json \
+  -e STOP_IMMEDIATE=1 \
+  duel
+
+# Custom seed stream without packs
+docker compose run --rm \
+  -e DECK_SEED=424242 \
+  -e DUEL_SEEDS=20 \
+  duel
+```
+
+> **Note:** `docker compose run` treats tokens after the service name as a command override. Use `-e` (or the `compose.env` file) for environment tweaks; otherwise values such as `STOP_IMMEDIATE=1` would replace `/app/ai-thunderdome --duel` entirely.
+
 ---
 
 ## Running Modes
