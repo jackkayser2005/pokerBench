@@ -2,6 +2,7 @@ package judge
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"strings"
@@ -9,46 +10,81 @@ import (
 
 	"ai-thunderdome/server/engine"
 	"ai-thunderdome/server/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/puddle/v2"
 	poker "github.com/paulhankin/poker"
 )
+
+type connSource struct {
+	primary  *store.DB
+	fallback *store.DB
+}
+
+func newConnSource(primary *store.DB) *connSource {
+	return &connSource{primary: primary}
+}
+
+func (cs *connSource) acquire(ctx context.Context) (*pgxpool.Conn, error) {
+	var primaryErr error
+	if cs.primary != nil {
+		conn, err := cs.primary.Acquire(ctx)
+		if err == nil {
+			return conn, nil
+		}
+		primaryErr = err
+		if !errors.Is(err, puddle.ErrClosedPool) {
+			return nil, err
+		}
+	}
+
+	if cs.fallback == nil {
+		dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		if dsn == "" {
+			dsn = "postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
+		}
+		fresh, err := store.Open(dsn)
+		if err != nil {
+			if primaryErr != nil {
+				return nil, primaryErr
+			}
+			return nil, err
+		}
+		cs.fallback = fresh
+	}
+
+	conn, err := cs.fallback.Acquire(ctx)
+	if err != nil {
+		if primaryErr != nil {
+			return nil, primaryErr
+		}
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (cs *connSource) withConn(ctx context.Context, fn func(*pgxpool.Conn) error) error {
+	conn, err := cs.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	return fn(conn)
+}
+
+func (cs *connSource) close(ctx context.Context) {
+	if cs.fallback != nil {
+		cs.fallback.Close(ctx)
+	}
+}
 
 // EvaluateMatchMC computes river (exact) EV comparisons for each river decision
 // and writes rows into action_eval with solver='MCJudge'.
 // Minimal scope: only facing-bet decisions (to_call>0) on river; compares Call vs Fold.
 func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
-	// Acquire a dedicated connection so work continues even if the pool closes soon after.
-	conn, err := db.Acquire(ctx)
-	if err != nil {
-		// Fallback: if pool is closed, open a fresh one just for judging.
-		dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-		if dsn == "" {
-			dsn = "postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
-		}
-		fresh, e2 := store.Open(dsn)
-		if e2 != nil {
-			return err
-		}
-		defer fresh.Close(ctx)
-		conn2, e3 := fresh.Acquire(ctx)
-		if e3 != nil {
-			return err
-		}
-		defer conn2.Release()
-		conn = conn2
-	} else {
-		defer conn.Release()
-	}
-
-	// Fetch big blind size for epsilon scaling
-	var bb int
-	if err := conn.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
-		return err
-	}
-	if bb <= 0 {
-		bb = 100
-	}
-	eps := 0.15 * float64(bb) // epsilon in chips
+	src := newConnSource(db)
+	defer src.close(ctx)
 
 	type Row struct {
 		ID         int64
@@ -62,6 +98,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		Action     string
 		Amount     pgtype.Int4
 	}
+
 	const insertActionEvalSQL = `
                INSERT INTO action_eval(
                    action_log_id, solver, solver_version, abstraction,
@@ -96,47 +133,62 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
                    compute_ms = EXCLUDED.compute_ms
        `
 
-	rows, err := conn.Query(ctx, `
+	var (
+		bb      int
+		rows    []Row
+		inserts [][]any
+	)
+
+	if err := src.withConn(ctx, func(conn *pgxpool.Conn) error {
+		if err := conn.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
+			return err
+		}
+		pgxRows, err := conn.Query(ctx, `
         SELECT id, hand_id, actor_label, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
          WHERE match_id = $1 AND street = 'river'
          ORDER BY id
     `, matchID)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-	}()
-
-	var inserts [][]any
-
-	for rows.Next() {
-		var r Row
-		if err := rows.Scan(&r.ID, &r.HandID, &r.ActorLabel, &r.Pot, &r.ToCall, &r.Board, &r.SBHole, &r.BBHole, &r.Action, &r.Amount); err != nil {
+		if err != nil {
 			return err
 		}
+		defer pgxRows.Close()
+		for pgxRows.Next() {
+			var r Row
+			if err := pgxRows.Scan(&r.ID, &r.HandID, &r.ActorLabel, &r.Pot, &r.ToCall, &r.Board, &r.SBHole, &r.BBHole, &r.Action, &r.Amount); err != nil {
+				return err
+			}
+			rows = append(rows, r)
+		}
+		return pgxRows.Err()
+	}); err != nil {
+		return err
+	}
+
+	if bb <= 0 {
+		bb = 100
+	}
+	eps := 0.15 * float64(bb)
+
+	for _, r := range rows {
 		if len(r.Board) < 5 || len(r.SBHole) != 2 || len(r.BBHole) != 2 {
 			continue
 		}
 
-		// Map actor label to seat for this hand id
 		aIsSB := strings.HasSuffix(strings.ToUpper(r.HandID), "A")
 		heroSeat := engine.SB
 		if r.ActorLabel == "A" {
 			if !aIsSB {
 				heroSeat = engine.BB
 			}
-		} else { // label B
+		} else {
 			if aIsSB {
 				heroSeat = engine.BB
 			} else {
 				heroSeat = engine.SB
 			}
 		}
-		// Hero/villain holes
+
 		var heroHole []string
 		if heroSeat == engine.SB {
 			heroHole = r.SBHole
@@ -144,7 +196,6 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			heroHole = r.BBHole
 		}
 
-		// Parse board + hero hole
 		parse := func(s string) (engine.Card, bool) {
 			if len(s) < 2 {
 				return engine.Card{}, false
@@ -194,7 +245,6 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 
 		start := time.Now()
 
-		// Build deck and enumerate villain combos (exact equity)
 		deck := make([]engine.Card, 0, 52)
 		suits := []byte{'c', 'd', 'h', 's'}
 		for _, su := range suits {
@@ -210,7 +260,6 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			used[c] = true
 		}
 
-		// Build poker lib cards
 		toPH := func(c engine.Card) poker.Card {
 			var s poker.Suit
 			switch c.Suit {
@@ -245,7 +294,6 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 
 		var total int64
 		var win, tie int64
-		// enumerate pairs
 		avail := make([]engine.Card, 0, len(deck))
 		for _, c := range deck {
 			if !used[c] {
@@ -278,13 +326,8 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		P := float64(r.Pot)
 
 		if r.ToCall > 0 {
-			// Facing bet: call vs fold
 			b := float64(r.ToCall)
 			evFold := 0.0
-			// Hero invests b to call. Eq captures win probability plus half of ties,
-			// so eq*(P+b) is the expected return from the pot while the call always
-			// costs the full b chips. Avoid discounting the loss by (1-eq) because eq
-			// already prices the tie outcomes.
 			evCall := eq*(P+b) - b
 
 			bestAction := "call"
@@ -295,8 +338,6 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				evBest = evFold
 			}
 
-			// chosen
-			// Use the action and amount captured in the main query for comparison.
 			chosenAction := r.Action
 			var chosenTo *int
 			if r.Amount.Valid {
@@ -333,14 +374,11 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				isTop, computeMS,
 			})
 		} else {
-			// Uncontested river: check vs bet (single size ~66% pot)
 			b := math.Max(float64(bb), math.Round(0.66*P))
-			F := 0.35 // assumed fold equity for 2/3 pot sizing
+			F := 0.35
 			evCheck := 0.0
-			// When villain folds we earn +P; when called we reach a showdown with pot
-			// P+2b and have already invested b ourselves.
 			evBet := F*P + (1.0-F)*(eq*(P+2*b)-b)
-			bestAction := "raise" // represent bet as raise
+			bestAction := "raise"
 			bestTo := (*int)(nil)
 			evBest := evBet
 			if evCheck > evBest {
@@ -385,17 +423,30 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			})
 		}
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
+
+	if len(inserts) == 0 {
+		return nil
 	}
-	rows = nil
-	for _, args := range inserts {
-		if _, err := conn.Exec(ctx, insertActionEvalSQL, args...); err != nil {
-			return err
+
+	return src.withConn(ctx, func(conn *pgxpool.Conn) error {
+		batch := &pgx.Batch{}
+		for _, args := range inserts {
+			batch.Queue(insertActionEvalSQL, args...)
 		}
-	}
-	return nil
+		br := conn.SendBatch(ctx, batch)
+		var execErr error
+		for range inserts {
+			if _, err := br.Exec(); err != nil {
+				execErr = err
+				break
+			}
+		}
+		closeErr := br.Close()
+		if execErr != nil {
+			return execErr
+		}
+		return closeErr
+	})
 }
 
 // (strptr removed; no longer needed)
