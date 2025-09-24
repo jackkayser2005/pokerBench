@@ -4,6 +4,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"ai-thunderdome/server/engine"
 	"ai-thunderdome/server/store"
@@ -516,8 +519,13 @@ func Router(db *store.DB) http.Handler {
 		writeJSON(w, map[string]any{"career": career, "matches": list})
 	})
 
-	// Aggregated action mix for a bot across all matches (for playstyle badges)
-	mux.HandleFunc("/api/bot-style", func(w http.ResponseWriter, r *http.Request) {
+        // Aggregated action mix for a bot across all matches.
+        //
+        // This powers the playstyle card on server/web/bot.html (and the
+        // static export that mirrors that page). No other surfaces depend on
+        // the response payload, so updating the aggregation only affects that
+        // visualization.
+        mux.HandleFunc("/api/bot-style", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		idStr := r.URL.Query().Get("id")
 		if idStr == "" {
@@ -530,20 +538,35 @@ func Router(db *store.DB) http.Handler {
 			return
 		}
 
-		// Sum action tallies across all matches for this bot
+		// Sum action tallies across all matches for this bot (career-wide)
 		var checkCT, callCT, raiseCT, foldCT int
 		err := db.QueryRow(ctx, `
-            SELECT COALESCE(SUM(t.check_ct),0) AS check_ct,
-                   COALESCE(SUM(t.call_ct),0)  AS call_ct,
-                   COALESCE(SUM(t.raise_ct),0) AS raise_ct,
-                   COALESCE(SUM(t.fold_ct),0)  AS fold_ct
-              FROM action_tallies t
-              JOIN match_participants p ON p.match_id = t.match_id AND p.label = t.label
-             WHERE p.bot_id = $1
+            SELECT COALESCE(check_ct, 0) AS check_ct,
+                   COALESCE(call_ct, 0)  AS call_ct,
+                   COALESCE(raise_ct, 0) AS raise_ct,
+                   COALESCE(fold_ct, 0)  AS fold_ct
+              FROM v_bot_action_mix
+             WHERE bot_id = $1
         `, botID).Scan(&checkCT, &callCT, &raiseCT, &foldCT)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
+			if errors.Is(err, pgx.ErrNoRows) {
+				checkCT, callCT, raiseCT, foldCT = 0, 0, 0, 0
+			} else {
+				// Fall back to the direct aggregation to remain compatible with pre-migration databases.
+				err = db.QueryRow(ctx, `
+                SELECT COALESCE(SUM(t.check_ct),0) AS check_ct,
+                       COALESCE(SUM(t.call_ct),0)  AS call_ct,
+                       COALESCE(SUM(t.raise_ct),0) AS raise_ct,
+                       COALESCE(SUM(t.fold_ct),0)  AS fold_ct
+                  FROM action_tallies t
+                  JOIN match_participants p ON p.match_id = t.match_id AND p.label = t.label
+                 WHERE p.bot_id = $1
+            `, botID).Scan(&checkCT, &callCT, &raiseCT, &foldCT)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+			}
 		}
 		total := checkCT + callCT + raiseCT + foldCT
 		// Guard against division by zero for display percentages.
