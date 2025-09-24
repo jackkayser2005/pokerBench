@@ -2,6 +2,7 @@ package judge
 
 import (
 	"context"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"ai-thunderdome/server/store"
 	"github.com/jackc/pgx/v5/pgtype"
 	poker "github.com/paulhankin/poker"
-	"math"
 )
 
 // EvaluateMatchMC computes river (exact) EV comparisons for each river decision
@@ -62,6 +62,40 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		Action     string
 		Amount     pgtype.Int4
 	}
+	const insertActionEvalSQL = `
+               INSERT INTO action_eval(
+                   action_log_id, solver, solver_version, abstraction,
+                   policy_json, evs_json,
+                   best_action, best_amount_to,
+                   chosen_action, chosen_amount_to,
+                   ev_chosen, ev_best, ev_gap_bb, correctness_prob,
+                   is_top_action, compute_ms
+               ) VALUES (
+                   $1,$2,$3,$4,
+                   $5,$6,
+                   $7,$8,
+                   $9,$10,
+                   $11,$12,$13,$14,
+                   $15,$16
+               )
+               ON CONFLICT (action_log_id) DO UPDATE SET
+                   solver = EXCLUDED.solver,
+                   solver_version = EXCLUDED.solver_version,
+                   abstraction = EXCLUDED.abstraction,
+                   policy_json = EXCLUDED.policy_json,
+                   evs_json = EXCLUDED.evs_json,
+                   best_action = EXCLUDED.best_action,
+                   best_amount_to = EXCLUDED.best_amount_to,
+                   chosen_action = EXCLUDED.chosen_action,
+                   chosen_amount_to = EXCLUDED.chosen_amount_to,
+                   ev_chosen = EXCLUDED.ev_chosen,
+                   ev_best = EXCLUDED.ev_best,
+                   ev_gap_bb = EXCLUDED.ev_gap_bb,
+                   correctness_prob = EXCLUDED.correctness_prob,
+                   is_top_action = EXCLUDED.is_top_action,
+                   compute_ms = EXCLUDED.compute_ms
+       `
+
 	rows, err := conn.Query(ctx, `
         SELECT id, hand_id, actor_label, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
@@ -71,7 +105,13 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+	}()
+
+	var inserts [][]any
 
 	for rows.Next() {
 		var r Row
@@ -151,6 +191,8 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		if len(board) != 5 || len(h1) != 2 {
 			continue
 		}
+
+		start := time.Now()
 
 		// Build deck and enumerate villain combos (exact equity)
 		deck := make([]engine.Card, 0, 52)
@@ -273,64 +315,23 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			gapChips := evBest - evChosen
 			gap := gapChips / float64(bb)
 			isTop := gapChips <= eps
-			t0 := time.Now()
-			// Insert using the same connection to avoid pool-close races.
-			var sv, abs, pol, evs any
-			var bat, cat, evc, evb, gapv, prob, top, ms any
+			var bestToVal any
 			if bestTo != nil {
-				bat = *bestTo
+				bestToVal = *bestTo
 			}
+			var chosenToVal any
 			if chosenTo != nil {
-				cat = *chosenTo
+				chosenToVal = *chosenTo
 			}
-			evc = evChosen
-			evb = evBest
-			gapv = gap
-			top = isTop
-			// compute duration at end
-			ms = int(time.Since(t0) / time.Millisecond)
-			if _, err := conn.Exec(ctx, `
-                INSERT INTO action_eval(
-                    action_log_id, solver, solver_version, abstraction,
-                    policy_json, evs_json,
-                    best_action, best_amount_to,
-                    chosen_action, chosen_amount_to,
-                    ev_chosen, ev_best, ev_gap_bb, correctness_prob,
-                    is_top_action, compute_ms
-                ) VALUES (
-                    $1,$2,$3,$4,
-                    $5,$6,
-                    $7,$8,
-                    $9,$10,
-                    $11,$12,$13,$14,
-                    $15,$16
-                )
-                ON CONFLICT (action_log_id) DO UPDATE SET
-                    solver = EXCLUDED.solver,
-                    solver_version = EXCLUDED.solver_version,
-                    abstraction = EXCLUDED.abstraction,
-                    policy_json = EXCLUDED.policy_json,
-                    evs_json = EXCLUDED.evs_json,
-                    best_action = EXCLUDED.best_action,
-                    best_amount_to = EXCLUDED.best_amount_to,
-                    chosen_action = EXCLUDED.chosen_action,
-                    chosen_amount_to = EXCLUDED.chosen_amount_to,
-                    ev_chosen = EXCLUDED.ev_chosen,
-                    ev_best = EXCLUDED.ev_best,
-                    ev_gap_bb = EXCLUDED.ev_gap_bb,
-                    correctness_prob = EXCLUDED.correctness_prob,
-                    is_top_action = EXCLUDED.is_top_action,
-                    compute_ms = EXCLUDED.compute_ms
-            `,
-				r.ID, "MCJudge", sv, abs,
-				pol, evs,
-				bestAction, bat,
-				chosenAction, cat,
-				evc, evb, gapv, prob,
-				top, ms,
-			); err != nil {
-				return err
-			}
+			computeMS := int(time.Since(start) / time.Millisecond)
+			inserts = append(inserts, []any{
+				r.ID, "MCJudge", nil, nil,
+				nil, nil,
+				bestAction, bestToVal,
+				chosenAction, chosenToVal,
+				evChosen, evBest, gap, nil,
+				isTop, computeMS,
+			})
 		} else {
 			// Uncontested river: check vs bet (single size ~66% pot)
 			b := math.Max(float64(bb), math.Round(0.66*P))
@@ -365,67 +366,34 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			gapChips := evBest - evChosen
 			gap := gapChips / float64(bb)
 			isTop := gapChips <= eps
-			t0 := time.Now()
-			// Insert using the same connection to avoid pool-close races.
-			var sv, abs, pol, evs any
-			var bat, cat, evc, evb, gapv, prob, top, ms any
+			var bestToVal any
 			if bestTo != nil {
-				bat = *bestTo
+				bestToVal = *bestTo
 			}
+			var chosenToVal any
 			if chosenTo != nil {
-				cat = *chosenTo
+				chosenToVal = *chosenTo
 			}
-			evc = evChosen
-			evb = evBest
-			gapv = gap
-			top = isTop
-			ms = int(time.Since(t0) / time.Millisecond)
-			if _, err := conn.Exec(ctx, `
-                INSERT INTO action_eval(
-                    action_log_id, solver, solver_version, abstraction,
-                    policy_json, evs_json,
-                    best_action, best_amount_to,
-                    chosen_action, chosen_amount_to,
-                    ev_chosen, ev_best, ev_gap_bb, correctness_prob,
-                    is_top_action, compute_ms
-                ) VALUES (
-                    $1,$2,$3,$4,
-                    $5,$6,
-                    $7,$8,
-                    $9,$10,
-                    $11,$12,$13,$14,
-                    $15,$16
-                )
-                ON CONFLICT (action_log_id) DO UPDATE SET
-                    solver = EXCLUDED.solver,
-                    solver_version = EXCLUDED.solver_version,
-                    abstraction = EXCLUDED.abstraction,
-                    policy_json = EXCLUDED.policy_json,
-                    evs_json = EXCLUDED.evs_json,
-                    best_action = EXCLUDED.best_action,
-                    best_amount_to = EXCLUDED.best_amount_to,
-                    chosen_action = EXCLUDED.chosen_action,
-                    chosen_amount_to = EXCLUDED.chosen_amount_to,
-                    ev_chosen = EXCLUDED.ev_chosen,
-                    ev_best = EXCLUDED.ev_best,
-                    ev_gap_bb = EXCLUDED.ev_gap_bb,
-                    correctness_prob = EXCLUDED.correctness_prob,
-                    is_top_action = EXCLUDED.is_top_action,
-                    compute_ms = EXCLUDED.compute_ms
-            `,
-				r.ID, "MCJudge", sv, abs,
-				pol, evs,
-				bestAction, bat,
-				chosenAction, cat,
-				evc, evb, gapv, prob,
-				top, ms,
-			); err != nil {
-				return err
-			}
+			computeMS := int(time.Since(start) / time.Millisecond)
+			inserts = append(inserts, []any{
+				r.ID, "MCJudge", nil, nil,
+				nil, nil,
+				bestAction, bestToVal,
+				chosenAction, chosenToVal,
+				evChosen, evBest, gap, nil,
+				isTop, computeMS,
+			})
 		}
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
+	}
+	rows = nil
+	for _, args := range inserts {
+		if _, err := conn.Exec(ctx, insertActionEvalSQL, args...); err != nil {
+			return err
+		}
 	}
 	return nil
 }
