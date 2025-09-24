@@ -4642,10 +4642,10 @@ body.tooltips-disabled .inline-tip {
 .board-display__cards {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, var(--card-w)));
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  justify-items: center;
+  align-items: center;
   align-content: center;
   column-gap: 18px;
   row-gap: 24px;
@@ -4654,10 +4654,7 @@ body.tooltips-disabled .inline-tip {
 }
 
 .board-display__cards::after {
-  content: '';
-  display: block;
-  grid-column: 1;
-  grid-row: 2;
+  content: none;
 }
 
 .board-display__label {
