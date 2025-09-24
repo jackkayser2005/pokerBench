@@ -148,7 +148,16 @@ docker compose run --rm \
   duel
 ```
 
-> **Note:** `docker compose run` treats tokens after the service name as a command override. Use `-e` (or the `compose.env` file) for environment tweaks; otherwise values such as `STOP_IMMEDIATE=1` would replace `/app/ai-thunderdome --duel` entirely.
+> **Note:** `docker compose run` treats tokens after the service name as a command override. Use `-e` (or the `compose.env` file) for environment tweaks; otherwise values such as `STOP_IMMEDIATE=1` would replace `/app/ai-thunderdome --duel` entirely. To override the seat models for a one-off duel, pass them explicitly:
+>
+> ```bash
+> docker compose run --rm \
+>   -e OPENROUTER_MODEL_A="meta-llama/llama-3.1-70b-instruct" \
+>   -e OPENROUTER_MODEL_B="mistralai/mistral-nemo" \
+>   duel
+> ```
+>
+> The `-e` flags win over values defined inside `compose.env`, so each seat can be pointed at a different model even if `OPENROUTER_MODEL` is set globally.
 
 ---
 
