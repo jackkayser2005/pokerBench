@@ -369,27 +369,6 @@ function rowHTML(i, r, metric){
           return 0;
         });
         $('#tbody').innerHTML = out.map((r,i)=>rowHTML(i,r,ratingMetric)).join('');
-
-        // Append judge accuracy pills next to model name
-        try {
-          document.querySelectorAll('tr.lb-row').forEach(tr => {
-            const href = tr.getAttribute('data-href')||'';
-            const idMatch = href.match(/id=(\d+)/);
-            if (!idMatch) return;
-            const botId = Number(idMatch[1]);
-            const row = rows.find(x => Number(x.bot_id) === botId);
-            const stats = judgeStatsFor(botId, row);
-            if (!stats.hasData) return;
-            const host = tr.querySelector('.lb-model');
-            if (!host) return;
-            const pill = document.createElement('span');
-            pill.className = 'pill ghost';
-            pill.style.marginLeft = '6px';
-            pill.title = `EV judge accuracy (${stats.good}/${stats.total})`;
-            pill.textContent = stats.display;
-            host.appendChild(pill);
-          });
-        } catch {}
         setHeaderIndicators();
       }
 
@@ -406,23 +385,6 @@ function rowHTML(i, r, metric){
             const botId = Number(idMatch[1]);
             const row = rows.find(x => Number(x.bot_id) === botId);
             const stats = judgeStatsFor(botId, row);
-            const host = tr.querySelector('.lb-model');
-            if (host){
-              const existing = host.querySelector('.pill.ghost');
-              if (stats.hasData) {
-                let pill = existing;
-                if (!pill){
-                  pill = document.createElement('span');
-                  pill.className='pill ghost';
-                  pill.style.marginLeft='6px';
-                  host.appendChild(pill);
-                }
-                pill.title = `EV judge accuracy (${stats.good}/${stats.total})`;
-                pill.textContent = stats.display;
-              } else if (existing) {
-                existing.remove();
-              }
-            }
             const tds = tr.querySelectorAll('td');
             if (tds.length >= 7){
               tds[6].textContent = stats.hasData ? stats.display : '—';
