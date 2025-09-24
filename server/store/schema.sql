@@ -140,6 +140,18 @@ FROM matches m
 JOIN match_participants p ON p.match_id = m.id
 JOIN action_tallies t     ON t.match_id = m.id AND t.label = p.label;
 
+CREATE OR REPLACE VIEW v_bot_action_mix AS
+SELECT
+  p.bot_id,
+  SUM(t.check_ct) AS check_ct,
+  SUM(t.call_ct)  AS call_ct,
+  SUM(t.raise_ct) AS raise_ct,
+  SUM(t.fold_ct)  AS fold_ct,
+  SUM(t.check_ct + t.call_ct + t.raise_ct + t.fold_ct) AS total_actions
+FROM match_participants p
+JOIN action_tallies t ON t.match_id = p.match_id AND t.label = p.label
+GROUP BY p.bot_id;
+
 -- Recreate to allow column order/name changes safely during upgrades
 DROP VIEW IF EXISTS v_bot_summary;
 CREATE VIEW v_bot_summary AS
