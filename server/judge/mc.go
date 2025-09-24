@@ -10,6 +10,7 @@ import (
 	"ai-thunderdome/server/engine"
 	"ai-thunderdome/server/store"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	poker "github.com/paulhankin/poker"
 )
 
@@ -17,32 +18,73 @@ import (
 // and writes rows into action_eval with solver='MCJudge'.
 // Minimal scope: only facing-bet decisions (to_call>0) on river; compares Call vs Fold.
 func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
-	// Acquire a dedicated connection so work continues even if the pool closes soon after.
-	conn, err := db.Acquire(ctx)
-	if err != nil {
-		// Fallback: if pool is closed, open a fresh one just for judging.
+	var (
+		fallbackDB    *store.DB
+		fallbackClose func()
+	)
+	defer func() {
+		if fallbackClose != nil {
+			fallbackClose()
+		}
+	}()
+
+	acquire := func() (*pgxpool.Conn, func(), error) {
+		if fallbackDB != nil {
+			conn, err := fallbackDB.Acquire(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return conn, func() { conn.Release() }, nil
+		}
+
+		var primaryErr error
+		if db != nil {
+			if conn, err := db.Acquire(ctx); err == nil {
+				return conn, func() { conn.Release() }, nil
+			} else {
+				primaryErr = err
+			}
+		}
+
 		dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 		if dsn == "" {
 			dsn = "postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
 		}
-		fresh, e2 := store.Open(dsn)
-		if e2 != nil {
-			return err
+		fresh, err := store.Open(dsn)
+		if err != nil {
+			if primaryErr != nil {
+				return nil, nil, primaryErr
+			}
+			return nil, nil, err
 		}
-		defer fresh.Close(ctx)
-		conn2, e3 := fresh.Acquire(ctx)
-		if e3 != nil {
-			return err
+		fallbackDB = fresh
+		fallbackClose = func() { fresh.Close(ctx) }
+		conn, err := fresh.Acquire(ctx)
+		if err != nil {
+			fallbackClose()
+			fallbackClose = nil
+			fallbackDB = nil
+			if primaryErr != nil {
+				return nil, nil, primaryErr
+			}
+			return nil, nil, err
 		}
-		defer conn2.Release()
-		conn = conn2
-	} else {
-		defer conn.Release()
+		return conn, func() { conn.Release() }, nil
 	}
+
+	connRead, releaseRead, err := acquire()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if releaseRead != nil {
+			releaseRead()
+		}
+	}()
 
 	// Fetch big blind size for epsilon scaling
 	var bb int
-	if err := conn.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
+	if err := connRead.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
 		return err
 	}
 	if bb <= 0 {
@@ -96,7 +138,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
                    compute_ms = EXCLUDED.compute_ms
        `
 
-	rows, err := conn.Query(ctx, `
+	rows, err := connRead.Query(ctx, `
         SELECT id, hand_id, actor_label, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
          WHERE match_id = $1 AND street = 'river'
@@ -390,11 +432,29 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		return err
 	}
 	rows = nil
+	releaseRead()
+	releaseRead = nil
+
+	if len(inserts) == 0 {
+		return nil
+	}
+
+	connWrite, releaseWrite, err := acquire()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if releaseWrite != nil {
+			releaseWrite()
+		}
+	}()
 	for _, args := range inserts {
-		if _, err := conn.Exec(ctx, insertActionEvalSQL, args...); err != nil {
+		if _, err := connWrite.Exec(ctx, insertActionEvalSQL, args...); err != nil {
 			return err
 		}
 	}
+	releaseWrite()
+	releaseWrite = nil
 	return nil
 }
 
