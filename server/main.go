@@ -2198,7 +2198,10 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			return fmt.Sprintf("%d/%d (%.1f%%)", good, total, pct)
 		}
 
-		var judgeGoodA, judgeTotalA, judgeGoodB, judgeTotalB int
+		var (
+			judgeGoodA, judgeTotalA, judgeGoodB, judgeTotalB int
+			judgeBreakdown                                   map[int64]map[string]store.JudgeAccuracy
+		)
 		if db != nil && matchID != 0 {
 			if err := judge.EvaluateMatchMC(context.Background(), db, matchID); err != nil {
 				log.Printf("MCJudge failed for match %d: %v", matchID, err)
@@ -2214,12 +2217,55 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 						judgeGoodB, judgeTotalB = acc.Good, acc.Total
 					}
 				}
+				if breakdown, err := db.MatchJudgeAccuracyByStreet(context.Background(), matchID); err != nil {
+					log.Printf("MatchJudgeAccuracyByStreet failed for match %d: %v", matchID, err)
+				} else {
+					judgeBreakdown = breakdown
+				}
 			}
+		}
+
+		streetAccString := func(acc store.JudgeAccuracy) string {
+			return accString(acc.Good, acc.Total)
+		}
+
+		formatBreakdown := func(breakdown map[string]store.JudgeAccuracy) string {
+			if len(breakdown) == 0 {
+				return ""
+			}
+			ordered := []struct {
+				key   string
+				label string
+			}{
+				{key: "flop", label: "Flop"},
+				{key: "turn", label: "Turn"},
+				{key: "river", label: "River"},
+			}
+			parts := make([]string, 0, len(ordered))
+			for _, st := range ordered {
+				acc, ok := breakdown[st.key]
+				if !ok {
+					parts = append(parts, fmt.Sprintf("%s %s", st.label, "n/a"))
+					continue
+				}
+				parts = append(parts, fmt.Sprintf("%s %s", st.label, streetAccString(acc)))
+			}
+			return strings.Join(parts, " | ")
 		}
 
 		fmt.Println(bold("MCJudge accuracy (this match):"))
 		fmt.Printf("  %s %s %s\n", bold("A"), a.Model, accString(judgeGoodA, judgeTotalA))
+		if judgeBreakdown != nil {
+			if parts := formatBreakdown(judgeBreakdown[botAID]); parts != "" {
+				fmt.Printf("    %s %s\n", bold("streets"), parts)
+			}
+		}
 		fmt.Printf("  %s %s %s\n", bold("B"), b.Model, accString(judgeGoodB, judgeTotalB))
+		if judgeBreakdown != nil {
+			if parts := formatBreakdown(judgeBreakdown[botBID]); parts != "" {
+				fmt.Printf("    %s %s\n", bold("streets"), parts)
+			}
+		}
 
 		// persist career ratings, hands, and judge accuracy
 		if err := db.UpdateBotRatings(context.Background(), botAID, elo.A, gA.Rating, gA.RD, gA.Volatility, 1, handsA, judgeGoodA, judgeTotalA); err != nil {

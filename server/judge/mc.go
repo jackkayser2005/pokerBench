@@ -14,9 +14,165 @@ import (
 	poker "github.com/paulhankin/poker"
 )
 
-// EvaluateMatchMC computes river (exact) EV comparisons for each river decision
-// and writes rows into action_eval with solver='MCJudge'.
-// Minimal scope: only facing-bet decisions (to_call>0) on river; compares Call vs Fold.
+// heroEquityExact computes exact showdown equity for hero hole cards against a
+// random villain range given the current public board. The board must contain
+// 3 (flop), 4 (turn), or 5 (river) cards. When the board is not complete, the
+// function enumerates every possible runout to the river for both players. It
+// returns the probability of hero winning (counting ties as half wins).
+func heroEquityExact(heroHole, board []engine.Card) (float64, bool) {
+	if len(heroHole) != 2 {
+		return 0, false
+	}
+	if len(board) < 3 || len(board) > 5 {
+		return 0, false
+	}
+
+	// Build deck and remove the known cards.
+	deck := make([]engine.Card, 0, 52)
+	suits := []byte{'c', 'd', 'h', 's'}
+	for _, su := range suits {
+		for rnk := 2; rnk <= 14; rnk++ {
+			deck = append(deck, engine.Card{Rank: rnk, Suit: su})
+		}
+	}
+	used := map[engine.Card]bool{}
+	for _, c := range board {
+		used[c] = true
+	}
+	for _, c := range heroHole {
+		used[c] = true
+	}
+
+	toPH := func(c engine.Card) poker.Card {
+		var s poker.Suit
+		switch c.Suit {
+		case 'c':
+			s = poker.Club
+		case 'd':
+			s = poker.Diamond
+		case 'h':
+			s = poker.Heart
+		default:
+			s = poker.Spade
+		}
+		var rnk poker.Rank
+		if c.Rank == 14 {
+			rnk = poker.Rank(1)
+		} else {
+			rnk = poker.Rank(c.Rank)
+		}
+		pc, _ := poker.MakeCard(s, rnk)
+		return pc
+	}
+
+	avail := make([]engine.Card, 0, len(deck))
+	availPH := make([]poker.Card, 0, len(deck))
+	for _, c := range deck {
+		if used[c] {
+			continue
+		}
+		avail = append(avail, c)
+		availPH = append(availPH, toPH(c))
+	}
+
+	heroPH := []poker.Card{toPH(heroHole[0]), toPH(heroHole[1])}
+	boardPH := make([]poker.Card, 0, len(board))
+	for _, c := range board {
+		boardPH = append(boardPH, toPH(c))
+	}
+
+	needed := 5 - len(board)
+	if needed < 0 || needed > 2 {
+		return 0, false
+	}
+
+	baseHeroLen := len(heroPH) + len(boardPH)
+	baseVillainLen := 2 + len(boardPH)
+	if baseHeroLen+needed != 7 || baseVillainLen+needed != 7 {
+		return 0, false
+	}
+
+	var total, win, tie int64
+	n := len(avail)
+	if n < 2+needed {
+		return 0, false
+	}
+
+	for i := 0; i < n-1; i++ {
+		for j := i + 1; j < n; j++ {
+			var hero7 [7]poker.Card
+			copy(hero7[:len(heroPH)], heroPH)
+			copy(hero7[len(heroPH):baseHeroLen], boardPH)
+
+			var vill7 [7]poker.Card
+			vill7[0] = availPH[i]
+			vill7[1] = availPH[j]
+			copy(vill7[2:baseVillainLen], boardPH)
+
+			switch needed {
+			case 0:
+				heroScore := poker.Eval7(&hero7)
+				villScore := poker.Eval7(&vill7)
+				total++
+				if heroScore > villScore {
+					win++
+				} else if heroScore == villScore {
+					tie++
+				}
+			case 1:
+				for k := 0; k < n; k++ {
+					if k == i || k == j {
+						continue
+					}
+					hero7[baseHeroLen] = availPH[k]
+					vill7[baseVillainLen] = availPH[k]
+					heroScore := poker.Eval7(&hero7)
+					villScore := poker.Eval7(&vill7)
+					total++
+					if heroScore > villScore {
+						win++
+					} else if heroScore == villScore {
+						tie++
+					}
+				}
+			case 2:
+				for k := 0; k < n; k++ {
+					if k == i || k == j {
+						continue
+					}
+					for l := k + 1; l < n; l++ {
+						if l == i || l == j {
+							continue
+						}
+						hero7[baseHeroLen] = availPH[k]
+						hero7[baseHeroLen+1] = availPH[l]
+						vill7[baseVillainLen] = availPH[k]
+						vill7[baseVillainLen+1] = availPH[l]
+						heroScore := poker.Eval7(&hero7)
+						villScore := poker.Eval7(&vill7)
+						total++
+						if heroScore > villScore {
+							win++
+						} else if heroScore == villScore {
+							tie++
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if total == 0 {
+		return 0, false
+	}
+	eq := (float64(win) + 0.5*float64(tie)) / float64(total)
+	return eq, true
+}
+
+// EvaluateMatchMC computes EV comparisons for each flop/turn/river decision
+// and writes rows into action_eval with solver='MCJudge'. Facing-bet situations
+// (to_call>0) compare call versus fold, while uncontested nodes score check
+// versus a nominal 2/3-pot probe bet.
 func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 	var (
 		fallbackDB    *store.DB
@@ -96,6 +252,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 		ID         int64
 		HandID     string
 		ActorLabel string
+		Street     string
 		Pot        int
 		ToCall     int
 		Board      []string
@@ -139,9 +296,9 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
        `
 
 	rows, err := connRead.Query(ctx, `
-        SELECT id, hand_id, actor_label, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
+        SELECT id, hand_id, actor_label, street, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
-         WHERE match_id = $1 AND street = 'river'
+         WHERE match_id = $1 AND street IN ('flop','turn','river')
          ORDER BY id
     `, matchID)
 	if err != nil {
@@ -157,10 +314,10 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 
 	for rows.Next() {
 		var r Row
-		if err := rows.Scan(&r.ID, &r.HandID, &r.ActorLabel, &r.Pot, &r.ToCall, &r.Board, &r.SBHole, &r.BBHole, &r.Action, &r.Amount); err != nil {
+		if err := rows.Scan(&r.ID, &r.HandID, &r.ActorLabel, &r.Street, &r.Pot, &r.ToCall, &r.Board, &r.SBHole, &r.BBHole, &r.Action, &r.Amount); err != nil {
 			return err
 		}
-		if len(r.Board) < 5 || len(r.SBHole) != 2 || len(r.BBHole) != 2 {
+		if len(r.SBHole) != 2 || len(r.BBHole) != 2 {
 			continue
 		}
 
@@ -218,11 +375,14 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			}
 			return engine.Card{Rank: rank, Suit: suit}, true
 		}
-		board := make([]engine.Card, 0, 5)
-		for i := 0; i < 5; i++ {
-			if c, ok := parse(r.Board[i]); ok {
+		board := make([]engine.Card, 0, len(r.Board))
+		for _, s := range r.Board {
+			if c, ok := parse(strings.TrimSpace(s)); ok {
 				board = append(board, c)
 			}
+		}
+		if len(board) < 3 || len(board) > 5 {
+			continue
 		}
 		h1 := make([]engine.Card, 0, 2)
 		for _, s := range heroHole {
@@ -230,92 +390,15 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 				h1 = append(h1, c)
 			}
 		}
-		if len(board) != 5 || len(h1) != 2 {
+		if len(h1) != 2 {
 			continue
 		}
 
 		start := time.Now()
-
-		// Build deck and enumerate villain combos (exact equity)
-		deck := make([]engine.Card, 0, 52)
-		suits := []byte{'c', 'd', 'h', 's'}
-		for _, su := range suits {
-			for rnk := 2; rnk <= 14; rnk++ {
-				deck = append(deck, engine.Card{Rank: rnk, Suit: su})
-			}
-		}
-		used := map[engine.Card]bool{}
-		for _, c := range board {
-			used[c] = true
-		}
-		for _, c := range h1 {
-			used[c] = true
-		}
-
-		// Build poker lib cards
-		toPH := func(c engine.Card) poker.Card {
-			var s poker.Suit
-			switch c.Suit {
-			case 'c':
-				s = poker.Club
-			case 'd':
-				s = poker.Diamond
-			case 'h':
-				s = poker.Heart
-			default:
-				s = poker.Spade
-			}
-			var rnk poker.Rank
-			if c.Rank == 14 {
-				rnk = poker.Rank(1)
-			} else {
-				rnk = poker.Rank(c.Rank)
-			}
-			pc, _ := poker.MakeCard(s, rnk)
-			return pc
-		}
-		heroAllPH := make([]poker.Card, 0, 7)
-		for _, c := range h1 {
-			heroAllPH = append(heroAllPH, toPH(c))
-		}
-		for _, c := range board {
-			heroAllPH = append(heroAllPH, toPH(c))
-		}
-		var a7 [7]poker.Card
-		copy(a7[:], heroAllPH)
-		heroScore := poker.Eval7(&a7)
-
-		var total int64
-		var win, tie int64
-		// enumerate pairs
-		avail := make([]engine.Card, 0, len(deck))
-		for _, c := range deck {
-			if !used[c] {
-				avail = append(avail, c)
-			}
-		}
-		for i := 0; i < len(avail); i++ {
-			for j := i + 1; j < len(avail); j++ {
-				total++
-				vAllPH := make([]poker.Card, 0, 7)
-				vAllPH = append(vAllPH, toPH(avail[i]), toPH(avail[j]))
-				for _, c := range board {
-					vAllPH = append(vAllPH, toPH(c))
-				}
-				var b7 [7]poker.Card
-				copy(b7[:], vAllPH)
-				vScore := poker.Eval7(&b7)
-				if heroScore > vScore {
-					win++
-				} else if heroScore == vScore {
-					tie++
-				}
-			}
-		}
-		if total == 0 {
+		eq, ok := heroEquityExact(h1, board)
+		if !ok {
 			continue
 		}
-		eq := (float64(win) + 0.5*float64(tie)) / float64(total)
 
 		P := float64(r.Pot)
 
