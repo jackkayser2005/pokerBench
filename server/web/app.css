@@ -158,6 +158,28 @@
   --card-lightBlk: #94a3c2;
 }
 
+@media (max-width: 720px) {
+  :root {
+    --gutter: 24px;
+    --fs-0: 0.72rem;
+    --fs-1: 0.82rem;
+    --fs-2: 0.97rem;
+    --fs-3: 1.08rem;
+    --fs-4: 1.4rem;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --gutter: 20px;
+    --fs-0: 0.68rem;
+    --fs-1: 0.78rem;
+    --fs-2: 0.94rem;
+    --fs-3: 1.02rem;
+    --fs-4: 1.3rem;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -178,6 +200,21 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+body.has-open-mobile-nav {
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  body.has-open-mobile-nav::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(2px);
+    z-index: 15;
+  }
 }
 
 img,
@@ -352,53 +389,79 @@ p {
 }
 
 @media (max-width: 720px) {
-  .topnav {
-    padding-top: 12px;
-  }
-  .topnav__links {
-    margin-inline: -12px;
-    padding: 2px 12px 6px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    gap: 12px;
-    scroll-snap-type: x mandatory;
+  .topnav.topnav--collapsible {
     position: relative;
+    width: min(100%, calc(100vw - 24px));
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 12px 16px;
+    padding: 12px 0 14px;
   }
-  .topnav__links::-webkit-scrollbar {
+  .topnav.topnav--collapsible > .brand {
+    justify-self: start;
+  }
+  .topnav.topnav--collapsible .topnav__actions {
+    justify-self: end;
+    gap: 8px;
+  }
+  .topnav.topnav--collapsible .topnav__toggle {
+    display: inline-flex;
+  }
+  .topnav.topnav--collapsible .topnav__links {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    z-index: 30;
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+  }
+  .topnav.topnav--collapsible .topnav__links::before,
+  .topnav.topnav--collapsible .topnav__links::after {
     display: none;
   }
-  .topnav__links::before,
-  .topnav__links::after {
-    content: "";
-    display: block;
-    position: sticky;
-    top: 0;
-    width: 24px;
-    flex: 0 0 24px;
-    height: 100%;
+  .topnav.topnav--collapsible .topnav__links[data-menu-open="false"] {
+    opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    z-index: 1;
+    transform: translateY(-8px);
   }
-  .topnav__links::before {
-    left: 0;
-    background: linear-gradient(90deg, var(--header-bg-solid) 0%, transparent 100%);
+  .topnav.topnav--collapsible .topnav__links[data-menu-open="true"],
+  .topnav.topnav--collapsible .topnav__links:not([data-menu-open]) {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
   }
-  .topnav__links::after {
-    right: 0;
-    background: linear-gradient(270deg, var(--header-bg-solid) 0%, transparent 100%);
+  .topnav.topnav--collapsible .topnav__links .pill {
+    width: 100%;
+    justify-content: flex-start;
+    font-size: var(--fs-2);
+    padding: 0.7rem 1rem;
   }
-  .topnav__links .pill {
-    flex: 0 0 auto;
-    scroll-snap-align: center;
+  .topnav.topnav--collapsible .topnav__links .nav-link__icon {
+    width: 1.1rem;
+    height: 1.1rem;
   }
-  .brand {
+  .topnav.topnav--collapsible .brand {
     gap: 10px;
   }
-  .brand__text {
+  .topnav.topnav--collapsible .brand__text {
     font-size: 1rem;
   }
-  .logo-badge--sm {
+  .topnav.topnav--collapsible .logo-badge--sm {
     width: 36px;
     height: 36px;
     border-radius: 11px;
@@ -411,27 +474,38 @@ p {
     width: min(100%, calc(100vw - 24px));
     gap: 24px;
   }
+  .topnav {
+    width: min(100%, calc(100vw - 24px));
+  }
   .row {
     grid-template-columns: 1fr;
   }
-  .topnav {
-    width: min(100%, calc(100vw - 24px));
-    grid-template-columns: auto auto;
-  }
-  .topnav > .brand {
-    justify-self: start;
-  }
   .topnav__actions {
     gap: 8px;
-    justify-self: end;
-  }
-  .topnav__links .pill {
-    padding: 0.5rem 0.85rem;
-    font-size: var(--fs-0);
   }
   .nav-link__icon {
     width: 1rem;
     height: 1rem;
+  }
+  .page-content {
+    padding: 28px 0 64px;
+  }
+  .card {
+    padding: 24px;
+  }
+  .card--compact {
+    padding: 18px 20px;
+  }
+  .card__body {
+    gap: 18px;
+  }
+  .table th,
+  .table td,
+  .lb-table th,
+  .lb-table td,
+  .matrix-table th,
+  .matrix-table td {
+    padding: 12px 14px;
   }
 }
 
@@ -445,6 +519,36 @@ p {
   }
   .topnav__actions {
     justify-content: flex-end;
+  }
+  .topnav.topnav--collapsible .topnav__toggle .nav-link__label,
+  .topnav.topnav--collapsible .nav-settings .nav-link__label {
+    display: none;
+  }
+  .topnav.topnav--collapsible .topnav__links {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-content {
+    padding: 22px 0 48px;
+  }
+  .card {
+    padding: 20px;
+  }
+  .card--compact {
+    padding: 16px 18px;
+  }
+  .card__body {
+    gap: 16px;
+  }
+  .table th,
+  .table td,
+  .lb-table th,
+  .lb-table td,
+  .matrix-table th,
+  .matrix-table td {
+    padding: 10px 12px;
   }
 }
 
@@ -494,6 +598,21 @@ p {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.topnav__toggle {
+  display: none;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.topnav__toggle svg {
+  transition: transform var(--transition);
+}
+
+.topnav--menu-open .topnav__toggle svg {
+  transform: rotate(90deg);
 }
 
 .nav-link__icon {
@@ -577,6 +696,17 @@ p {
 
 :root[data-theme='dark'] .topnav__actions.is-open .nav-settings,
 :root.theme-dark .topnav__actions.is-open .nav-settings {
+  background: rgba(141, 183, 255, 0.16);
+  border-color: rgba(141, 183, 255, 0.28);
+}
+
+.topnav--menu-open .topnav__toggle {
+  background: rgba(17, 17, 17, 0.08);
+  border-color: rgba(17, 17, 17, 0.18);
+}
+
+:root[data-theme='dark'] .topnav--menu-open .topnav__toggle,
+:root.theme-dark .topnav--menu-open .topnav__toggle {
   background: rgba(141, 183, 255, 0.16);
   border-color: rgba(141, 183, 255, 0.28);
 }

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="icon" href="/web/favicon.svg" type="image/svg+xml"/>
   <script src="/web/theme-init.js"></script>
-  <link rel="stylesheet" href="/web/app.css?v=10"/>
+  <link rel="stylesheet" href="/web/app.css?v=11"/>
   <script src="/web/app.js" defer></script>
   <script>
     const $ = s => document.querySelector(s);
@@ -101,7 +101,7 @@
         </span>
         <span class="brand__text">PokerBench</span>
       </a>
-      <nav class="topnav__links" aria-label="Primary navigation">
+      <nav id="primaryNav" class="topnav__links" aria-label="Primary navigation">
         <a class="pill nav-link" href="/web/leaderboard.html">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
@@ -159,6 +159,16 @@
         </a>
       </nav>
       <div class="topnav__actions">
+        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav">
+          <span class="nav-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M4 6h16"></path>
+              <path d="M4 12h16"></path>
+              <path d="M4 18h16"></path>
+            </svg>
+          </span>
+          <span class="nav-link__label">Menu</span>
+        </button>
         <button class="pill nav-link nav-settings" type="button" aria-expanded="false" aria-controls="navSettingsPanel">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
