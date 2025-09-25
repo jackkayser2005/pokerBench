@@ -4267,6 +4267,17 @@ body.tooltips-disabled .inline-tip {
   text-align: right;
 }
 
+.history-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.history-actions .pill {
+  flex: 0 0 auto;
+}
+
 .page-history .pill.accent {
   background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
   color: var(--accent-contrast);

@@ -92,7 +92,11 @@
           <td class="history-table__cell num history-blinds">${formatNumber(m.start_stack)}</td>
           <td class="history-table__cell num history-blinds">${formatNumber(m.duel_seeds)}</td>
           <td class="history-table__cell history-table__actions">
-            <a class="pill accent" href="/web/replay.html?match_id=${m.id}">Replay</a>
+            <div class="history-actions">
+              <a class="pill accent" href="/web/replay.html?match_id=${m.id}">Replay</a>
+              <a class="pill ghost" href="/api/match-logs?match_id=${m.id}" download="match-${m.id}.json">JSON</a>
+              <a class="pill ghost" href="/api/match-logs?match_id=${m.id}&amp;format=csv" download="match-${m.id}.csv">CSV</a>
+            </div>
           </td>
         </tr>`;
     }
