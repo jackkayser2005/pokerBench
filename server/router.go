@@ -446,16 +446,18 @@ func Router(db *store.DB) http.Handler {
 
 		// Career row
 		var career struct {
-			BotID   int64     `json:"bot_id"`
-			Model   string    `json:"model"`
-			Company string    `json:"company"`
-			Elo     float64   `json:"elo"`
-			GRating float64   `json:"g_rating"`
-			GRD     float64   `json:"g_rd"`
-			GSigma  float64   `json:"g_sigma"`
-			Matches int       `json:"matches"`
-			Hands   int       `json:"hands"`
-			Updated time.Time `json:"updated_at"`
+			BotID      int64     `json:"bot_id"`
+			Model      string    `json:"model"`
+			Company    string    `json:"company"`
+			Elo        float64   `json:"elo"`
+			GRating    float64   `json:"g_rating"`
+			GRD        float64   `json:"g_rd"`
+			GSigma     float64   `json:"g_sigma"`
+			Matches    int       `json:"matches"`
+			Hands      int       `json:"hands"`
+			NetChips   int       `json:"net_chips"`
+			TotalHands int       `json:"total_hands"`
+			Updated    time.Time `json:"updated_at"`
 		}
 		err := db.QueryRow(ctx, `
             SELECT id, name, company,
@@ -466,6 +468,29 @@ func Router(db *store.DB) http.Handler {
 		if err != nil {
 			http.Error(w, err.Error(), 404)
 			return
+		}
+
+		// Aggregate total hands and chips won/lost for per-hand summaries.
+		var totalHands, netChips int
+		err = db.QueryRow(ctx, `
+            SELECT COALESCE(SUM(total_hands),0), COALESCE(SUM(total_net_chips),0)
+              FROM v_bot_summary
+             WHERE bot_id = $1
+        `, botID).Scan(&totalHands, &netChips)
+		if err != nil {
+			err = db.QueryRow(ctx, `
+                SELECT COALESCE(SUM(hands_dealt),0), COALESCE(SUM(net_chips),0)
+                  FROM match_participants
+                 WHERE bot_id = $1
+            `, botID).Scan(&totalHands, &netChips)
+			if err != nil {
+				totalHands, netChips = 0, 0
+			}
+		}
+		career.TotalHands = totalHands
+		career.NetChips = netChips
+		if career.Hands == 0 && totalHands > 0 {
+			career.Hands = totalHands
 		}
 
 		// Recent matches for this bot
@@ -519,13 +544,13 @@ func Router(db *store.DB) http.Handler {
 		writeJSON(w, map[string]any{"career": career, "matches": list})
 	})
 
-        // Aggregated action mix for a bot across all matches.
-        //
-        // This powers the playstyle card on server/web/bot.html (and the
-        // static export that mirrors that page). No other surfaces depend on
-        // the response payload, so updating the aggregation only affects that
-        // visualization.
-        mux.HandleFunc("/api/bot-style", func(w http.ResponseWriter, r *http.Request) {
+	// Aggregated action mix for a bot across all matches.
+	//
+	// This powers the playstyle card on server/web/bot.html (and the
+	// static export that mirrors that page). No other surfaces depend on
+	// the response payload, so updating the aggregation only affects that
+	// visualization.
+	mux.HandleFunc("/api/bot-style", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		idStr := r.URL.Query().Get("id")
 		if idStr == "" {
