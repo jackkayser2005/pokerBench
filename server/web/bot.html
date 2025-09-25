@@ -50,6 +50,178 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+    const DEFAULT_ESTIMATE = {
+      mirroredSamplePairs: 3,
+      handsPerMirroredPair: 2,
+      tokensPerSample: 10_000,
+      promptShare: 0.65,
+    };
+    const DEFAULT_MODEL_COSTS = [
+      // Anthropic
+      { pattern: /claude[-_ ]?3\.5[-_ ]?sonnet/i, prompt: 15, completion: 75, label: 'Claude 3.5 Sonnet' },
+      { pattern: /claude[-_ ]?3\.5[-_ ]?haiku/i, prompt: 3, completion: 15, label: 'Claude 3.5 Haiku' },
+      { pattern: /claude[-_ ]?3[-_ ]?opus/i, prompt: 15, completion: 75, label: 'Claude 3 Opus' },
+      { pattern: /claude[-_ ]?3[-_ ]?sonnet/i, prompt: 3, completion: 15, label: 'Claude 3 Sonnet' },
+      { pattern: /claude[-_ ]?3[-_ ]?haiku/i, prompt: 0.8, completion: 4, label: 'Claude 3 Haiku' },
+      { pattern: /claude[-_ ]?2\.1/i, prompt: 8, completion: 24, label: 'Claude 2.1' },
+      { pattern: /claude[-_ ]?2(?!\.1)/i, prompt: 8, completion: 24, label: 'Claude 2' },
+      { pattern: /claude[-_ ]?instant/i, prompt: 1.63, completion: 5.51, label: 'Claude Instant 1.2' },
+      // OpenAI
+      { pattern: /gpt[-_ ]?4o[-_ ]?mini[-_ ]?high/i, prompt: 0.3, completion: 1.2, label: 'GPT-4o mini high' },
+      { pattern: /gpt[-_ ]?4o[-_ ]?mini/i, prompt: 0.15, completion: 0.6, label: 'GPT-4o mini' },
+      { pattern: /gpt[-_ ]?4o(?![-_ ]?(mini|realtime|audio))/i, prompt: 5, completion: 15, label: 'GPT-4o' },
+      { pattern: /gpt[-_ ]?4\.1[-_ ]?mini/i, prompt: 0.15, completion: 0.6, label: 'GPT-4.1 mini' },
+      { pattern: /gpt[-_ ]?4\.1(?![-_ ]?(mini|nano))/i, prompt: 5, completion: 15, label: 'GPT-4.1' },
+      { pattern: /gpt[-_ ]?4[-_ ]?turbo/i, prompt: 10, completion: 30, label: 'GPT-4 Turbo' },
+      { pattern: /gpt[-_ ]?4(?![-_ ]?(turbo|\.1|o|mini))/i, prompt: 30, completion: 60, label: 'GPT-4' },
+      { pattern: /gpt[-_ ]?3\.5[-_ ]?turbo/i, prompt: 3, completion: 6, label: 'GPT-3.5 Turbo' },
+      { pattern: /o1[-_ ]?mini/i, prompt: 2.5, completion: 10, label: 'OpenAI o1-mini' },
+      { pattern: /o1(?![-_ ]?mini)/i, prompt: 15, completion: 60, label: 'OpenAI o1' },
+      { pattern: /o3[-_ ]?mini/i, prompt: 1.1, completion: 4.4, label: 'OpenAI o3-mini' },
+      // Google
+      { pattern: /gemini[-_ ]?1\.5[-_ ]?pro/i, prompt: 7, completion: 21, label: 'Gemini 1.5 Pro' },
+      { pattern: /gemini[-_ ]?1\.5[-_ ]?flash/i, prompt: 0.35, completion: 1.05, label: 'Gemini 1.5 Flash' },
+      { pattern: /gemini[-_ ]?1\.0[-_ ]?pro/i, prompt: 5, completion: 15, label: 'Gemini 1.0 Pro' },
+      { pattern: /gemini[-_ ]?pro(?![-_ ]?vision)/i, prompt: 5, completion: 15, label: 'Gemini Pro' },
+      // Meta
+      { pattern: /llama[-_ ]?3\.1[-_ ]?405b/i, prompt: 3, completion: 3, label: 'Llama 3.1 405B' },
+      { pattern: /llama[-_ ]?3\.1[-_ ]?70b/i, prompt: 0.9, completion: 0.9, label: 'Llama 3.1 70B' },
+      { pattern: /llama[-_ ]?3\.1[-_ ]?8b/i, prompt: 0.18, completion: 0.18, label: 'Llama 3.1 8B' },
+      { pattern: /llama[-_ ]?3[-_ ]?70b/i, prompt: 1.8, completion: 1.8, label: 'Llama 3 70B' },
+      { pattern: /llama[-_ ]?3[-_ ]?8b/i, prompt: 0.3, completion: 0.3, label: 'Llama 3 8B' },
+      // Mistral
+      { pattern: /mistral[-_ ]?large/i, prompt: 8, completion: 24, label: 'Mistral Large' },
+      { pattern: /mistral[-_ ]?medium/i, prompt: 3, completion: 9, label: 'Mistral Medium' },
+      { pattern: /mistral[-_ ]?small/i, prompt: 2, completion: 6, label: 'Mistral Small' },
+      { pattern: /mixtral[-_ ]?8x7b/i, prompt: 2.7, completion: 2.7, label: 'Mixtral 8x7B' },
+      { pattern: /mixtral[-_ ]?8x22b/i, prompt: 4.5, completion: 4.5, label: 'Mixtral 8x22B' },
+      // Qwen / Alibaba
+      { pattern: /qwen[-_ ]?2\.5[-_ ]?72b/i, prompt: 0.6, completion: 0.6, label: 'Qwen2.5 72B' },
+      { pattern: /qwen[-_ ]?2\.5[-_ ]?32b/i, prompt: 0.35, completion: 0.35, label: 'Qwen2.5 32B' },
+      { pattern: /qwen[-_ ]?2\.5[-_ ]?14b/i, prompt: 0.2, completion: 0.2, label: 'Qwen2.5 14B' },
+      { pattern: /qwen[-_ ]?2\.5[-_ ]?7b/i, prompt: 0.12, completion: 0.12, label: 'Qwen2.5 7B' },
+      { pattern: /qwen[-_ ]?2\.5[-_ ]?coder/i, prompt: 0.45, completion: 0.45, label: 'Qwen2.5 Coder' },
+      // DeepSeek
+      { pattern: /deepseek[-_ ]?v3/i, prompt: 0.28, completion: 0.28, label: 'DeepSeek V3' },
+      { pattern: /deepseek[-_ ]?coder[-_ ]?v2/i, prompt: 0.14, completion: 0.14, label: 'DeepSeek Coder V2' },
+      { pattern: /deepseek[-_ ]?coder/i, prompt: 0.14, completion: 0.14, label: 'DeepSeek Coder' },
+      // xAI / Grok
+      { pattern: /grok[-_ ]?2/i, prompt: 5, completion: 15, label: 'Grok-2' },
+      { pattern: /grok[-_ ]?1\.5/i, prompt: 2, completion: 2, label: 'Grok-1.5' },
+      // Perplexity
+      { pattern: /perplexity[-_ ]?sonar[-_ ]?large/i, prompt: 2, completion: 2, label: 'Perplexity Sonar Large' },
+      { pattern: /perplexity[-_ ]?sonar[-_ ]?small/i, prompt: 0.6, completion: 0.6, label: 'Perplexity Sonar Small' },
+      // Cohere
+      { pattern: /command[-_ ]?r[-_ ]?plus/i, prompt: 3, completion: 15, label: 'Cohere Command R+' },
+      { pattern: /command[-_ ]?r(?![-_ ]?plus)/i, prompt: 0.5, completion: 0.5, label: 'Cohere Command R' },
+      // AI21
+      { pattern: /jamba[-_ ]?instruct/i, prompt: 1.5, completion: 1.5, label: 'AI21 Jamba Instruct' },
+      // Stability / Others
+      { pattern: /nous[-_ ]?hermes[-_ ]?2/i, prompt: 0.45, completion: 0.45, label: 'Nous Hermes 2' },
+      { pattern: /yi[-_ ]?34b/i, prompt: 0.4, completion: 0.4, label: 'Yi 34B' },
+      { pattern: /yi[-_ ]?1\.5[-_ ]?34b/i, prompt: 0.35, completion: 0.35, label: 'Yi 1.5 34B' },
+      { pattern: /yi[-_ ]?1\.5[-_ ]?9b/i, prompt: 0.18, completion: 0.18, label: 'Yi 1.5 9B' },
+      { pattern: /phi[-_ ]?3[-_ ]?medium/i, prompt: 0.3, completion: 0.3, label: 'Phi-3 Medium' },
+      { pattern: /phi[-_ ]?3[-_ ]?mini/i, prompt: 0.2, completion: 0.2, label: 'Phi-3 Mini' },
+      { pattern: /phi[-_ ]?3[-_ ]?small/i, prompt: 0.1, completion: 0.1, label: 'Phi-3 Small' },
+      { pattern: /wizardlm[-_ ]?2[-_ ]?8x22b/i, prompt: 0.75, completion: 0.75, label: 'WizardLM 2 8x22B' },
+      { pattern: /wizardlm[-_ ]?2[-_ ]?7b/i, prompt: 0.15, completion: 0.15, label: 'WizardLM 2 7B' },
+      { pattern: /zephyr[-_ ]?orpo/i, prompt: 0.2, completion: 0.2, label: 'Zephyr 141B' },
+      { pattern: /solar[-_ ]?10\.7b/i, prompt: 0.6, completion: 0.6, label: 'Upstage SOLAR 10.7B' },
+    ];
+    function normalizePricing(value) {
+      if (value == null) return null;
+      if (typeof value === 'number') {
+        return Number.isFinite(value) && value > 0
+          ? { prompt: value, completion: value }
+          : null;
+      }
+      if (typeof value !== 'object') return null;
+      const prompt = Number(value.prompt ?? value.input ?? value.cost ?? value.perMillion ?? value.per_million);
+      const completionRaw = value.completion ?? value.output ?? value.completions ?? value.output_cost;
+      const completion = Number(completionRaw ?? prompt);
+      if (!Number.isFinite(prompt) || prompt <= 0) return null;
+      return {
+        prompt,
+        completion: Number.isFinite(completion) && completion > 0 ? completion : prompt,
+      };
+    }
+    function resolveModelPricing(model) {
+      if (!model) return null;
+      const normalizedModel = String(model).toLowerCase();
+      const overrides = (typeof window !== 'undefined' && window.POKERBENCH_MODEL_PRICING && typeof window.POKERBENCH_MODEL_PRICING === 'object')
+        ? window.POKERBENCH_MODEL_PRICING
+        : null;
+      if (overrides) {
+        for (const [key, value] of Object.entries(overrides)) {
+          const normalizedKey = String(key ?? '').toLowerCase();
+          if (!normalizedKey) continue;
+          if (normalizedModel.includes(normalizedKey)) {
+            const pricing = normalizePricing(value);
+            if (pricing) {
+              return { ...pricing, source: 'override', label: key };
+            }
+          }
+        }
+      }
+      for (const entry of DEFAULT_MODEL_COSTS) {
+        if (entry.pattern.test(normalizedModel)) {
+          return {
+            prompt: entry.prompt,
+            completion: entry.completion ?? entry.prompt,
+            source: 'default',
+            label: entry.label,
+          };
+        }
+      }
+      return null;
+    }
+    function estimateTokensPerHand(totalHands, totalTokens) {
+      const hands = Number(totalHands);
+      const tokens = Number(totalTokens);
+      if (hands > 0 && tokens > 0) {
+        const perHand = tokens / hands;
+        if (Number.isFinite(perHand) && perHand > 0) return { value: perHand, observed: true };
+      }
+      const pairs = DEFAULT_ESTIMATE.mirroredSamplePairs * DEFAULT_ESTIMATE.handsPerMirroredPair;
+      const fallback = DEFAULT_ESTIMATE.tokensPerSample / Math.max(pairs, 1);
+      return { value: fallback, observed: false };
+    }
+    function clampShare(n) {
+      if (!Number.isFinite(n)) return DEFAULT_ESTIMATE.promptShare;
+      if (n <= 0) return 0;
+      if (n >= 1) return 1;
+      return n;
+    }
+    function estimateCostPer50Hands({ model, totalHands, promptTokens, completionTokens, totalTokens }) {
+      const pricing = resolveModelPricing(model);
+      if (!pricing) return null;
+      const tokensPerHand = estimateTokensPerHand(totalHands, totalTokens);
+      const perHand = tokensPerHand?.value;
+      if (!Number.isFinite(perHand) || perHand <= 0) return null;
+      const prompt = Number(promptTokens);
+      const completion = Number(completionTokens);
+      const tokenSum = prompt + completion;
+      const promptShare = tokenSum > 0
+        ? clampShare(prompt / tokenSum)
+        : clampShare(DEFAULT_ESTIMATE.promptShare);
+      const completionShare = clampShare(1 - promptShare);
+      const effectivePerMillion = (pricing.prompt * promptShare) + (pricing.completion * completionShare);
+      if (!Number.isFinite(effectivePerMillion) || effectivePerMillion <= 0) return null;
+      const tokensPer50 = perHand * 50;
+      const estimate = tokensPer50 / 1_000_000 * effectivePerMillion;
+      if (!Number.isFinite(estimate) || estimate <= 0) return null;
+      return {
+        amount: estimate,
+        tokensPerHand: perHand,
+        tokensPer50,
+        promptShare,
+        completionShare,
+        pricing,
+        effectivePerMillion,
+        observedTokens: !!tokensPerHand?.observed,
+      };
+    }
     const formatSignedChips = (value, fractionDigits = 0) => {
       if (!Number.isFinite(value)) return Number(0).toLocaleString(undefined, {
         minimumFractionDigits: fractionDigits,
@@ -157,16 +329,40 @@
       const totalTokens = Number(c.total_tokens ?? (promptTokens + completionTokens));
       const costPerHandUSD = totalHands > 0 ? totalCostUSD / totalHands : null;
       const costPer50 = Number.isFinite(costPerHandUSD) ? costPerHandUSD * 50 : null;
-      const hasCostData = Number.isFinite(costPer50) && llmCalls > 0;
+      const hasCostData = Number.isFinite(costPer50);
+      const estimatedCost = hasCostData ? null : estimateCostPer50Hands({
+        model: c.model,
+        totalHands,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+      });
       const costDisplay = hasCostData
         ? formatUSD(costPer50, { minimumFractionDigits: costPer50 < 1 ? 3 : 2, maximumFractionDigits: costPer50 < 1 ? 3 : 2 })
-        : '&mdash;';
+        : (estimatedCost
+            ? `≈${formatUSD(estimatedCost.amount, { minimumFractionDigits: estimatedCost.amount < 1 ? 3 : 2, maximumFractionDigits: estimatedCost.amount < 1 ? 3 : 2 })}`
+            : '&mdash;');
       const costTip = (() => {
         if (!hasCostData) {
           if (totalHands <= 0) {
             return 'Average cost per 50 hands will appear once this bot has completed at least one hand on PokerBench.';
           }
-          return 'Cost per 50 hands is unavailable because no usage data has been recorded for this bot yet.';
+          if (estimatedCost) {
+            const promptRate = formatUSD(estimatedCost.pricing.prompt, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const completionRate = formatUSD(estimatedCost.pricing.completion, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const effectiveRate = formatUSD(estimatedCost.effectivePerMillion, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const tokensPerHandLabel = Number(estimatedCost.tokensPerHand).toLocaleString(undefined, { minimumFractionDigits: estimatedCost.observedTokens ? 1 : 0, maximumFractionDigits: estimatedCost.observedTokens ? 1 : 0 });
+            const tokensPer50Label = Number(estimatedCost.tokensPer50).toLocaleString(undefined, { maximumFractionDigits: 0 });
+            const promptSharePct = Math.round(estimatedCost.promptShare * 100);
+            const sourceLabel = estimatedCost.pricing.source === 'override'
+              ? `custom pricing match (${estimatedCost.pricing.label})`
+              : `default pricing (${estimatedCost.pricing.label})`;
+            const tokenSource = estimatedCost.observedTokens
+              ? 'observed average tokens per hand from recorded usage'
+              : `assumed ${DEFAULT_ESTIMATE.tokensPerSample.toLocaleString()} tokens every ${DEFAULT_ESTIMATE.mirroredSamplePairs} mirrored pairs (${DEFAULT_ESTIMATE.handsPerMirroredPair * DEFAULT_ESTIMATE.mirroredSamplePairs} total hands)`;
+            return `Estimated using ${tokenSource} and ${sourceLabel}: prompt ${promptRate} / completion ${completionRate} per million tokens. With ${promptSharePct}% prompt share that implies ${effectiveRate} per million tokens, about ${tokensPerHandLabel} tokens per hand (${tokensPer50Label} tokens across 50 hands), for an estimated ${formatUSD(estimatedCost.amount, { minimumFractionDigits: estimatedCost.amount < 1 ? 3 : 2, maximumFractionDigits: estimatedCost.amount < 1 ? 3 : 2 })} per 50 hands. Override pricing by setting window.POKERBENCH_MODEL_PRICING in the console.`;
+          }
+          return 'Cost per 50 hands is unavailable because no usage data has been recorded for this bot yet. Provide a pricing override with window.POKERBENCH_MODEL_PRICING to enable estimates.';
         }
         const totalHandsLabel = sum(totalHands);
         const totalCostLabel = formatUSD(totalCostUSD, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
