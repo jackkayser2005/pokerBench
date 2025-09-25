@@ -974,6 +974,78 @@ const ReplayPage = (() => {
     return null;
   }
 
+  function triggerDownload(content, mimeType, filename) {
+    if (!content) return;
+    try {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 2000);
+    } catch (err) {
+      console.warn('Unable to trigger download', err);
+    }
+  }
+
+  function serializeRowsToCsv(rows) {
+    if (!Array.isArray(rows) || !rows.length) return '';
+    const seen = new Set();
+    const columns = [];
+    rows.forEach((row) => {
+      if (!row || typeof row !== 'object') return;
+      Object.keys(row).forEach((key) => {
+        if (!seen.has(key)) {
+          seen.add(key);
+          columns.push(key);
+        }
+      });
+    });
+    if (!columns.length) return '';
+
+    const escapeValue = (value) => {
+      if (value == null) return '';
+      let text;
+      if (typeof value === 'object') {
+        try {
+          text = JSON.stringify(value);
+        } catch (err) {
+          text = String(value);
+        }
+      } else {
+        text = String(value);
+      }
+      const needsQuotes = /[",\n\r]/.test(text) || /^\s|\s$/.test(text);
+      const escaped = text.replace(/"/g, '""');
+      return needsQuotes ? `"${escaped}"` : escaped;
+    };
+
+    const header = columns.map(col => escapeValue(col)).join(',');
+    const lines = rows.map((row) => {
+      const line = columns.map((col) => escapeValue(row?.[col])).join(',');
+      return line;
+    });
+    return [header, ...lines].join('\r\n');
+  }
+
+  function updateDownloadButtons() {
+    const disabled = !state.rows.length;
+    [els.downloadJson, els.downloadCsv].forEach((btn) => {
+      if (!btn) return;
+      btn.disabled = disabled;
+      if (disabled) {
+        btn.setAttribute('aria-disabled', 'true');
+      } else {
+        btn.removeAttribute('aria-disabled');
+      }
+    });
+  }
+
   function dateShort(iso) {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
@@ -1167,6 +1239,7 @@ const ReplayPage = (() => {
     state.baseEquity = { SB: 0, BB: 0 };
     updateDealerIndicator();
     updateWinnerGlow();
+    updateDownloadButtons();
     renderEmptyActionList('Loading actions…');
     setCards(els.board, []);
     setCards(els.sbHole, []);
@@ -1178,6 +1251,8 @@ const ReplayPage = (() => {
 
   async function loadMatchLogs() {
     if (!state.matchId) {
+      state.rows = [];
+      updateDownloadButtons();
       renderEmptyActionList('Select a match to view its action log.');
       return;
     }
@@ -1188,6 +1263,7 @@ const ReplayPage = (() => {
       return;
     }
     state.rows = Array.isArray(data?.rows) ? data.rows : [];
+    updateDownloadButtons();
     if (!state.rows.length) {
       renderEmptyActionList('No actions recorded for this match yet.');
       draw();
@@ -1256,6 +1332,8 @@ const ReplayPage = (() => {
     els.playBtn = $('#play');
     els.pauseBtn = $('#pause');
     els.nextBtn = $('#next');
+    els.downloadJson = $('#downloadJson');
+    els.downloadCsv = $('#downloadCsv');
     els.actionList = $('#actionList');
     els.potOdds = $('#potOdds');
     els.requiredEq = $('#requiredEq');
@@ -1266,7 +1344,7 @@ const ReplayPage = (() => {
   }
 
   function attachListeners() {
-    [els.playBtn, els.pauseBtn, els.nextBtn].forEach(addPressFeedback);
+    [els.playBtn, els.pauseBtn, els.nextBtn, els.downloadJson, els.downloadCsv].forEach(addPressFeedback);
 
     if (els.playBtn) {
       els.playBtn.addEventListener('click', () => {
@@ -1282,6 +1360,24 @@ const ReplayPage = (() => {
       els.nextBtn.addEventListener('click', () => {
         pause();
         step(+1);
+      });
+    }
+    if (els.downloadJson) {
+      els.downloadJson.addEventListener('click', () => {
+        if (!state.rows.length) return;
+        const name = state.matchId ? `match-${state.matchId}.json` : 'match.json';
+        const json = JSON.stringify(state.rows, null, 2);
+        triggerDownload(json, 'application/json', name);
+      });
+    }
+    if (els.downloadCsv) {
+      els.downloadCsv.addEventListener('click', () => {
+        if (!state.rows.length) return;
+        const name = state.matchId ? `match-${state.matchId}.csv` : 'match.csv';
+        const csv = serializeRowsToCsv(state.rows);
+        if (!csv) return;
+        const withBom = `\ufeff${csv}`;
+        triggerDownload(withBom, 'text/csv;charset=utf-8;', name);
       });
     }
     if (els.speedSlider) {
@@ -1367,6 +1463,7 @@ const ReplayPage = (() => {
 
   async function init() {
     cacheElements();
+    updateDownloadButtons();
     attachListeners();
     updateDealerIndicator();
     updateStatus('paused');

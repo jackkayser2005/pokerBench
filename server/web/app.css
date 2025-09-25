@@ -4225,6 +4225,17 @@ body.tooltips-disabled .inline-tip {
   min-width: 220px;
 }
 
+.replay-intro__downloads {
+  display: grid;
+  gap: 6px;
+}
+
+.replay-intro__downloads-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .replay-intro__players {
   display: flex;
   flex-wrap: wrap;
