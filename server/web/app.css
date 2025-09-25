@@ -1891,6 +1891,23 @@ p {
   background: var(--surface-alt);
 }
 
+.matrix-table th,
+.matrix-table td {
+  padding: clamp(6px, 0.9vw, 14px);
+}
+
+.matrix-table td.matrix-cell,
+.matrix-table td.matrix-diag {
+  min-width: clamp(42px, 4.4vw, 72px);
+  font-size: clamp(11px, 0.95vw, var(--fs-2));
+}
+
+.matrix-table th.rot {
+  padding-block: clamp(6px, 0.8vw, 12px);
+  padding-inline: clamp(4px, 0.6vw, 12px);
+  font-size: clamp(10px, 0.9vw, var(--fs-1));
+}
+
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -2287,7 +2304,7 @@ p {
 }
 
 .matrix-table th.matrix-sticky {
-  min-width: 200px;
+  min-width: clamp(160px, 24vw, 220px);
   box-shadow: 4px 0 12px rgba(15, 23, 42, 0.08);
 }
 

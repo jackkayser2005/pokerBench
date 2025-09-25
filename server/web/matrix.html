@@ -41,6 +41,7 @@
       const hue = 240*(1-x); // blue -> red
       return `background-color: hsl(${hue} 70% 42% / .22)`;
     }
+    const SHORT_NAME_SUFFIXES = new Set(['free', 'preview', 'latest', 'beta', 'experimental']);
     function escapeAttr(s = ''){
       return String(s)
         .replace(/&/g, '&amp;')
@@ -51,10 +52,32 @@
     function shortName(s){
       s = (s||'').trim().replace(/^"+|"+$/g,'');
       s = s.replace(/[\-_.]20\d{2}(?:[\-_.]?\d{2}){0,2}$/,'');
-      const parts = s.split(/[\/:@]/).filter(Boolean);
-      s = (parts[parts.length-1]||s).trim();
-      if (s.length>28) s = s.slice(0,28)+'…';
-      return s;
+      const slashParts = s.split('/').filter(Boolean);
+      let name = (slashParts[slashParts.length-1]||s).trim();
+      name = name.replace(/[\-_.]20\d{2}(?:[\-_.]?\d{2}){0,2}$/,'');
+      if(name.includes('@')){
+        const atParts = name.split('@').filter(Boolean);
+        if(atParts.length){
+          const last = atParts[atParts.length-1];
+          if(SHORT_NAME_SUFFIXES.has(last.toLowerCase())){
+            const kept = atParts.slice(0, -1);
+            name = kept.length ? kept.join('@') : atParts[0];
+          }
+        }
+      }
+      if(name.includes(':')){
+        const colonParts = name.split(':').filter(Boolean);
+        if(colonParts.length){
+          const filtered = colonParts.filter((part, idx)=> idx === 0 || !SHORT_NAME_SUFFIXES.has(part.toLowerCase()));
+          if(filtered.length){
+            name = filtered.join(':');
+          }else{
+            name = colonParts[0];
+          }
+        }
+      }
+      if (name.length>28) name = name.slice(0,28)+'…';
+      return name;
     }
     function eloProb(ra, rb){ return 1 / (1 + Math.pow(10, (rb - ra)/400)); }
     async function getJSON(url, fallback){
