@@ -916,10 +916,16 @@
         const chartRect = chartWrap.getBoundingClientRect();
         const relX = (point.x / width) * chartRect.width;
         const relY = (point.y / height) * chartRect.height;
-        const clampedX = Math.min(Math.max(relX, 72), chartRect.width - 72);
+
+        const tooltipWidth = tooltip.offsetWidth || tooltip.getBoundingClientRect().width || 0;
+        const horizontalMargin = 16;
+        const maxLeft = Math.max(horizontalMargin, chartRect.width - tooltipWidth - horizontalMargin);
+        const desiredLeft = relX - tooltipWidth / 2;
+        const clampedLeft = Math.min(Math.max(desiredLeft, horizontalMargin), maxLeft);
+
         const clampedY = Math.min(Math.max(relY, 78), chartRect.height - 18);
 
-        tooltip.style.left = `${clampedX}px`;
+        tooltip.style.left = `${clampedLeft}px`;
         tooltip.style.top = `${clampedY}px`;
         tooltip.classList.add('visible');
       }
