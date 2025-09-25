@@ -111,6 +111,12 @@
       const d = await getJSON(`/api/bot?id=${encodeURIComponent(id)}`, `/web/data/bot-${encodeURIComponent(id)}.json`);
       if (!d) { document.body.innerHTML = '<div class="wrap wrap--wide"><div class="card">Bot not found</div></div>'; return; }
       const c = d.career || {};
+      const totalHands = Number(c.total_hands ?? c.hands ?? 0);
+      const netChips = Number(c.net_chips ?? 0);
+      const costPer50 = totalHands > 0 ? (netChips / totalHands) * 50 : null;
+      const costDisplay = (costPer50 == null || Number.isNaN(costPer50))
+        ? '&mdash;'
+        : Number(costPer50).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
       // Header
       $('#title').textContent = c.model || 'Bot';
@@ -119,7 +125,8 @@
       // Meta KVs
       $('#meta').innerHTML = `
         <div class="muted">Matches</div><div>${sum(c.matches)}</div>
-        <div class="muted">Hands</div><div>${sum(c.hands)}</div>
+        <div class="muted">Hands</div><div>${sum(totalHands)}</div>
+        <div class="muted">Cost / 50 hands</div><div>${costDisplay}</div>
         <div class="muted">Accuracy</div><div id="meta-acc">&mdash;</div>
         <div class="muted">Updated</div><div>${c.updated_at ? new Date(c.updated_at).toLocaleString() : '-'}</div>`;
 
