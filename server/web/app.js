@@ -84,10 +84,14 @@
           navToggle.setAttribute('aria-expanded', 'false');
           navToggle.setAttribute('aria-label', 'Menu');
           navToggle.setAttribute('title', 'Menu');
+          navToggle.hidden = true;
+          navToggle.setAttribute('aria-hidden', 'true');
           body?.classList.remove('has-open-mobile-nav');
           return;
         }
 
+        navToggle.hidden = false;
+        navToggle.removeAttribute('aria-hidden');
         navHost.classList.add('topnav--collapsible');
         if (isMenuOpen) {
           navHost.classList.add('topnav--menu-open');
