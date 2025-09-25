@@ -126,6 +126,46 @@ func (db *DB) MatchJudgeAccuracy(ctx context.Context, matchID int64) (map[int64]
 	return db.judgeAccuracy(ctx, " AND a.match_id = $1", matchID)
 }
 
+func (db *DB) MatchJudgeAccuracyByStreet(ctx context.Context, matchID int64) (map[int64]map[string]JudgeAccuracy, error) {
+	query := `
+                SELECT p.bot_id,
+                       a.street,
+                       SUM(CASE WHEN e.is_top_action THEN 1 ELSE 0 END)::int AS good,
+                       COUNT(*)::int AS total
+                  FROM action_eval e
+                  JOIN action_logs a ON a.id = e.action_log_id
+                  JOIN match_participants p ON p.match_id = a.match_id AND p.label = a.actor_label
+                 WHERE e.solver = 'MCJudge' AND a.match_id = $1
+                 GROUP BY p.bot_id, a.street`
+
+	rows, err := db.Query(ctx, query, matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64]map[string]JudgeAccuracy)
+	for rows.Next() {
+		var (
+			botID  int64
+			street string
+			good   int
+			total  int
+		)
+		if err := rows.Scan(&botID, &street, &good, &total); err != nil {
+			return nil, err
+		}
+		if _, ok := out[botID]; !ok {
+			out[botID] = make(map[string]JudgeAccuracy)
+		}
+		out[botID][strings.ToLower(street)] = JudgeAccuracy{Good: good, Total: total}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (db *DB) AllJudgeAccuracy(ctx context.Context) (map[int64]JudgeAccuracy, error) {
 	res, err := db.judgeAccuracy(ctx, "")
 	if err != nil {
