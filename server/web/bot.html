@@ -329,7 +329,7 @@
       const totalTokens = Number(c.total_tokens ?? (promptTokens + completionTokens));
       const costPerHandUSD = totalHands > 0 ? totalCostUSD / totalHands : null;
       const costPer50 = Number.isFinite(costPerHandUSD) ? costPerHandUSD * 50 : null;
-      const hasCostData = Number.isFinite(costPer50);
+      const hasCostData = Number.isFinite(costPer50) && (llmCalls > 0 || totalCostMicros > 0);
       const estimatedCost = hasCostData ? null : estimateCostPer50Hands({
         model: c.model,
         totalHands,
