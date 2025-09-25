@@ -3,6 +3,7 @@ package main
 
 import (
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,41 @@ import (
 //
 //go:embed web/*
 var webFS embed.FS
+
+type matchLogRow struct {
+	ID              int64     `json:"id"`
+	PairIndex       int       `json:"pair_index"`
+	HandID          string    `json:"hand_id"`
+	Street          string    `json:"street"`
+	ActorLabel      string    `json:"actor_label"`
+	Action          string    `json:"action"`
+	Amount          *int      `json:"amount"`
+	Pot             int       `json:"pot"`
+	CurBet          int       `json:"cur_bet"`
+	ToCall          int       `json:"to_call"`
+	MinRaiseTo      int       `json:"min_raise_to"`
+	MaxRaiseTo      int       `json:"max_raise_to"`
+	SBStack         int       `json:"sb_stack"`
+	BBStack         int       `json:"bb_stack"`
+	SBCommitted     int       `json:"sb_committed"`
+	BBCommitted     int       `json:"bb_committed"`
+	SBBank          int       `json:"sb_bank"`
+	BBBank          int       `json:"bb_bank"`
+	Board           []string  `json:"board"`
+	SBHole          []string  `json:"sb_hole"`
+	BBHole          []string  `json:"bb_hole"`
+	PotOdds         float64   `json:"pot_odds"`
+	RequiredEq      float64   `json:"required_equity"`
+	CreatedAt       time.Time `json:"created_at"`
+	Solver          *string   `json:"solver"`
+	SolverVersion   *string   `json:"solver_version"`
+	EvalBestAction  *string   `json:"eval_best_action"`
+	EvalBestTo      *int      `json:"eval_best_to"`
+	EvalGapBB       *float64  `json:"eval_gap_bb"`
+	EvalCorrectProb *float64  `json:"eval_correct_prob"`
+	EvalIsTop       *bool     `json:"eval_is_top"`
+	WinnerSeat      *string   `json:"winner_seat,omitempty"`
+}
 
 func Router(db *store.DB) http.Handler {
 	mux := http.NewServeMux()
@@ -1218,42 +1254,6 @@ func Router(db *store.DB) http.Handler {
 			http.Error(w, "bad match_id", 400)
 			return
 		}
-		type Row struct {
-			ID          int64     `json:"id"`
-			PairIndex   int       `json:"pair_index"`
-			HandID      string    `json:"hand_id"`
-			Street      string    `json:"street"`
-			ActorLabel  string    `json:"actor_label"`
-			Action      string    `json:"action"`
-			Amount      *int      `json:"amount"`
-			Pot         int       `json:"pot"`
-			CurBet      int       `json:"cur_bet"`
-			ToCall      int       `json:"to_call"`
-			MinRaiseTo  int       `json:"min_raise_to"`
-			MaxRaiseTo  int       `json:"max_raise_to"`
-			SBStack     int       `json:"sb_stack"`
-			BBStack     int       `json:"bb_stack"`
-			SBCommitted int       `json:"sb_committed"`
-			BBCommitted int       `json:"bb_committed"`
-			SBBank      int       `json:"sb_bank"`
-			BBBank      int       `json:"bb_bank"`
-			Board       []string  `json:"board"`
-			SBHole      []string  `json:"sb_hole"`
-			BBHole      []string  `json:"bb_hole"`
-			PotOdds     float64   `json:"pot_odds"`
-			RequiredEq  float64   `json:"required_equity"`
-			CreatedAt   time.Time `json:"created_at"`
-			// Optional solver eval join
-			Solver          *string  `json:"solver"`
-			SolverVersion   *string  `json:"solver_version"`
-			EvalBestAction  *string  `json:"eval_best_action"`
-			EvalBestTo      *int     `json:"eval_best_to"`
-			EvalGapBB       *float64 `json:"eval_gap_bb"`
-			EvalCorrectProb *float64 `json:"eval_correct_prob"`
-			EvalIsTop       *bool    `json:"eval_is_top"`
-			// Server-enriched winner at end of hand
-			WinnerSeat *string `json:"winner_seat,omitempty"`
-		}
 		rows, err := db.Query(ctx, `
             SELECT a.id, a.pair_index, a.hand_id, a.street, a.actor_label, a.action, a.amount,
                    a.pot, a.cur_bet, a.to_call, a.min_raise_to, a.max_raise_to,
@@ -1271,9 +1271,9 @@ func Router(db *store.DB) http.Handler {
 			return
 		}
 		defer rows.Close()
-		out := []Row{}
+		out := []matchLogRow{}
 		for rows.Next() {
-			var r Row
+			var r matchLogRow
 			if err := rows.Scan(&r.ID, &r.PairIndex, &r.HandID, &r.Street, &r.ActorLabel, &r.Action, &r.Amount,
 				&r.Pot, &r.CurBet, &r.ToCall, &r.MinRaiseTo, &r.MaxRaiseTo,
 				&r.SBStack, &r.BBStack, &r.SBCommitted, &r.BBCommitted,
@@ -1317,8 +1317,8 @@ func Router(db *store.DB) http.Handler {
 			}
 			return engine.Card{Rank: rank, Suit: suitCh}, true
 		}
-		computeShowdown := func(r Row) *string {
-			if len(r.Board) < 5 || len(r.SBHole) != 2 || len(r.BBHole) != 2 {
+		computeShowdown := func(row matchLogRow) *string {
+			if len(row.Board) < 5 || len(row.SBHole) != 2 || len(row.BBHole) != 2 {
 				return nil
 			}
 			toCards := func(ss []string) ([]engine.Card, bool) {
@@ -1332,9 +1332,9 @@ func Router(db *store.DB) http.Handler {
 				}
 				return cs, true
 			}
-			board, ok1 := toCards(r.Board[:5])
-			sb, ok2 := toCards(r.SBHole)
-			bb, ok3 := toCards(r.BBHole)
+			board, ok1 := toCards(row.Board[:5])
+			sb, ok2 := toCards(row.SBHole)
+			bb, ok3 := toCards(row.BBHole)
 			if !ok1 || !ok2 || !ok3 {
 				return nil
 			}
@@ -1345,12 +1345,12 @@ func Router(db *store.DB) http.Handler {
 			}
 			return nil
 		}
-		winnerFromFold := func(r Row) *string {
-			if !strings.EqualFold(r.Action, "fold") || r.ActorLabel == "" {
+		winnerFromFold := func(row matchLogRow) *string {
+			if !strings.EqualFold(row.Action, "fold") || row.ActorLabel == "" {
 				return nil
 			}
-			actor := strings.ToUpper(r.ActorLabel)
-			aIsSB := strings.HasSuffix(strings.ToUpper(r.HandID), "A")
+			actor := strings.ToUpper(row.ActorLabel)
+			aIsSB := strings.HasSuffix(strings.ToUpper(row.HandID), "A")
 			var seat string
 			switch actor {
 			case "A":
@@ -1402,10 +1402,96 @@ func Router(db *store.DB) http.Handler {
 				out[idx].WinnerSeat = ws
 			}
 		}
+		if strings.EqualFold(r.URL.Query().Get("format"), "csv") {
+			writeMatchLogsCSV(w, out, matchID)
+			return
+		}
 		writeJSON(w, map[string]any{"rows": out})
 	})
 
 	return mux
+}
+
+func writeMatchLogsCSV(w http.ResponseWriter, rows []matchLogRow, matchID int64) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	if matchID > 0 {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"match-%d.csv\"", matchID))
+	}
+	if _, err := w.Write([]byte("\ufeff")); err != nil {
+		log.Printf("write csv bom: %v", err)
+	}
+
+	seen := map[string]struct{}{}
+	columns := []string{}
+	mapped := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		data, err := json.Marshal(row)
+		if err != nil {
+			log.Printf("marshal match log row: %v", err)
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			log.Printf("unmarshal match log row: %v", err)
+			continue
+		}
+		mapped = append(mapped, m)
+		for k := range m {
+			if _, ok := seen[k]; !ok {
+				seen[k] = struct{}{}
+				columns = append(columns, k)
+			}
+		}
+	}
+
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	if len(columns) == 0 {
+		return
+	}
+
+	if err := writer.Write(columns); err != nil {
+		log.Printf("write csv header: %v", err)
+		return
+	}
+
+	for _, row := range mapped {
+		record := make([]string, len(columns))
+		for i, col := range columns {
+			record[i] = csvCellValue(row[col])
+		}
+		if err := writer.Write(record); err != nil {
+			log.Printf("write csv row: %v", err)
+			return
+		}
+	}
+
+	if err := writer.Error(); err != nil {
+		log.Printf("csv writer error: %v", err)
+	}
+}
+
+func csvCellValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	case float64, bool:
+		return fmt.Sprint(v)
+	case []any, map[string]any:
+		if raw, err := json.Marshal(v); err == nil {
+			return string(raw)
+		}
+		return fmt.Sprint(v)
+	default:
+		if raw, err := json.Marshal(v); err == nil {
+			return string(raw)
+		}
+		return fmt.Sprint(v)
+	}
 }
 
 func strPtrValue(s *string) string {
