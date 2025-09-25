@@ -132,7 +132,19 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 
 		usage := usageFromHeaders(resp.Header)
 		usageFromBody := usageFromJSONBody(body)
-		usage.Add(usageFromBody)
+
+		if usage.PromptTokens == 0 {
+			usage.PromptTokens = usageFromBody.PromptTokens
+		}
+		if usage.CompletionTokens == 0 {
+			usage.CompletionTokens = usageFromBody.CompletionTokens
+		}
+		if usage.TotalTokens == 0 {
+			usage.TotalTokens = usageFromBody.TotalTokens
+		}
+		if usage.TotalCostMicros == 0 {
+			usage.TotalCostMicros = usageFromBody.TotalCostMicros
+		}
 		if usage.CallCount == 0 {
 			usage.CallCount = 1
 		}
