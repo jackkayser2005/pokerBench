@@ -1875,6 +1875,24 @@ p {
   font-size: var(--fs-2);
 }
 
+.matrix-table--sm th,
+.matrix-table--sm td {
+  padding: 10px 12px;
+  font-size: calc(var(--fs-2) - 0.05rem);
+}
+
+.matrix-table--xs th,
+.matrix-table--xs td {
+  padding: 8px 10px;
+  font-size: calc(var(--fs-2) - 0.12rem);
+}
+
+.matrix-table--xxs th,
+.matrix-table--xxs td {
+  padding: 6px 8px;
+  font-size: calc(var(--fs-2) - 0.2rem);
+}
+
 .table th,
 .lb-table thead th,
 .matrix-table th {
@@ -2289,6 +2307,18 @@ p {
 .matrix-table th.matrix-sticky {
   min-width: 200px;
   box-shadow: 4px 0 12px rgba(15, 23, 42, 0.08);
+}
+
+.matrix-table--sm th.matrix-sticky {
+  min-width: 180px;
+}
+
+.matrix-table--xs th.matrix-sticky {
+  min-width: 160px;
+}
+
+.matrix-table--xxs th.matrix-sticky {
+  min-width: 140px;
 }
 
 .matrix-table th.rot {

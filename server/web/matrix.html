@@ -48,15 +48,31 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
     }
-    function shortName(s){
-      s = (s||'').trim().replace(/^"+|"+$/g,'');
+    function shortName(value){
+      let s = (value||'').trim().replace(/^"+|"+$/g,'');
       s = s.replace(/[\-_.]20\d{2}(?:[\-_.]?\d{2}){0,2}$/,'');
-      const parts = s.split(/[\/:@]/).filter(Boolean);
-      s = (parts[parts.length-1]||s).trim();
-      if (s.length>28) s = s.slice(0,28)+'…';
-      return s;
+      const pathParts = s.split(/[\\/]/).filter(Boolean);
+      let leaf = (pathParts[pathParts.length-1]||s).trim();
+      if (leaf.includes('@')){
+        const atParts = leaf.split('@').map(part=>part.trim()).filter(Boolean);
+        const before = atParts[0];
+        leaf = (before || atParts[atParts.length-1] || leaf).trim();
+      }
+      if (leaf.includes(':')){
+        const colonParts = leaf.split(':').map(part=>part.trim()).filter(Boolean);
+        const preferred = colonParts.find(part=>!/^((free|standard|lite|demo|trial|beta|alpha|preview|test)(-plan)?)$/i.test(part));
+        leaf = (preferred || colonParts[0] || leaf).trim();
+      }
+      if (leaf.length>28) leaf = leaf.slice(0,28)+'…';
+      return leaf;
     }
     function eloProb(ra, rb){ return 1 / (1 + Math.pow(10, (rb - ra)/400)); }
+    function matrixSizeClass(count){
+      if (count >= 28) return 'matrix-table--xxs';
+      if (count >= 22) return 'matrix-table--xs';
+      if (count >= 16) return 'matrix-table--sm';
+      return '';
+    }
     async function getJSON(url, fallback){
       try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
       if (fallback){ try{ const r2 = await fetch(fallback); if(r2.ok) return await r2.json(); }catch(e){} }
@@ -78,7 +94,10 @@
         const pa = total>0 ? p.a_wins/total : 0.5;
         wins[i][j] = pa; wins[j][i] = 1-pa;
       }
-      let html = '<div class="table-wrap"><table class="matrix-table"><thead><tr><th class=\"matrix-sticky\">Model</th>' + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
+      const sizeClass = matrixSizeClass(N);
+      const tableClasses = ['matrix-table'];
+      if(sizeClass) tableClasses.push(sizeClass);
+      let html = `<div class="table-wrap"><table class="${tableClasses.join(' ')}"><thead><tr><th class=\"matrix-sticky\">Model</th>` + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
       bots.forEach((b, i)=>{
         html += `<tr><th scope="row" class="matrix-sticky"><div>${shortName(b.name)}</div><div class=\"sub\">${b.company}</div></th>`;
         for(let j=0;j<N;j++){
