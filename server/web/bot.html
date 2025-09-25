@@ -27,6 +27,43 @@
     // numbers + labels
     const sum = x => (x==null?0:Number(x)).toLocaleString();
     const pct = x => Number(x||0).toFixed(1);
+    const formatUSD = (value, opts = {}) => {
+      const amount = Number(value);
+      if (!Number.isFinite(amount)) return '$0.00';
+      const abs = Math.abs(amount);
+      const min = Number.isFinite(opts.minimumFractionDigits)
+        ? opts.minimumFractionDigits
+        : (abs < 1 ? 3 : 2);
+      const max = Number.isFinite(opts.maximumFractionDigits)
+        ? opts.maximumFractionDigits
+        : min;
+      return amount.toLocaleString(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: min,
+        maximumFractionDigits: max,
+      });
+    };
+    const escapeAttr = (value = '') => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const formatSignedChips = (value, fractionDigits = 0) => {
+      if (!Number.isFinite(value)) return Number(0).toLocaleString(undefined, {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      });
+      const absValue = Math.abs(value);
+      const formatted = absValue.toLocaleString(undefined, {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      });
+      if (value > 0) return `+${formatted}`;
+      if (value < 0) return `-${formatted}`;
+      return formatted;
+    };
     function canonicalStyle(s){
       const raw = (s||'').toUpperCase().replace(/[^A-Z]/g,'');
       const map = {
@@ -112,11 +149,36 @@
       if (!d) { document.body.innerHTML = '<div class="wrap wrap--wide"><div class="card">Bot not found</div></div>'; return; }
       const c = d.career || {};
       const totalHands = Number(c.total_hands ?? c.hands ?? 0);
-      const netChips = Number(c.net_chips ?? 0);
-      const costPer50 = totalHands > 0 ? (netChips / totalHands) * 50 : null;
-      const costDisplay = (costPer50 == null || Number.isNaN(costPer50))
-        ? '&mdash;'
-        : Number(costPer50).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const totalCostMicros = Number(c.total_cost_micro ?? 0);
+      const totalCostUSD = totalCostMicros / 1_000_000;
+      const llmCalls = Number(c.llm_calls ?? 0);
+      const promptTokens = Number(c.prompt_tokens ?? 0);
+      const completionTokens = Number(c.completion_tokens ?? 0);
+      const totalTokens = Number(c.total_tokens ?? (promptTokens + completionTokens));
+      const costPerHandUSD = totalHands > 0 ? totalCostUSD / totalHands : null;
+      const costPer50 = Number.isFinite(costPerHandUSD) ? costPerHandUSD * 50 : null;
+      const hasCostData = Number.isFinite(costPer50) && llmCalls > 0;
+      const costDisplay = hasCostData
+        ? formatUSD(costPer50, { minimumFractionDigits: costPer50 < 1 ? 3 : 2, maximumFractionDigits: costPer50 < 1 ? 3 : 2 })
+        : '&mdash;';
+      const costTip = (() => {
+        if (!hasCostData) {
+          if (totalHands <= 0) {
+            return 'Average cost per 50 hands will appear once this bot has completed at least one hand on PokerBench.';
+          }
+          return 'Cost per 50 hands is unavailable because no usage data has been recorded for this bot yet.';
+        }
+        const totalHandsLabel = sum(totalHands);
+        const totalCostLabel = formatUSD(totalCostUSD, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const perHandLabel = formatUSD(costPerHandUSD, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+        const per50Label = formatUSD(costPer50, { minimumFractionDigits: costPer50 < 1 ? 3 : 2, maximumFractionDigits: costPer50 < 1 ? 3 : 2 });
+        const callsLabel = sum(llmCalls);
+        const totalTokenLabel = sum(totalTokens);
+        const promptLabel = sum(promptTokens);
+        const completionLabel = sum(completionTokens);
+        return `OpenRouter spend across ${totalHandsLabel} hands: ${totalCostLabel} total (${perHandLabel} per hand, ${per50Label} per 50 hands). ${callsLabel} API calls covering ${totalTokenLabel} tokens (prompt ${promptLabel}, completion ${completionLabel}).`;
+      })();
+      const costTipAttr = escapeAttr(costTip);
 
       // Header
       $('#title').textContent = c.model || 'Bot';
@@ -126,7 +188,7 @@
       $('#meta').innerHTML = `
         <div class="muted">Matches</div><div>${sum(c.matches)}</div>
         <div class="muted">Hands</div><div>${sum(totalHands)}</div>
-        <div class="muted">Cost / 50 hands</div><div>${costDisplay}</div>
+        <div class="muted">Cost / 50 hands <button class="inline-tip" type="button" data-tip="${costTipAttr}" aria-label="Tip: how cost per 50 hands is calculated">i</button></div><div>${costDisplay}</div>
         <div class="muted">Accuracy</div><div id="meta-acc">&mdash;</div>
         <div class="muted">Updated</div><div>${c.updated_at ? new Date(c.updated_at).toLocaleString() : '-'}</div>`;
 

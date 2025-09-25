@@ -482,18 +482,23 @@ func Router(db *store.DB) http.Handler {
 
 		// Career row
 		var career struct {
-			BotID      int64     `json:"bot_id"`
-			Model      string    `json:"model"`
-			Company    string    `json:"company"`
-			Elo        float64   `json:"elo"`
-			GRating    float64   `json:"g_rating"`
-			GRD        float64   `json:"g_rd"`
-			GSigma     float64   `json:"g_sigma"`
-			Matches    int       `json:"matches"`
-			Hands      int       `json:"hands"`
-			NetChips   int       `json:"net_chips"`
-			TotalHands int       `json:"total_hands"`
-			Updated    time.Time `json:"updated_at"`
+			BotID            int64     `json:"bot_id"`
+			Model            string    `json:"model"`
+			Company          string    `json:"company"`
+			Elo              float64   `json:"elo"`
+			GRating          float64   `json:"g_rating"`
+			GRD              float64   `json:"g_rd"`
+			GSigma           float64   `json:"g_sigma"`
+			Matches          int       `json:"matches"`
+			Hands            int       `json:"hands"`
+			NetChips         int       `json:"net_chips"`
+			TotalHands       int       `json:"total_hands"`
+			PromptTokens     int       `json:"prompt_tokens"`
+			CompletionTokens int       `json:"completion_tokens"`
+			TotalTokens      int       `json:"total_tokens"`
+			TotalCostMicros  int64     `json:"total_cost_micro"`
+			LLMCalls         int       `json:"llm_calls"`
+			Updated          time.Time `json:"updated_at"`
 		}
 		err := db.QueryRow(ctx, `
             SELECT id, name, company,
@@ -507,24 +512,49 @@ func Router(db *store.DB) http.Handler {
 		}
 
 		// Aggregate total hands and chips won/lost for per-hand summaries.
-		var totalHands, netChips int
+		var (
+			totalHands      int
+			netChips        int
+			totalPrompt     int
+			totalCompletion int
+			totalTokens     int
+			totalCostMicros int64
+			totalLLMCalls   int
+		)
 		err = db.QueryRow(ctx, `
-            SELECT COALESCE(SUM(total_hands),0), COALESCE(SUM(total_net_chips),0)
+            SELECT COALESCE(SUM(total_hands),0),
+                   COALESCE(SUM(total_net_chips),0),
+                   COALESCE(SUM(total_prompt_tokens),0),
+                   COALESCE(SUM(total_completion_tokens),0),
+                   COALESCE(SUM(total_tokens),0),
+                   COALESCE(SUM(total_cost_micro),0),
+                   COALESCE(SUM(total_llm_calls),0)
               FROM v_bot_summary
              WHERE bot_id = $1
-        `, botID).Scan(&totalHands, &netChips)
+        `, botID).Scan(&totalHands, &netChips, &totalPrompt, &totalCompletion, &totalTokens, &totalCostMicros, &totalLLMCalls)
 		if err != nil {
 			err = db.QueryRow(ctx, `
-                SELECT COALESCE(SUM(hands_dealt),0), COALESCE(SUM(net_chips),0)
+                SELECT COALESCE(SUM(hands_dealt),0),
+                       COALESCE(SUM(net_chips),0),
+                       COALESCE(SUM(prompt_tokens),0),
+                       COALESCE(SUM(completion_tokens),0),
+                       COALESCE(SUM(total_tokens),0),
+                       COALESCE(SUM(usd_cost_micro),0),
+                       COALESCE(SUM(llm_calls),0)
                   FROM match_participants
                  WHERE bot_id = $1
-            `, botID).Scan(&totalHands, &netChips)
+            `, botID).Scan(&totalHands, &netChips, &totalPrompt, &totalCompletion, &totalTokens, &totalCostMicros, &totalLLMCalls)
 			if err != nil {
 				totalHands, netChips = 0, 0
 			}
 		}
 		career.TotalHands = totalHands
 		career.NetChips = netChips
+		career.PromptTokens = totalPrompt
+		career.CompletionTokens = totalCompletion
+		career.TotalTokens = totalTokens
+		career.TotalCostMicros = totalCostMicros
+		career.LLMCalls = totalLLMCalls
 		if career.Hands == 0 && totalHands > 0 {
 			career.Hands = totalHands
 		}

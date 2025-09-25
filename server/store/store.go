@@ -107,6 +107,14 @@ func (ja JudgeAccuracy) Ratio() float64 {
 	return float64(ja.Good) / float64(ja.Total)
 }
 
+type UsageSummary struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	TotalCostMicros  int64
+	CallCount        int
+}
+
 func (db *DB) GetJudgeAccuracy(ctx context.Context, botID int64) (good, total int, err error) {
 	err = db.QueryRow(ctx, `
                 SELECT judge_good, judge_total
@@ -409,10 +417,10 @@ func (db *DB) InsertParticipantsAndTallies(
 	matchID int64,
 	// A
 	labelA string, botA int64, nameA, compA string, reA *string,
-	startA, endA, winsA int, handsA, handsASB, handsABB, netA int,
+	startA, endA, winsA int, handsA, handsASB, handsABB, netA int, usageA UsageSummary,
 	// B
 	labelB string, botB int64, nameB, compB string, reB *string,
-	startB, endB, winsB int, handsB, handsBSB, handsBBB, netB int,
+	startB, endB, winsB int, handsB, handsBSB, handsBBB, netB int, usageB UsageSummary,
 	// tallies
 	checkA, callA, raiseA, foldA int,
 	checkB, callB, raiseB, foldB int,
@@ -440,10 +448,13 @@ func (db *DB) InsertParticipantsAndTallies(
             match_id, label, bot_id,
             name_snapshot, company_snapshot, reasoning_effort_snapshot,
             start_bank, end_bank, wins,
-            hands_dealt, hands_sb, hands_bb, net_chips
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            hands_dealt, hands_sb, hands_bb, net_chips,
+            prompt_tokens, completion_tokens, total_tokens, usd_cost_micro, llm_calls
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
     `, matchID, labelA, botA, nameA, compA, reAParam, startA, endA, winsA,
-		handsA, handsASB, handsABB, netA); err != nil {
+		handsA, handsASB, handsABB, netA,
+		usageA.PromptTokens, usageA.CompletionTokens, usageA.TotalTokens,
+		usageA.TotalCostMicros, usageA.CallCount); err != nil {
 		return err
 	}
 	var reBParam any
@@ -458,10 +469,13 @@ func (db *DB) InsertParticipantsAndTallies(
             match_id, label, bot_id,
             name_snapshot, company_snapshot, reasoning_effort_snapshot,
             start_bank, end_bank, wins,
-            hands_dealt, hands_sb, hands_bb, net_chips
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            hands_dealt, hands_sb, hands_bb, net_chips,
+            prompt_tokens, completion_tokens, total_tokens, usd_cost_micro, llm_calls
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
     `, matchID, labelB, botB, nameB, compB, reBParam, startB, endB, winsB,
-		handsB, handsBSB, handsBBB, netB); err != nil {
+		handsB, handsBSB, handsBBB, netB,
+		usageB.PromptTokens, usageB.CompletionTokens, usageB.TotalTokens,
+		usageB.TotalCostMicros, usageB.CallCount); err != nil {
 		return err
 	}
 

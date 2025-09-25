@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS match_participants (
   hands_sb         INT NOT NULL DEFAULT 0,
   hands_bb         INT NOT NULL DEFAULT 0,
   net_chips        INT NOT NULL DEFAULT 0,
+  prompt_tokens    INT NOT NULL DEFAULT 0,
+  completion_tokens INT NOT NULL DEFAULT 0,
+  total_tokens     INT NOT NULL DEFAULT 0,
+  llm_calls        INT NOT NULL DEFAULT 0,
+  usd_cost_micro   BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (match_id, label)
 );
 
@@ -83,7 +88,12 @@ ALTER TABLE match_participants
   ADD COLUMN IF NOT EXISTS hands_dealt INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS hands_sb    INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS hands_bb    INT NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS net_chips   INT NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS net_chips   INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS prompt_tokens INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS completion_tokens INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_tokens INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS llm_calls INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS usd_cost_micro BIGINT NOT NULL DEFAULT 0;
 
 -- =========================
 -- RATING HISTORY (timeline across a match)
@@ -164,6 +174,11 @@ WITH per_match AS (
     p.wins,
     p.hands_dealt,
     p.net_chips,
+    p.prompt_tokens,
+    p.completion_tokens,
+    p.total_tokens,
+    p.llm_calls,
+    p.usd_cost_micro,
     (SELECT fold_ct::float / NULLIF((check_ct+call_ct+raise_ct+fold_ct),0)
        FROM action_tallies t
       WHERE t.match_id = p.match_id AND t.label = p.label) AS fold_rate
@@ -175,6 +190,11 @@ SELECT
   SUM(wins)                                  AS total_hand_wins,
   SUM(hands_dealt)                           AS total_hands,
   COALESCE(SUM(net_chips),0)                 AS total_net_chips,
+  COALESCE(SUM(prompt_tokens),0)             AS total_prompt_tokens,
+  COALESCE(SUM(completion_tokens),0)         AS total_completion_tokens,
+  COALESCE(SUM(total_tokens),0)              AS total_tokens,
+  COALESCE(SUM(llm_calls),0)                 AS total_llm_calls,
+  COALESCE(SUM(usd_cost_micro),0)            AS total_cost_micro,
   ROUND(100.0 * COALESCE(SUM(wins)::float / NULLIF(SUM(hands_dealt),0), 0)) AS win_rate_pct,
   ROUND(100*AVG(fold_rate))                  AS avg_fold_pct
 FROM per_match
