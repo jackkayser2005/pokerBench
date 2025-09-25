@@ -2,6 +2,7 @@ package judge
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"ai-thunderdome/server/engine"
 	"ai-thunderdome/server/store"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	poker "github.com/paulhankin/poker"
 )
 
@@ -174,73 +174,52 @@ func heroEquityExact(heroHole, board []engine.Card) (float64, bool) {
 // (to_call>0) compare call versus fold, while uncontested nodes score check
 // versus a nominal 2/3-pot probe bet.
 func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
-	var (
-		fallbackDB    *store.DB
-		fallbackClose func()
-	)
-	defer func() {
-		if fallbackClose != nil {
-			fallbackClose()
-		}
-	}()
-
-	acquire := func() (*pgxpool.Conn, func(), error) {
-		if fallbackDB != nil {
-			conn, err := fallbackDB.Acquire(ctx)
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		active := db
+		var (
+			cleanup func()
+			err     error
+		)
+		if attempt == 1 || active == nil {
+			dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+			if dsn == "" {
+				dsn = "postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
+			}
+			active, err = store.Open(dsn)
 			if err != nil {
-				return nil, nil, err
+				return err
 			}
-			return conn, func() { conn.Release() }, nil
+			cleanup = func() { active.Close(ctx) }
 		}
 
-		var primaryErr error
-		if db != nil {
-			if conn, err := db.Acquire(ctx); err == nil {
-				return conn, func() { conn.Release() }, nil
-			} else {
-				primaryErr = err
-			}
+		err = evaluateMatchMCWithDB(ctx, active, matchID)
+		if cleanup != nil {
+			cleanup()
 		}
-
-		dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-		if dsn == "" {
-			dsn = "postgres://poker:poker@localhost:5432/thunderdome?sslmode=disable"
+		if err == nil {
+			return nil
 		}
-		fresh, err := store.Open(dsn)
-		if err != nil {
-			if primaryErr != nil {
-				return nil, nil, primaryErr
-			}
-			return nil, nil, err
+		if !isConnBusyError(err) {
+			return err
 		}
-		fallbackDB = fresh
-		fallbackClose = func() { fresh.Close(ctx) }
-		conn, err := fresh.Acquire(ctx)
-		if err != nil {
-			fallbackClose()
-			fallbackClose = nil
-			fallbackDB = nil
-			if primaryErr != nil {
-				return nil, nil, primaryErr
-			}
-			return nil, nil, err
-		}
-		return conn, func() { conn.Release() }, nil
+		lastErr = err
+		// Retry once with a fresh connection pool if the primary reported a busy connection.
 	}
-
-	connRead, releaseRead, err := acquire()
-	if err != nil {
-		return err
+	if lastErr != nil {
+		return lastErr
 	}
-	defer func() {
-		if releaseRead != nil {
-			releaseRead()
-		}
-	}()
+	return errors.New("conn busy")
+}
+
+func evaluateMatchMCWithDB(ctx context.Context, db *store.DB, matchID int64) error {
+	if db == nil {
+		return errors.New("nil database")
+	}
 
 	// Fetch big blind size for epsilon scaling
 	var bb int
-	if err := connRead.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
+	if err := db.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
 		return err
 	}
 	if bb <= 0 {
@@ -295,7 +274,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
                    compute_ms = EXCLUDED.compute_ms
        `
 
-	rows, err := connRead.Query(ctx, `
+	rows, err := db.Query(ctx, `
         SELECT id, hand_id, actor_label, street, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
          WHERE match_id = $1 AND street IN ('flop','turn','river')
@@ -304,11 +283,7 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-	}()
+	defer rows.Close()
 
 	var inserts [][]any
 
@@ -510,35 +485,35 @@ func EvaluateMatchMC(ctx context.Context, db *store.DB, matchID int64) error {
 			})
 		}
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	rows = nil
-	releaseRead()
-	releaseRead = nil
 
 	if len(inserts) == 0 {
 		return nil
 	}
 
-	connWrite, releaseWrite, err := acquire()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if releaseWrite != nil {
-			releaseWrite()
-		}
-	}()
 	for _, args := range inserts {
-		if _, err := connWrite.Exec(ctx, insertActionEvalSQL, args...); err != nil {
+		if _, err := db.Exec(ctx, insertActionEvalSQL, args...); err != nil {
 			return err
 		}
 	}
-	releaseWrite()
-	releaseWrite = nil
 	return nil
+}
+
+func isConnBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	type safeRetry interface {
+		SafeToRetry() bool
+		Error() string
+	}
+	var sr safeRetry
+	if errors.As(err, &sr) && sr.Error() == "conn busy" {
+		return true
+	}
+	return strings.Contains(err.Error(), "conn busy")
 }
 
 // (strptr removed; no longer needed)
