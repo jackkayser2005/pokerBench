@@ -345,6 +345,7 @@ type Player struct {
 	Model string
 	Bank  int
 	Wins  int
+	Usage llm.UsageStats
 }
 
 func loadPlayers(startStack int) (a, b Player) {
@@ -401,7 +402,8 @@ func deckSeedFromEnvOrCrypto() uint64 {
 // ===== LLM call =====
 //
 
-func askAction(ctx context.Context, model string, legal []string, minRaiseTo, maxRaiseTo int, obs agent.Observation) (string, *int, error) {
+func askAction(ctx context.Context, model string, legal []string, minRaiseTo, maxRaiseTo int, obs agent.Observation) (string, *int, llm.UsageStats, error) {
+	totalUsage := llm.UsageStats{}
 	obsRaw, _ := json.Marshal(obs)
 	// Probe hint line (toggle with ENCOURAGE_PROBE_ZERO=1). Default is to encourage mixing checks.
 	probeEnv := strings.TrimSpace(os.Getenv("ENCOURAGE_PROBE_ZERO"))
@@ -450,7 +452,8 @@ Rules:
 	}
 	if useTools {
 		toolSystem := benchSystem + "\n\nYou are a poker agent. Your only job is to call the function \"pick_action\". Do not output anything else. Never explain or justify your choice. Always pick exactly one action from the provided list."
-		act, amt, raw, err := llm.PingChooseAction(ctx2, model, toolSystem, user, legal, minRaiseTo, maxRaiseTo, llm.PingOptions{MaxOutputTokens: maxTok})
+		act, amt, raw, usage, err := llm.PingChooseAction(ctx2, model, toolSystem, user, legal, minRaiseTo, maxRaiseTo, llm.PingOptions{MaxOutputTokens: maxTok})
+		totalUsage.Add(usage)
 		if debugState {
 			if raw != "" {
 				log.Printf("tool args raw: %s", raw)
@@ -470,21 +473,21 @@ Rules:
 				}
 			}
 			if !valid {
-				return "", nil, fmt.Errorf("illegal action %q not in %v", act, legal)
+				return "", nil, totalUsage, fmt.Errorf("illegal action %q not in %v", act, legal)
 			}
 			if act == "raise" {
 				if amt == nil {
-					return "", nil, fmt.Errorf("raise requires amount")
+					return "", nil, totalUsage, fmt.Errorf("raise requires amount")
 				}
 				if *amt < minRaiseTo || *amt > maxRaiseTo {
-					return "", nil, fmt.Errorf("amount %d outside [%d,%d]", *amt, minRaiseTo, maxRaiseTo)
+					return "", nil, totalUsage, fmt.Errorf("amount %d outside [%d,%d]", *amt, minRaiseTo, maxRaiseTo)
 				}
 			} else {
 				amt = nil
 			}
 			// Optional probe policy: flip check→min-raise with probability when to_call==0
 			act, amt = applyZeroProbePolicy(act, amt, legal, minRaiseTo, obs.ToCall)
-			return act, amt, nil
+			return act, amt, totalUsage, nil
 		}
 		if debugState {
 			log.Printf("tool-call fallback due to: %v", err)
@@ -510,20 +513,21 @@ Rules:
 		re = ""
 	}
 	jsonSystem := benchSystem + "\n\nRespond ONLY with a minimal JSON object as specified. No prose, no markdown."
-	text, err := llm.PingTextWithOpts(ctx2, model, jsonSystem, user, llm.PingOptions{ReasoningEffort: re, MaxOutputTokens: maxTok, StructuredSchemaName: "poker_action", StructuredSchema: schema, StructuredStrict: true})
-	if debugState && text != "" {
-		log.Printf("json raw: %s", text)
+	res, err := llm.PingTextWithOpts(ctx2, model, jsonSystem, user, llm.PingOptions{ReasoningEffort: re, MaxOutputTokens: maxTok, StructuredSchemaName: "poker_action", StructuredSchema: schema, StructuredStrict: true})
+	totalUsage.Add(res.Usage)
+	if debugState && res.Text != "" {
+		log.Printf("json raw: %s", res.Text)
 	}
 	if err == nil {
 		// tolerant parsing
 		parsed := map[string]any{}
-		if e := json.Unmarshal([]byte(text), &parsed); e != nil {
-			if cleaned := extractJSONObject(text); cleaned != "" {
+		if e := json.Unmarshal([]byte(res.Text), &parsed); e != nil {
+			if cleaned := extractJSONObject(res.Text); cleaned != "" {
 				if e2 := json.Unmarshal([]byte(cleaned), &parsed); e2 != nil {
-					return "", nil, fmt.Errorf("bad JSON from model: %v\nraw=%s", e, text)
+					return "", nil, totalUsage, fmt.Errorf("bad JSON from model: %v\nraw=%s", e, res.Text)
 				}
 			} else {
-				return "", nil, fmt.Errorf("bad JSON from model: %v\nraw=%s", e, text)
+				return "", nil, totalUsage, fmt.Errorf("bad JSON from model: %v\nraw=%s", e, res.Text)
 			}
 		}
 		// coerce
@@ -542,7 +546,7 @@ Rules:
 			}
 		}
 		if !valid {
-			return "", nil, fmt.Errorf("illegal action %q not in %v", act, legal)
+			return "", nil, totalUsage, fmt.Errorf("illegal action %q not in %v", act, legal)
 		}
 		var amount *int
 		if rawAmt, ok := parsed["amount"]; ok && rawAmt != nil {
@@ -564,66 +568,68 @@ Rules:
 		}
 		if act == "raise" {
 			if amount == nil {
-				return "", nil, fmt.Errorf("raise requires amount")
+				return "", nil, totalUsage, fmt.Errorf("raise requires amount")
 			}
 			if *amount < minRaiseTo || *amount > maxRaiseTo {
-				return "", nil, fmt.Errorf("amount %d outside [%d,%d]", *amount, minRaiseTo, maxRaiseTo)
+				return "", nil, totalUsage, fmt.Errorf("amount %d outside [%d,%d]", *amount, minRaiseTo, maxRaiseTo)
 			}
 		} else {
 			amount = nil
 		}
 		act, amount = applyZeroProbePolicy(act, amount, legal, minRaiseTo, obs.ToCall)
-		return act, amount, nil
+		return act, amount, totalUsage, nil
 	}
 
 	// 3) Fallback to legacy JSON mode (no schema)
-	text2, err2 := llm.PingText(ctx2, model, jsonSystem, user)
-	if debugState && text2 != "" {
-		log.Printf("json(raw-object) raw: %s", text2)
+	res2, err2 := llm.PingText(ctx2, model, jsonSystem, user)
+	totalUsage.Add(res2.Usage)
+	if debugState && res2.Text != "" {
+		log.Printf("json(raw-object) raw: %s", res2.Text)
 	}
 	if err2 == nil {
 		// Try: JSON -> code-fence JSON -> YAML-ish -> NL heuristics
 		// 3a) JSON
 		parsed := map[string]any{}
-		if e := json.Unmarshal([]byte(text2), &parsed); e == nil {
+		if e := json.Unmarshal([]byte(res2.Text), &parsed); e == nil {
 			if act, amount, ok := coerceActionMap(parsed, legal, minRaiseTo, maxRaiseTo, obs.ToCall); ok {
 				act, amount = applyZeroProbePolicy(act, amount, legal, minRaiseTo, obs.ToCall)
-				return act, amount, nil
+				return act, amount, totalUsage, nil
 			}
 		}
 		// 3b) code-fence JSON
-		if cleaned := extractJSONObject(text2); cleaned != "" {
+		if cleaned := extractJSONObject(res2.Text); cleaned != "" {
 			parsed := map[string]any{}
 			if e2 := json.Unmarshal([]byte(cleaned), &parsed); e2 == nil {
 				if act, amount, ok := coerceActionMap(parsed, legal, minRaiseTo, maxRaiseTo, obs.ToCall); ok {
 					act, amount = applyZeroProbePolicy(act, amount, legal, minRaiseTo, obs.ToCall)
-					return act, amount, nil
+					return act, amount, totalUsage, nil
 				}
 			}
 		}
 		// 3c) YAML fallback
-		if act, amount, ok := parseYAMLish(text2, legal, minRaiseTo, maxRaiseTo, obs.ToCall); ok {
+		if act, amount, ok := parseYAMLish(res2.Text, legal, minRaiseTo, maxRaiseTo, obs.ToCall); ok {
 			act, amount = applyZeroProbePolicy(act, amount, legal, minRaiseTo, obs.ToCall)
-			return act, amount, nil
+			return act, amount, totalUsage, nil
 		}
 		// 3d) Natural language fallback
-		if act, amount, ok := parseNLAction(text2, legal, minRaiseTo, maxRaiseTo, obs.ToCall); ok {
+		if act, amount, ok := parseNLAction(res2.Text, legal, minRaiseTo, maxRaiseTo, obs.ToCall); ok {
 			act, amount = applyZeroProbePolicy(act, amount, legal, minRaiseTo, obs.ToCall)
-			return act, amount, nil
+			return act, amount, totalUsage, nil
 		}
 		// 3e) Last-ditch safe default
 		if obs.ToCall == 0 && contains(legal, "check") {
-			return "check", nil, nil
+			return "check", nil, totalUsage, nil
 		}
 		if contains(legal, "fold") {
-			return "fold", nil, nil
+			return "fold", nil, totalUsage, nil
 		}
+		return "call", nil, totalUsage, nil
 	}
 	// If we couldn't salvage anything, propagate the earlier error if present
 	if err2 != nil {
-		return "", nil, err2
+		return "", nil, totalUsage, err2
 	}
-	return "", nil, fmt.Errorf("could not derive a legal action from model output")
+	return "", nil, totalUsage, fmt.Errorf("could not derive a legal action from model output")
 }
 
 func contains(ss []string, s string) bool {
@@ -1063,8 +1069,13 @@ func playHandMatch(
 				}
 			}()
 
-			act, amtPtr, err := askAction(textCtx, curModel, legal, minTo, maxTo, obs)
+			act, amtPtr, usage, err := askAction(textCtx, curModel, legal, minTo, maxTo, obs)
 			cancel()
+			if seat == engine.SB {
+				sbP.Usage.Add(usage)
+			} else {
+				bbP.Usage.Add(usage)
+			}
 			if err != nil {
 				toCallFB := h.CurBet - actor.Committed
 				if toCallFB < 0 {
@@ -2175,14 +2186,28 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		netA := a.Bank - startStack
 		netB := b.Bank - startStack
 
+		usageA := store.UsageSummary{
+			PromptTokens:     a.Usage.PromptTokens,
+			CompletionTokens: a.Usage.CompletionTokens,
+			TotalTokens:      a.Usage.TotalTokens,
+			TotalCostMicros:  a.Usage.TotalCostMicros,
+			CallCount:        a.Usage.CallCount,
+		}
+		usageB := store.UsageSummary{
+			PromptTokens:     b.Usage.PromptTokens,
+			CompletionTokens: b.Usage.CompletionTokens,
+			TotalTokens:      b.Usage.TotalTokens,
+			TotalCostMicros:  b.Usage.TotalCostMicros,
+			CallCount:        b.Usage.CallCount,
+		}
 		if err := db.InsertParticipantsAndTallies(
 			context.Background(), matchID,
 			// A
 			"A", botAID, a.Model, companyLabel(), rePtr, startStack, a.Bank, a.Wins,
-			handsA, statsA.SB.Hands, statsA.BB.Hands, netA,
+			handsA, statsA.SB.Hands, statsA.BB.Hands, netA, usageA,
 			// B
 			"B", botBID, b.Model, companyLabel(), rePtr, startStack, b.Bank, b.Wins,
-			handsB, statsB.SB.Hands, statsB.BB.Hands, netB,
+			handsB, statsB.SB.Hands, statsB.BB.Hands, netB, usageB,
 			// tallies
 			aChk, aCall, aRaise, aFold,
 			bChk, bCall, bRaise, bFold,

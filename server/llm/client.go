@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -24,16 +25,40 @@ type PingOptions struct {
 	StructuredStrict     bool
 }
 
+// UsageStats captures token/cost metadata returned by the LLM provider.
+type UsageStats struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	TotalCostMicros  int64
+	CallCount        int
+}
+
+// Add merges another usage summary into the receiver.
+func (u *UsageStats) Add(other UsageStats) {
+	u.PromptTokens += other.PromptTokens
+	u.CompletionTokens += other.CompletionTokens
+	u.TotalTokens += other.TotalTokens
+	u.TotalCostMicros += other.TotalCostMicros
+	u.CallCount += other.CallCount
+}
+
+// PingResult contains the primary text plus usage metadata from an LLM call.
+type PingResult struct {
+	Text  string
+	Usage UsageStats
+}
+
 // PingText sends a minimal request to the chat/completions API and returns text.
-func PingText(ctx context.Context, model, system, user string) (string, error) {
+func PingText(ctx context.Context, model, system, user string) (PingResult, error) {
 	return PingTextWithOpts(ctx, model, system, user, envPingOptions())
 }
 
 // PingTextWithOpts lets you pass custom knobs (used by PingText via env).
-func PingTextWithOpts(ctx context.Context, model, system, user string, opts PingOptions) (string, error) {
+func PingTextWithOpts(ctx context.Context, model, system, user string, opts PingOptions) (PingResult, error) {
 	cfg, err := resolveAPIConfig(model)
 	if err != nil {
-		return "", err
+		return PingResult{}, err
 	}
 
 	payload := map[string]any{
@@ -82,7 +107,7 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 		b, _ := json.Marshal(payload)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 		if err != nil {
-			return "", err
+			return PingResult{}, err
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
@@ -93,17 +118,25 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return "", err
+			return PingResult{}, err
 		}
 
 		var buf bytes.Buffer
 		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return "", fmt.Errorf("read chat response: %w", err)
+			return PingResult{}, fmt.Errorf("read chat response: %w", err)
 		}
 		body := buf.Bytes()
 		if cerr := resp.Body.Close(); cerr != nil {
 			log.Printf("llm: closing response body: %v", cerr)
 		}
+
+		usage := usageFromHeaders(resp.Header)
+		usageFromBody := usageFromJSONBody(body)
+		usage.Add(usageFromBody)
+		if usage.CallCount == 0 {
+			usage.CallCount = 1
+		}
+		result := PingResult{Usage: usage}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			var cc struct {
@@ -114,26 +147,27 @@ func PingTextWithOpts(ctx context.Context, model, system, user string, opts Ping
 				} `json:"choices"`
 			}
 			if err := json.Unmarshal(body, &cc); err != nil {
-				return "", err
+				return result, err
 			}
 			if len(cc.Choices) == 0 {
-				return "", errors.New("no choices returned")
+				return result, errors.New("no choices returned")
 			}
-			return cc.Choices[0].Message.Content, nil
+			result.Text = cc.Choices[0].Message.Content
+			return result, nil
 		}
 
 		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && adjustOpenRouterPayloadForRetry(payload, body, removed) {
 			continue
 		}
 
-		return "", fmt.Errorf("openrouter http %d: %s", resp.StatusCode, truncate(string(body), 800))
+		return result, fmt.Errorf("openrouter http %d: %s", resp.StatusCode, truncate(string(body), 800))
 	}
 
-	return "", errors.New("exhausted chat completion retries")
+	return PingResult{}, errors.New("exhausted chat completion retries")
 }
 
 // PingChooseAction requests a structured JSON action from the model.
-func PingChooseAction(ctx context.Context, model, system, user string, legal []string, minTo, maxTo int, opts PingOptions) (string, *int, string, error) {
+func PingChooseAction(ctx context.Context, model, system, user string, legal []string, minTo, maxTo int, opts PingOptions) (string, *int, string, UsageStats, error) {
 	schema := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
@@ -156,31 +190,34 @@ func PingChooseAction(ctx context.Context, model, system, user string, legal []s
 	opts.StructuredSchemaName = coalesce(opts.StructuredSchemaName, "poker_action")
 	opts.StructuredStrict = true
 
-	text, err := PingTextWithOpts(ctx, model, system, user, opts)
+	totalUsage := UsageStats{}
+	res, err := PingTextWithOpts(ctx, model, system, user, opts)
+	totalUsage.Add(res.Usage)
+	text := res.Text
 	if err != nil {
-		return "", nil, text, err
+		return "", nil, text, totalUsage, err
 	}
 
 	raw := strings.TrimSpace(text)
 	if raw == "" {
-		return "", nil, raw, errors.New("empty response")
+		return "", nil, raw, totalUsage, errors.New("empty response")
 	}
 
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		if cleaned := extractJSONObject(raw); cleaned != "" {
 			if err2 := json.Unmarshal([]byte(cleaned), &parsed); err2 != nil {
-				return "", nil, raw, err
+				return "", nil, raw, totalUsage, err
 			}
 		} else {
-			return "", nil, raw, err
+			return "", nil, raw, totalUsage, err
 		}
 	}
 	act, amt, ok := coerceActionMap(parsed, legal, minTo, maxTo)
 	if !ok {
-		return "", nil, raw, errors.New("no valid action in response")
+		return "", nil, raw, totalUsage, errors.New("no valid action in response")
 	}
-	return act, amt, raw, nil
+	return act, amt, raw, totalUsage, nil
 }
 
 func applyTuningFromEnv(m map[string]any) {
@@ -348,6 +385,170 @@ func adjustOpenRouterPayloadForRetry(payload map[string]any, body []byte, remove
 	}
 
 	return false
+}
+
+func usageFromHeaders(h http.Header) UsageStats {
+	usage := UsageStats{}
+	parseIntHeader := func(keys ...string) int {
+		for _, key := range keys {
+			if val := strings.TrimSpace(h.Get(key)); val != "" {
+				if n, err := strconv.Atoi(val); err == nil {
+					return n
+				}
+				if f, err := strconv.ParseFloat(val, 64); err == nil {
+					return int(math.Round(f))
+				}
+			}
+		}
+		return 0
+	}
+
+	usage.PromptTokens = parseIntHeader(
+		"X-Openrouter-Usage-Prompt-Tokens",
+		"X-Openrouter-Prompt-Tokens",
+		"X-Prompt-Tokens",
+	)
+	usage.CompletionTokens = parseIntHeader(
+		"X-Openrouter-Usage-Completion-Tokens",
+		"X-Openrouter-Completion-Tokens",
+		"X-Completion-Tokens",
+	)
+	usage.TotalTokens = parseIntHeader(
+		"X-Openrouter-Usage-Total-Tokens",
+		"X-Openrouter-Total-Tokens",
+		"X-Total-Tokens",
+	)
+
+	parseCostHeader := func(keys ...string) int64 {
+		for _, key := range keys {
+			if val := strings.TrimSpace(h.Get(key)); val != "" {
+				if micros := costStringToMicros(val); micros != 0 {
+					return micros
+				}
+			}
+		}
+		return 0
+	}
+	usage.TotalCostMicros = parseCostHeader(
+		"X-Openrouter-Usage-Total-Cost",
+		"X-Openrouter-Total-Cost",
+		"X-Openrouter-Total-Cost-Usd",
+		"X-Total-Cost",
+	)
+	return usage
+}
+
+func usageFromJSONBody(body []byte) UsageStats {
+	type wrap struct {
+		Usage map[string]any `json:"usage"`
+	}
+	var w wrap
+	if err := json.Unmarshal(body, &w); err != nil {
+		return UsageStats{}
+	}
+	if len(w.Usage) == 0 {
+		return UsageStats{}
+	}
+	usage := UsageStats{}
+	usage.PromptTokens = intFromAny(w.Usage["prompt_tokens"])
+	usage.CompletionTokens = intFromAny(w.Usage["completion_tokens"])
+	usage.TotalTokens = intFromAny(w.Usage["total_tokens"])
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = intFromAny(w.Usage["tokens"])
+	}
+	usage.TotalCostMicros = costFromAny(
+		w.Usage["total_cost"],
+		w.Usage["total_cost_usd"],
+		w.Usage["cost"],
+	)
+	return usage
+}
+
+func intFromAny(v any) int {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(math.Round(t))
+	case json.Number:
+		if n, err := t.Int64(); err == nil {
+			return int(n)
+		}
+		if f, err := t.Float64(); err == nil {
+			return int(math.Round(f))
+		}
+	case string:
+		trimmed := strings.TrimSpace(t)
+		if trimmed == "" {
+			return 0
+		}
+		if n, err := strconv.Atoi(trimmed); err == nil {
+			return n
+		}
+		if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return int(math.Round(f))
+		}
+	}
+	return 0
+}
+
+func costFromAny(values ...any) int64 {
+	for _, v := range values {
+		switch t := v.(type) {
+		case nil:
+			continue
+		case float64:
+			if t == 0 {
+				continue
+			}
+			return int64(math.Round(t * 1_000_000))
+		case json.Number:
+			if f, err := t.Float64(); err == nil {
+				if f == 0 {
+					continue
+				}
+				return int64(math.Round(f * 1_000_000))
+			}
+		case int:
+			if t == 0 {
+				continue
+			}
+			return int64(t) * 1_000_000
+		case int64:
+			if t == 0 {
+				continue
+			}
+			return t * 1_000_000
+		case string:
+			if micros := costStringToMicros(t); micros != 0 {
+				return micros
+			}
+		}
+	}
+	return 0
+}
+
+func costStringToMicros(s string) int64 {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return 0
+	}
+	// Remove leading currency symbol if present.
+	trimmed = strings.TrimPrefix(trimmed, "$")
+	if strings.HasSuffix(trimmed, "usd") {
+		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "usd"))
+	}
+	if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		if f == 0 {
+			return 0
+		}
+		return int64(math.Round(f * 1_000_000))
+	}
+	return 0
 }
 
 func setHeaderPreserveCase(h http.Header, key, value string) {
