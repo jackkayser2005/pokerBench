@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -14,7 +14,6 @@
     const q = new URLSearchParams(location.search);
     const id = q.get('id');
 
-    // nav active state
     document.addEventListener('DOMContentLoaded', ()=>{
       document.querySelectorAll('.topnav__links a').forEach(a=>{
         try{
@@ -24,7 +23,6 @@
       });
     });
 
-    // numbers + labels
     const sum = x => (x==null?0:Number(x)).toLocaleString();
     const pct = x => Number(x||0).toFixed(1);
     const formatUSD = (value, opts = {}) => {
@@ -312,6 +310,53 @@
       }catch{/* noop */}
     }
 
+    // ---- bot river bluffs renderer ----
+    function formatPercent(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return null;
+      return `${(n * 100).toFixed(1)}%`;
+    }
+    function renderRiverBluffsForBot(container, data){
+      container.innerHTML = '';
+      if (!data || typeof data !== 'object') {
+        container.textContent = 'Unable to load river bluff stats.';
+        return;
+      }
+      const leads = Number(data.leads||0);
+      const bluffs = Number(data.bluffs||0);
+      const bluffPct = formatPercent(leads > 0 ? data.bluff_pct : 0) ?? '0%';
+      const avgRatio = bluffs>0 ? (formatPercent(data.avg_bluff_ratio) ?? '0%') : '0%';
+
+      const table = document.createElement('table');
+      table.className = 'replay-bluff-table';
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th scope="col" title="River bets that started the action when to_call was zero." aria-label="Leads: River bets that started the action when to_call was zero.">Leads</th>
+            <th scope="col" title="River leads tagged as bluffs by the judge." aria-label="Bluffs: River leads tagged as bluffs by the judge.">Bluffs</th>
+            <th scope="col" title="Bluffs divided by total river leads." aria-label="Bluff percentage">Bluff %</th>
+            <th scope="col" title="Average fraction of the pot invested when leading." aria-label="Average lead size">Avg size</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${sum(leads)}</td>
+            <td>${sum(bluffs)}</td>
+            <td>${bluffPct}</td>
+            <td>${avgRatio}</td>
+          </tr>
+        </tbody>`;
+      container.appendChild(table);
+
+      if (leads === 0 && bluffs === 0) {
+        const note = document.createElement('p');
+        note.className = 'muted';
+        note.textContent = 'No river leads recorded for this bot yet.';
+        note.style.marginTop = '12px';
+        container.appendChild(note);
+      }
+    }
+
     async function load(){
       if (!id) {
         document.body.innerHTML = '<div class="wrap wrap--wide"><div class="card">Missing id</div></div>';
@@ -387,6 +432,21 @@
         <div class="muted">Cost / 50 hands <button class="inline-tip" type="button" data-tip="${costTipAttr}" aria-label="Tip: how cost per 50 hands is calculated">i</button></div><div>${costDisplay}</div>
         <div class="muted">Accuracy</div><div id="meta-acc">&mdash;</div>
         <div class="muted">Updated</div><div>${c.updated_at ? new Date(c.updated_at).toLocaleString() : '-'}</div>`;
+
+      const riverContainer = document.getElementById('riverBluffsBot');
+      if (riverContainer) {
+        riverContainer.textContent = 'Loading river bluff stats...';
+        try {
+          const riverData = await getJSON(`/api/bot-river-bluffs?id=${encodeURIComponent(id)}`, `/web/data/bot-river-bluffs-${encodeURIComponent(id)}.json`);
+          if (riverData) {
+            renderRiverBluffsForBot(riverContainer, riverData);
+          } else {
+            riverContainer.textContent = 'Unable to load river bluff stats.';
+          }
+        } catch (err) {
+          riverContainer.textContent = 'Unable to load river bluff stats.';
+        }
+      }
 
       // Judge accuracy (best-effort) + polling
       async function refreshAcc(){
@@ -653,6 +713,11 @@
       <div class="card">
         <div class="kvs" id="meta"></div>
         <div id="playstyle" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card" id="riverBluffCard">
+        <h2>River Bluffing</h2>
+        <div id="riverBluffsBot" class="replay-intro__bluffs" aria-live="polite">Loading river bluff stats...</div>
       </div>
 
       <div class="card">

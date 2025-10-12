@@ -65,6 +65,18 @@ Output format:
 - Do not add commentary or explanations.
 `
 
+func activeBenchSystem() string {
+	override := strings.TrimSpace(os.Getenv("BENCH_SYSTEM_OVERRIDE"))
+	if override != "" {
+		return override
+	}
+	appendix := strings.TrimSpace(os.Getenv("BENCH_SYSTEM_APPEND"))
+	if appendix != "" {
+		return benchSystem + "\n\n" + appendix
+	}
+	return benchSystem
+}
+
 func c(code, s string) string {
 	if !useColor {
 		return s
@@ -363,9 +375,43 @@ func loadPlayers(startStack int) (a, b Player) {
 	if ma == "" || mb == "" {
 		log.Fatal("Provide model identifiers for both seats via OPENROUTER_MODEL_*")
 	}
+	ma = normalizeModelIdentifier(ma)
+	mb = normalizeModelIdentifier(mb)
 	a = Player{Label: "A", Name: "A", Model: ma, Bank: startStack}
 	b = Player{Label: "B", Name: "B", Model: mb, Bank: startStack}
 	return
+}
+
+func normalizeModelIdentifier(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return trimmed
+	}
+	lower := strings.ToLower(trimmed)
+
+	has := func(subs ...string) bool {
+		for _, s := range subs {
+			if strings.Contains(lower, s) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if strings.Contains(lower, "grok") {
+		// Preserve other Grok product lines (e.g., grok-2, grok-1.5).
+		if has("grok-2", "grok2", "grok-1.5", "grok1.5", "grok-1_5") {
+			return trimmed
+		}
+		if has("grok-4-fast", "grok4fast", "grok-4fast", "grok 4 fast") {
+			return "xai/grok-4-fast"
+		}
+		if has("free", "grok-4", "grok 4", "grok4") {
+			return "xai/grok-4-fast"
+		}
+	}
+
+	return trimmed
 }
 
 // ===== randomness =====
@@ -451,7 +497,7 @@ Rules:
 		useTools = false
 	}
 	if useTools {
-		toolSystem := benchSystem + "\n\nYou are a poker agent. Your only job is to call the function \"pick_action\". Do not output anything else. Never explain or justify your choice. Always pick exactly one action from the provided list."
+		toolSystem := activeBenchSystem() + "\n\nYou are a poker agent. Your only job is to call the function \"pick_action\". Do not output anything else. Never explain or justify your choice. Always pick exactly one action from the provided list."
 		act, amt, raw, usage, err := llm.PingChooseAction(ctx2, model, toolSystem, user, legal, minRaiseTo, maxRaiseTo, llm.PingOptions{MaxOutputTokens: maxTok})
 		totalUsage.Add(usage)
 		if debugState {
@@ -512,7 +558,7 @@ Rules:
 	default:
 		re = ""
 	}
-	jsonSystem := benchSystem + "\n\nRespond ONLY with a minimal JSON object as specified. No prose, no markdown."
+	jsonSystem := activeBenchSystem() + "\n\nRespond ONLY with a minimal JSON object as specified. No prose, no markdown."
 	res, err := llm.PingTextWithOpts(ctx2, model, jsonSystem, user, llm.PingOptions{ReasoningEffort: re, MaxOutputTokens: maxTok, StructuredSchemaName: "poker_action", StructuredSchema: schema, StructuredStrict: true})
 	totalUsage.Add(res.Usage)
 	if debugState && res.Text != "" {
@@ -903,6 +949,103 @@ func addAction(t map[string]*ActionTally, label, act string) {
 	}
 }
 
+type RiverBluffStats struct {
+	Leads           int
+	Bluffs          int
+	BluffSizeSmall  int
+	BluffSizeMedium int
+	BluffSizeLarge  int
+	BluffRatioSum   float64
+	ResponseFold    int
+	ResponseCall    int
+	ResponseRaise   int
+}
+
+type pendingBluffEvent struct {
+	Label   string
+	IsBluff bool
+	Stats   *RiverBluffStats
+}
+
+func ensureRiverBluffStats(bucket map[string]*RiverBluffStats, label string) *RiverBluffStats {
+	if bucket[label] == nil {
+		bucket[label] = &RiverBluffStats{}
+	}
+	return bucket[label]
+}
+
+func recordBluffResponse(evt *pendingBluffEvent, response string) {
+	if evt == nil || !evt.IsBluff || evt.Stats == nil {
+		return
+	}
+	switch response {
+	case "fold":
+		evt.Stats.ResponseFold++
+	case "call":
+		evt.Stats.ResponseCall++
+	case "raise":
+		evt.Stats.ResponseRaise++
+	}
+}
+
+func isRiverHighCard(h *engine.Hand, seat engine.Seat) bool {
+	if len(h.Board) < 5 {
+		return false
+	}
+	cards := make([]engine.Card, 0, 7)
+	if seat == engine.SB {
+		cards = append(cards, h.SB.Hole...)
+	} else {
+		cards = append(cards, h.BB.Hole...)
+	}
+	cards = append(cards, h.Board...)
+	if len(cards) < 5 {
+		return false
+	}
+	rankCounts := make(map[int]int, len(cards))
+	suitCounts := make(map[byte]int, len(cards))
+	uniqueRanks := make(map[int]bool, len(cards))
+	for _, c := range cards {
+		rankCounts[c.Rank]++
+		suitCounts[c.Suit]++
+		uniqueRanks[c.Rank] = true
+	}
+	for _, cnt := range rankCounts {
+		if cnt >= 2 {
+			return false
+		}
+	}
+	for _, cnt := range suitCounts {
+		if cnt >= 5 {
+			return false
+		}
+	}
+	values := make([]int, 0, len(uniqueRanks)+1)
+	for r := range uniqueRanks {
+		values = append(values, r)
+	}
+	sort.Ints(values)
+	if uniqueRanks[14] {
+		values = append(values, 1)
+		sort.Ints(values)
+	}
+	run := 1
+	for i := 1; i < len(values); i++ {
+		if values[i] == values[i-1] {
+			continue
+		}
+		if values[i] == values[i-1]+1 {
+			run++
+			if run >= 5 {
+				return false
+			}
+		} else {
+			run = 1
+		}
+	}
+	return true
+}
+
 //
 // ===== hand runner =====
 //
@@ -967,6 +1110,7 @@ func playHandMatch(
 	checkStop func(allowImmediate bool) bool,
 	gracefulOnly bool,
 	tallies map[string]*ActionTally, // keyed by "A" / "B"
+	riverBluffs map[string]*RiverBluffStats,
 	db *store.DB, matchID int64, pairIndex int,
 ) (engine.Seat, int, int, int, bool) {
 	section(fmt.Sprintf("Hand %s", blue(h.ID)))
@@ -997,10 +1141,12 @@ func playHandMatch(
 	sbC := contrib{total: h.Cfg.SB, stre: h.Cfg.SB}
 	bbC := contrib{total: h.Cfg.BB, stre: h.Cfg.BB}
 
+	var pendingBluff *pendingBluffEvent
 	streets := []string{"preflop", "flop", "turn", "river"}
 	var winner engine.Seat
 
 	for i, s := range streets {
+		pendingBluff = nil
 		sub(strings.ToUpper(s))
 
 		// deal street & reset street contributions
@@ -1046,6 +1192,13 @@ func playHandMatch(
 				curLabel = bbP.Label
 				curModel = bbP.Model
 			}
+			committedBefore := actor.Committed
+			potBefore := h.Pot
+			activeBluff := pendingBluff
+			if activeBluff != nil && activeBluff.Label == curLabel {
+				activeBluff = nil
+			}
+			respondingToBluff := activeBluff != nil && activeBluff.Label != curLabel
 			minTo := h.CurBet + h.MinRaise
 			if minTo < h.Cfg.BB { // preflop guard
 				minTo = h.Cfg.BB
@@ -1264,6 +1417,12 @@ func playHandMatch(
 					logStep("fold", nil)
 					fmt.Printf("  %s %s — %s. %s\n", tag, bold("folds"), desc, dim(fmt.Sprintf("Remaining: %d", rem())))
 					addAction(tallies, curLabel, "fold")
+					if respondingToBluff {
+						recordBluffResponse(activeBluff, "fold")
+						pendingBluff = nil
+					} else if pendingBluff != nil && pendingBluff.Label == curLabel {
+						pendingBluff = nil
+					}
 					if seat == engine.SB {
 						winner = engine.BB
 					} else {
@@ -1295,6 +1454,12 @@ func playHandMatch(
 					}
 					fmt.Printf("  %s %s %s — %s. %s\n", tag, bold("calls"), good(fmt.Sprintf("%d", toCall)), desc, dim(fmt.Sprintf("Remaining: %d", rem())))
 					addAction(tallies, curLabel, "call")
+					if respondingToBluff {
+						recordBluffResponse(activeBluff, "call")
+						pendingBluff = nil
+					} else if pendingBluff != nil && pendingBluff.Label == curLabel {
+						pendingBluff = nil
+					}
 					goto NEXT_STREET
 				}
 			case "raise":
@@ -1324,6 +1489,33 @@ func playHandMatch(
 					}
 					fmt.Printf("  %s %s %s — %s. %s\n", tag, bold("raises to"), good(fmt.Sprintf("%d", raiseTo)), desc, dim(fmt.Sprintf("Remaining: %d", rem())))
 					addAction(tallies, curLabel, "raise")
+					betAmount := actor.Committed - committedBefore
+					if betAmount < 0 {
+						betAmount = 0
+					}
+					if s == "river" && toCall == 0 && betAmount > 0 {
+						stats := ensureRiverBluffStats(riverBluffs, curLabel)
+						stats.Leads++
+						ratio := float64(betAmount) / math.Max(float64(potBefore), 1)
+						isBluff := isRiverHighCard(h, seat)
+						if isBluff {
+							stats.Bluffs++
+							stats.BluffRatioSum += ratio
+							switch {
+							case ratio < 0.5:
+								stats.BluffSizeSmall++
+							case ratio <= 1.0:
+								stats.BluffSizeMedium++
+							default:
+								stats.BluffSizeLarge++
+							}
+						}
+						pendingBluff = &pendingBluffEvent{Label: curLabel, IsBluff: isBluff, Stats: stats}
+					}
+					if respondingToBluff {
+						recordBluffResponse(activeBluff, "raise")
+						pendingBluff = nil
+					}
 					prevWasCheck = false
 					applied = true
 				}
@@ -1364,6 +1556,12 @@ func playHandMatch(
 									}
 									fmt.Printf("  %s %s %s — %s. %s\n", tag, bold("calls"), good(fmt.Sprintf("%d", toCall)), desc, dim(fmt.Sprintf("Remaining: %d", rem())))
 									addAction(tallies, curLabel, "call")
+									if respondingToBluff {
+										recordBluffResponse(activeBluff, "call")
+										pendingBluff = nil
+									} else if pendingBluff != nil && pendingBluff.Label == curLabel {
+										pendingBluff = nil
+									}
 									tried = true
 									goto NEXT_STREET
 								}
@@ -1372,6 +1570,12 @@ func playHandMatch(
 									logStep("fold", nil)
 									fmt.Printf("  %s %s — %s. %s\n", tag, bold("folds"), desc, dim(fmt.Sprintf("Remaining: %d", rem())))
 									addAction(tallies, curLabel, "fold")
+									if respondingToBluff {
+										recordBluffResponse(activeBluff, "fold")
+										pendingBluff = nil
+									} else if pendingBluff != nil && pendingBluff.Label == curLabel {
+										pendingBluff = nil
+									}
 									if seat == engine.SB {
 										winner = engine.BB
 									} else {
@@ -1406,6 +1610,33 @@ func playHandMatch(
 							}
 							fmt.Printf("  %s %s %s — %s. %s\n", tag, bold("raises to"), good(fmt.Sprintf("%d", rt)), desc, dim(fmt.Sprintf("Remaining: %d", rem())))
 							addAction(tallies, curLabel, "raise")
+							betAmount := actor.Committed - committedBefore
+							if betAmount < 0 {
+								betAmount = 0
+							}
+							if s == "river" && toCall == 0 && betAmount > 0 {
+								stats := ensureRiverBluffStats(riverBluffs, curLabel)
+								stats.Leads++
+								ratio := float64(betAmount) / math.Max(float64(potBefore), 1)
+								isBluff := isRiverHighCard(h, seat)
+								if isBluff {
+									stats.Bluffs++
+									stats.BluffRatioSum += ratio
+									switch {
+									case ratio < 0.5:
+										stats.BluffSizeSmall++
+									case ratio <= 1.0:
+										stats.BluffSizeMedium++
+									default:
+										stats.BluffSizeLarge++
+									}
+								}
+								pendingBluff = &pendingBluffEvent{Label: curLabel, IsBluff: isBluff, Stats: stats}
+							}
+							if respondingToBluff {
+								recordBluffResponse(activeBluff, "raise")
+								pendingBluff = nil
+							}
 							break
 						}
 					}
@@ -1421,6 +1652,7 @@ func playHandMatch(
 			continue
 
 		NEXT_STREET:
+			pendingBluff = nil
 			break
 		}
 	}
@@ -1429,6 +1661,7 @@ func playHandMatch(
 	winner = h.Showdown()
 
 PAYOUT:
+	pendingBluff = nil
 	pot := sbC.total + bbC.total
 
 	// river sanity if no folds
@@ -1806,6 +2039,23 @@ func tallyCounts(x *ActionTally) (chk, call, raise, fold int) {
 	return x.Check, x.Call, x.Raise, x.Fold
 }
 
+func toRiverBluffSummary(stats *RiverBluffStats) store.RiverBluffSummary {
+	if stats == nil {
+		return store.RiverBluffSummary{}
+	}
+	return store.RiverBluffSummary{
+		Leads:           stats.Leads,
+		Bluffs:          stats.Bluffs,
+		BluffSizeSmall:  stats.BluffSizeSmall,
+		BluffSizeMedium: stats.BluffSizeMedium,
+		BluffSizeLarge:  stats.BluffSizeLarge,
+		BluffRatioSum:   stats.BluffRatioSum,
+		ResponseFold:    stats.ResponseFold,
+		ResponseCall:    stats.ResponseCall,
+		ResponseRaise:   stats.ResponseRaise,
+	}
+}
+
 // ===== duel runner =====
 func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	section("DUEL")
@@ -1841,6 +2091,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 	a, b := loadPlayers(startStack)
 	var statsA, statsB ModelStats
 	tallies := map[string]*ActionTally{} // keyed by "A"/"B"
+	riverBluffs := map[string]*RiverBluffStats{}
 
 	// Elo/Glicko defaults
 	eloStart := float64(atoiDef(os.Getenv("ELO_START"), 1500))
@@ -2015,7 +2266,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		h1 := engine.NewHand(fmt.Sprintf("duel-%dA", i+1), cfg, deck1)
 		statsA.addHand(engine.SB)
 		statsB.addHand(engine.BB)
-		w1, pot1, dSB1, dBB1, aborted := playHandMatch(context.Background(), h1, &a, &b, checkStop, gracefulOnly, tallies, db, matchID, i+1)
+		w1, pot1, dSB1, dBB1, aborted := playHandMatch(context.Background(), h1, &a, &b, checkStop, gracefulOnly, tallies, riverBluffs, db, matchID, i+1)
 		if aborted {
 			fmt.Println(bad("Match aborted by user (immediate)."))
 			break
@@ -2031,7 +2282,7 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 		h2 := engine.NewHand(fmt.Sprintf("duel-%dB", i+1), cfg, deck2)
 		statsA.addHand(engine.BB)
 		statsB.addHand(engine.SB)
-		w2, pot2, dSB2, dBB2, aborted2 := playHandMatch(context.Background(), h2, &b, &a, checkStop, gracefulOnly, tallies, db, matchID, i+1)
+		w2, pot2, dSB2, dBB2, aborted2 := playHandMatch(context.Background(), h2, &b, &a, checkStop, gracefulOnly, tallies, riverBluffs, db, matchID, i+1)
 		if aborted2 {
 			fmt.Println(bad("Match aborted by user (immediate)."))
 			break
@@ -2165,6 +2416,31 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 
 	printTallies(tallies, a, b)
 
+	// River bluff stats (CLI summary)
+	statsRiverA := ensureRiverBluffStats(riverBluffs, a.Label)
+	statsRiverB := ensureRiverBluffStats(riverBluffs, b.Label)
+	fmt.Println()
+	fmt.Println(bold("River bluffs by player:"))
+	printRB := func(label, model string, s *RiverBluffStats) {
+		leads := s.Leads
+		bluffs := s.Bluffs
+		var bluffPct float64
+		if leads > 0 {
+			bluffPct = 100.0 * float64(bluffs) / float64(leads)
+		}
+		avgRatio := 0.0
+		if bluffs > 0 {
+			avgRatio = s.BluffRatioSum / float64(bluffs)
+		}
+		fmt.Printf("  %s (%s) → leads:%d  bluffs:%d  bluff%%:%.0f%%  avg_ratio:%.2f  sizes[S/M/L]=%d/%d/%d  vs[fold/call/raise]=%d/%d/%d\n",
+			label, modelShort(model), leads, bluffs, bluffPct, avgRatio,
+			s.BluffSizeSmall, s.BluffSizeMedium, s.BluffSizeLarge,
+			s.ResponseFold, s.ResponseCall, s.ResponseRaise,
+		)
+	}
+	printRB("A", a.Model, statsRiverA)
+	printRB("B", b.Model, statsRiverB)
+
 	// ----- DB: final point, participants/tallies, career ratings, close
 	if db != nil && matchID != 0 {
 		if err := db.InsertRatingPoint(
@@ -2215,6 +2491,15 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			log.Printf("InsertParticipantsAndTallies failed: %v", err)
 		}
 
+		statsRiverA := ensureRiverBluffStats(riverBluffs, a.Label)
+		statsRiverB := ensureRiverBluffStats(riverBluffs, b.Label)
+		if err := db.InsertRiverBluffStats(context.Background(), matchID, "A", toRiverBluffSummary(statsRiverA)); err != nil {
+			log.Printf("InsertRiverBluffStats(A) failed: %v", err)
+		}
+		if err := db.InsertRiverBluffStats(context.Background(), matchID, "B", toRiverBluffSummary(statsRiverB)); err != nil {
+			log.Printf("InsertRiverBluffStats(B) failed: %v", err)
+		}
+
 		accString := func(good, total int) string {
 			if total <= 0 {
 				return "n/a"
@@ -2258,37 +2543,24 @@ func runDuel(checkStop func(bool) bool, gracefulOnly bool, db *store.DB) {
 			if len(breakdown) == 0 {
 				return ""
 			}
-			ordered := []struct {
-				key   string
-				label string
-			}{
-				{key: "flop", label: "Flop"},
-				{key: "turn", label: "Turn"},
-				{key: "river", label: "River"},
+			acc, ok := breakdown["river"]
+			if !ok || acc.Total == 0 {
+				return ""
 			}
-			parts := make([]string, 0, len(ordered))
-			for _, st := range ordered {
-				acc, ok := breakdown[st.key]
-				if !ok {
-					parts = append(parts, fmt.Sprintf("%s %s", st.label, "n/a"))
-					continue
-				}
-				parts = append(parts, fmt.Sprintf("%s %s", st.label, streetAccString(acc)))
-			}
-			return strings.Join(parts, " | ")
+			return streetAccString(acc)
 		}
 
 		fmt.Println(bold("MCJudge accuracy (this match):"))
 		fmt.Printf("  %s %s %s\n", bold("A"), a.Model, accString(judgeGoodA, judgeTotalA))
 		if judgeBreakdown != nil {
-			if parts := formatBreakdown(judgeBreakdown[botAID]); parts != "" {
-				fmt.Printf("    %s %s\n", bold("streets"), parts)
+			if riverAcc := formatBreakdown(judgeBreakdown[botAID]); riverAcc != "" {
+				fmt.Printf("    %s %s\n", bold("river"), riverAcc)
 			}
 		}
 		fmt.Printf("  %s %s %s\n", bold("B"), b.Model, accString(judgeGoodB, judgeTotalB))
 		if judgeBreakdown != nil {
-			if parts := formatBreakdown(judgeBreakdown[botBID]); parts != "" {
-				fmt.Printf("    %s %s\n", bold("streets"), parts)
+			if riverAcc := formatBreakdown(judgeBreakdown[botBID]); riverAcc != "" {
+				fmt.Printf("    %s %s\n", bold("river"), riverAcc)
 			}
 		}
 

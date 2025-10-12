@@ -2,14 +2,17 @@
 package main
 
 import (
+	"compress/gzip"
 	"embed"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,7 +69,13 @@ func Router(db *store.DB) http.Handler {
 
 	// Static files under /web/ and root redirect to leaderboard
 	sub, _ := fs.Sub(webFS, "web")
-	mux.Handle("/web/", http.StripPrefix("/web/", http.FileServer(http.FS(sub))))
+	staticHandler := http.StripPrefix("/web/", http.FileServer(http.FS(sub)))
+	mux.Handle("/web/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			setStaticCacheHeaders(w, r.URL.Path)
+		}
+		staticHandler.ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/web/leaderboard.html", http.StatusFound)
 	})
@@ -79,6 +88,17 @@ func Router(db *store.DB) http.Handler {
 	// Latest match bundle
 	mux.HandleFunc("/api/last-match", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		rawMatchID := strings.TrimSpace(r.URL.Query().Get("match_id"))
+		var matchFilter *int64
+		if rawMatchID != "" {
+			id, err := strconv.ParseInt(rawMatchID, 10, 64)
+			if err != nil || id <= 0 {
+				http.Error(w, "invalid match_id", http.StatusBadRequest)
+				return
+			}
+			matchFilter = &id
+		}
 
 		type Match struct {
 			ID              int64      `json:"id"`
@@ -119,6 +139,20 @@ func Router(db *store.DB) http.Handler {
 			RaisePct int    `json:"raise_pct"`
 			CheckPct int    `json:"check_pct"`
 		}
+		type RiverBluffRow struct {
+			Label         string  `json:"label"`
+			Model         string  `json:"model"`
+			Leads         int     `json:"leads"`
+			Bluffs        int     `json:"bluffs"`
+			BluffPct      float64 `json:"bluff_pct"`
+			SizeSmall     int     `json:"bluff_size_small"`
+			SizeMedium    int     `json:"bluff_size_medium"`
+			SizeLarge     int     `json:"bluff_size_large"`
+			ResponseFold  int     `json:"response_fold"`
+			ResponseCall  int     `json:"response_call"`
+			ResponseRaise int     `json:"response_raise"`
+			AvgRatio      float64 `json:"avg_bluff_ratio"`
+		}
 		type Rating struct {
 			Stage     string    `json:"stage"`      // start | after_pair | end
 			PairIndex *int      `json:"pair_index"` // null for start/end
@@ -130,26 +164,43 @@ func Router(db *store.DB) http.Handler {
 		}
 
 		type Payload struct {
-			Match        Match         `json:"match"`
-			Participants []Participant `json:"participants"`
-			ActionMix    []Mix         `json:"action_mix"`
-			Rating       []Rating      `json:"rating"`
+			Match        Match           `json:"match"`
+			Participants []Participant   `json:"participants"`
+			ActionMix    []Mix           `json:"action_mix"`
+			RiverBluffs  []RiverBluffRow `json:"river_bluffs"`
+			Rating       []Rating        `json:"rating"`
 		}
 
 		// latest match
 		var m Match
-		err := db.QueryRow(ctx, `
+		query := `
             SELECT id, created_at, ended_at, sb, bb, start_stack, duel_seeds,
                    elo_start, elo_k, elo_per_hand, elo_weight_by_pot,
                    seedpack_name, seedpack_version, seedpack_count, seedpack_sha256
               FROM matches
              ORDER BY id DESC
              LIMIT 1
-        `).Scan(&m.ID, &m.CreatedAt, &m.EndedAt, &m.SB, &m.BB, &m.StartStack, &m.DuelSeeds,
+        `
+		args := []any{}
+		if matchFilter != nil {
+			query = `
+            SELECT id, created_at, ended_at, sb, bb, start_stack, duel_seeds,
+                   elo_start, elo_k, elo_per_hand, elo_weight_by_pot,
+                   seedpack_name, seedpack_version, seedpack_count, seedpack_sha256
+              FROM matches
+             WHERE id = $1
+        `
+			args = append(args, *matchFilter)
+		}
+		err := db.QueryRow(ctx, query, args...).Scan(&m.ID, &m.CreatedAt, &m.EndedAt, &m.SB, &m.BB, &m.StartStack, &m.DuelSeeds,
 			&m.EloStart, &m.EloK, &m.EloPerHand, &m.EloWeightByPot,
 			&m.SeedpackName, &m.SeedpackVersion, &m.SeedpackCount, &m.SeedpackSHA)
 		if err != nil {
-			http.Error(w, "no matches yet", http.StatusNotFound)
+			if matchFilter != nil {
+				http.Error(w, "match not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "no matches yet", http.StatusNotFound)
+			}
 			return
 		}
 
@@ -173,6 +224,7 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			p.Model = normalizeModelIdentifier(p.Model)
 			parts = append(parts, p)
 		}
 
@@ -197,7 +249,36 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			x.Model = normalizeModelIdentifier(x.Model)
 			mix = append(mix, x)
+		}
+
+		// river bluff stats
+		rowsRB, err := db.Query(ctx, `
+            SELECT label, model, leads, bluffs, bluff_pct, bluff_size_small, bluff_size_medium, bluff_size_large,
+                   response_fold, response_call, response_raise, avg_bluff_ratio
+              FROM v_match_river_bluffs
+             WHERE match_id = $1
+             ORDER BY label
+        `, m.ID)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rowsRB.Close()
+		riverBluffs := []RiverBluffRow{}
+		for rowsRB.Next() {
+			var rb RiverBluffRow
+			if err := rowsRB.Scan(&rb.Label, &rb.Model, &rb.Leads, &rb.Bluffs, &rb.BluffPct, &rb.SizeSmall, &rb.SizeMedium, &rb.SizeLarge, &rb.ResponseFold, &rb.ResponseCall, &rb.ResponseRaise, &rb.AvgRatio); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			rb.Model = normalizeModelIdentifier(rb.Model)
+			riverBluffs = append(riverBluffs, rb)
+		}
+		if err := rowsRB.Err(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
 		}
 
 		// rating timeline
@@ -229,6 +310,7 @@ func Router(db *store.DB) http.Handler {
 			Match:        m,
 			Participants: parts,
 			ActionMix:    mix,
+			RiverBluffs:  riverBluffs,
 			Rating:       rating,
 		})
 	})
@@ -253,8 +335,8 @@ func Router(db *store.DB) http.Handler {
 		}
 		rows, err := db.Query(ctx, `
             SELECT m.id, m.created_at, m.ended_at, m.sb, m.bb, m.start_stack, m.duel_seeds,
-                   MAX(CASE WHEN p.label='A' THEN p.name_snapshot END) AS model_a,
-                   MAX(CASE WHEN p.label='B' THEN p.name_snapshot END) AS model_b,
+                   COALESCE(MAX(CASE WHEN p.label='A' THEN p.name_snapshot END), '') AS model_a,
+                   COALESCE(MAX(CASE WHEN p.label='B' THEN p.name_snapshot END), '') AS model_b,
                    m.seedpack_name, m.seedpack_version, m.seedpack_count, m.seedpack_sha256
               FROM matches m
               LEFT JOIN match_participants p ON p.match_id = m.id
@@ -275,6 +357,8 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			x.ModelA = normalizeModelIdentifier(x.ModelA)
+			x.ModelB = normalizeModelIdentifier(x.ModelB)
 			out = append(out, x)
 		}
 		writeJSON(w, map[string]any{"rows": out})
@@ -306,6 +390,87 @@ func Router(db *store.DB) http.Handler {
 			})
 		}
 		writeJSON(w, map[string]any{"seedpacks": out})
+	})
+
+	// Aggregated river bluff stats for a bot (career-wide)
+	mux.HandleFunc("/api/bot-river-bluffs", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		idStr := strings.TrimSpace(r.URL.Query().Get("id"))
+		if idStr == "" {
+			http.Error(w, "missing id", http.StatusBadRequest)
+			return
+		}
+		var botID int64
+		if _, err := fmt.Sscan(idStr, &botID); err != nil || botID <= 0 {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		// Sum up bluff stats across all matches for this bot
+		var leads, bluffs, sizeSmall, sizeMedium, sizeLarge int
+		var respFold, respCall, respRaise int
+		var ratioSum float64
+		err := db.QueryRow(ctx, `
+            WITH matches AS (
+              SELECT match_id, label
+                FROM match_participants
+               WHERE bot_id = $1
+               GROUP BY match_id, label
+            )
+            SELECT
+              COALESCE(SUM(COALESCE(r.leads, 0)), 0) AS leads,
+              COALESCE(SUM(COALESCE(r.bluffs, 0)), 0) AS bluffs,
+              COALESCE(SUM(COALESCE(r.bluff_size_small, 0)), 0) AS size_small,
+              COALESCE(SUM(COALESCE(r.bluff_size_medium, 0)), 0) AS size_medium,
+              COALESCE(SUM(COALESCE(r.bluff_size_large, 0)), 0) AS size_large,
+              COALESCE(SUM(COALESCE(r.response_fold, 0)), 0) AS resp_fold,
+              COALESCE(SUM(COALESCE(r.response_call, 0)), 0) AS resp_call,
+              COALESCE(SUM(COALESCE(r.response_raise, 0)), 0) AS resp_raise,
+              COALESCE(SUM(COALESCE(r.bluff_ratio_sum, 0)), 0) AS ratio_sum
+              FROM matches m
+              LEFT JOIN river_bluff_stats r
+                     ON r.match_id = m.match_id AND r.label = m.label
+        `, botID).Scan(&leads, &bluffs, &sizeSmall, &sizeMedium, &sizeLarge, &respFold, &respCall, &respRaise, &ratioSum)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, map[string]any{
+					"bot_id":            botID,
+					"leads":             0,
+					"bluffs":            0,
+					"bluff_pct":         0,
+					"bluff_size_small":  0,
+					"bluff_size_medium": 0,
+					"bluff_size_large":  0,
+					"response_fold":     0,
+					"response_call":     0,
+					"response_raise":    0,
+					"avg_bluff_ratio":   0,
+				})
+				return
+			}
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		var bluffPct, avgRatio float64
+		if leads > 0 {
+			bluffPct = float64(bluffs) / float64(leads)
+		}
+		if bluffs > 0 {
+			avgRatio = ratioSum / float64(bluffs)
+		}
+		writeJSON(w, map[string]any{
+			"bot_id":            botID,
+			"leads":             leads,
+			"bluffs":            bluffs,
+			"bluff_pct":         bluffPct,
+			"bluff_size_small":  sizeSmall,
+			"bluff_size_medium": sizeMedium,
+			"bluff_size_large":  sizeLarge,
+			"response_fold":     respFold,
+			"response_call":     respCall,
+			"response_raise":    respRaise,
+			"avg_bluff_ratio":   avgRatio,
+		})
 	})
 
 	// Leaderboard: top bots by Elo (career stats, org)
@@ -416,6 +581,7 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			x.Model = normalizeModelIdentifier(x.Model)
 			out = append(out, x)
 		}
 		if accMap, err := db.AllJudgeAccuracy(ctx); err == nil {
@@ -510,6 +676,7 @@ func Router(db *store.DB) http.Handler {
 			http.Error(w, err.Error(), 404)
 			return
 		}
+		career.Model = normalizeModelIdentifier(career.Model)
 
 		// Aggregate total hands and chips won/lost for per-hand summaries.
 		var (
@@ -605,6 +772,7 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			m.OppModel = normalizeModelIdentifier(m.OppModel)
 			list = append(list, m)
 		}
 		writeJSON(w, map[string]any{"career": career, "matches": list})
@@ -1086,6 +1254,7 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			part.Model = normalizeModelIdentifier(part.Model)
 			pm := matchIndex[matchID]
 			if pm == nil {
 				pm = &pairMatch{MatchID: matchID, CreatedAt: created, EndedAt: ended}
@@ -1270,6 +1439,7 @@ func Router(db *store.DB) http.Handler {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+			x.Model = normalizeModelIdentifier(x.Model)
 			out = append(out, x)
 		}
 		writeJSON(w, map[string]any{"rows": out})
@@ -1439,9 +1609,152 @@ func Router(db *store.DB) http.Handler {
 		writeJSON(w, map[string]any{"rows": out})
 	})
 
-	return mux
+	return withCompression(mux)
 }
 
+func setStaticCacheHeaders(w http.ResponseWriter, requestPath string) {
+	ext := strings.ToLower(path.Ext(requestPath))
+	switch ext {
+	case ".html":
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	case ".js", ".css", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2":
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	case ".json":
+		w.Header().Set("Cache-Control", "public, max-age=600")
+	default:
+		if ext != "" {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		}
+	}
+}
+
+func shouldCompress(r *http.Request) bool {
+	if strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
+		return false
+	}
+	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	if strings.Contains(strings.ToLower(r.Header.Get("Range")), "bytes=") {
+		return false
+	}
+
+	ext := strings.ToLower(path.Ext(r.URL.Path))
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".mp4", ".mp3", ".zip", ".gz", ".tgz", ".bz2", ".rar", ".7z", ".woff", ".woff2", ".pdf", ".ps", ".eot":
+		return false
+	}
+
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		return true
+	}
+	if ext == "" {
+		return true
+	}
+
+	switch ext {
+	case ".html", ".css", ".js", ".json", ".svg", ".xml", ".txt", ".map":
+		return true
+	default:
+		return false
+	}
+}
+
+func withCompression(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") || !shouldCompress(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		w.Header().Add("Vary", "Accept-Encoding")
+
+		gz := gzip.NewWriter(w)
+		grw := &gzipResponseWriter{
+			ResponseWriter: w,
+			writer:         gz,
+		}
+
+		defer func() {
+			if grw.skipCompression {
+				gz.Reset(io.Discard)
+				_ = gz.Close()
+				return
+			}
+			if err := gz.Close(); err != nil {
+				log.Printf("gzip close: %v", err)
+			}
+		}()
+
+		next.ServeHTTP(grw, r)
+	})
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	writer          *gzip.Writer
+	wroteHeader     bool
+	wroteBody       bool
+	skipCompression bool
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	if g.skipCompression {
+		return g.ResponseWriter.Write(b)
+	}
+	if !g.wroteHeader {
+		g.WriteHeader(http.StatusOK)
+	}
+	n, err := g.writer.Write(b)
+	if n > 0 {
+		g.wroteBody = true
+	}
+	return n, err
+}
+
+func (g *gzipResponseWriter) WriteHeader(status int) {
+	if g.wroteHeader {
+		g.ResponseWriter.WriteHeader(status)
+		return
+	}
+
+	if status < http.StatusOK || status == http.StatusNoContent || status == http.StatusNotModified {
+		g.skipCompression = true
+		header := g.ResponseWriter.Header()
+		header.Del("Content-Encoding")
+		header.Del("Content-Length")
+		g.ResponseWriter.WriteHeader(status)
+		return
+	}
+
+	g.wroteHeader = true
+	header := g.ResponseWriter.Header()
+	header.Del("Content-Length")
+	header.Set("Content-Encoding", "gzip")
+	g.ResponseWriter.WriteHeader(status)
+}
+
+func (g *gzipResponseWriter) Flush() {
+	if g.skipCompression {
+		if flusher, ok := g.ResponseWriter.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		return
+	}
+	if err := g.writer.Flush(); err != nil {
+		log.Printf("gzip flush: %v", err)
+	}
+	if flusher, ok := g.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (g *gzipResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pusher, ok := g.ResponseWriter.(http.Pusher); ok {
+		return pusher.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
 func writeMatchLogsCSV(w http.ResponseWriter, rows []matchLogRow, matchID int64) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	if matchID > 0 {
@@ -1533,6 +1846,7 @@ func strPtrValue(s *string) string {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)

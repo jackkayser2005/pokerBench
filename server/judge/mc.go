@@ -10,6 +10,7 @@ import (
 
 	"ai-thunderdome/server/engine"
 	"ai-thunderdome/server/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	poker "github.com/paulhankin/poker"
 )
@@ -217,9 +218,15 @@ func evaluateMatchMCWithDB(ctx context.Context, db *store.DB, matchID int64) err
 		return errors.New("nil database")
 	}
 
-	// Fetch big blind size for epsilon scaling
+	conn, err := db.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	// Fetch big blind size for epsilon scaling using the dedicated connection.
 	var bb int
-	if err := db.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
+	if err := conn.QueryRow(ctx, `SELECT bb FROM matches WHERE id = $1`, matchID).Scan(&bb); err != nil {
 		return err
 	}
 	if bb <= 0 {
@@ -274,16 +281,22 @@ func evaluateMatchMCWithDB(ctx context.Context, db *store.DB, matchID int64) err
                    compute_ms = EXCLUDED.compute_ms
        `
 
-	rows, err := db.Query(ctx, `
+	rows, err := conn.Query(ctx, `
         SELECT id, hand_id, actor_label, street, pot, to_call, board, sb_hole, bb_hole, LOWER(action), amount
           FROM action_logs
-         WHERE match_id = $1 AND street IN ('flop','turn','river')
+         WHERE match_id = $1 AND street = 'river'
          ORDER BY id
     `, matchID)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	cleanupRows := func() {
+		if rows != nil {
+			rows.Close()
+			rows = nil
+		}
+	}
+	defer cleanupRows()
 
 	var inserts [][]any
 
@@ -493,10 +506,20 @@ func evaluateMatchMCWithDB(ctx context.Context, db *store.DB, matchID int64) err
 		return nil
 	}
 
+	cleanupRows()
+	var b pgx.Batch
 	for _, args := range inserts {
-		if _, err := db.Exec(ctx, insertActionEvalSQL, args...); err != nil {
+		b.Queue(insertActionEvalSQL, args...)
+	}
+	br := conn.SendBatch(ctx, &b)
+	for range inserts {
+		if _, err := br.Exec(); err != nil {
+			_ = br.Close()
 			return err
 		}
+	}
+	if err := br.Close(); err != nil {
+		return err
 	}
 	return nil
 }

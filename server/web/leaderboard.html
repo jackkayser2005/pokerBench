@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -275,25 +275,26 @@ function rowHTML(i, r, metric){
       const ci    = wilson(wins, hands);
       const ciTxt = hands ? ` (${Math.round(ci[0]*100)}-${Math.round(ci[1]*100)}%)` : '';
       const judge = judgeStatsFor(r.bot_id, r);
+      const judgeDisplay = judge.hasData ? judge.display : '&mdash;';
       const ratingVal = ratingFor(r, metric).toFixed(1);
       const rd = Number(r.glicko_rd ?? r.g_rd);
-      const rdText = metric === 'glicko' && Number.isFinite(rd) ? `<span class="sub">±${Math.round(rd)}</span>` : '';
+      const rdText = metric === 'glicko' && Number.isFinite(rd) ? `<span class="sub">&plusmn;${Math.round(rd)}</span>` : '';
       const fullSafe = escapeHtml(full);
       return `<tr class="lb-row" data-href="/web/bot.html?id=${r.bot_id}" data-bot-id="${r.bot_id}" data-bot-name="${fullSafe}">
-        <td class="num">${i+1}</td>
-        <td>
+        <td class="num lb-col-rank">${i+1}</td>
+        <td class="lb-col-model">
           <div class="lb-model">
             ${modelIcon(r.company, r.model)}
             <a href="/web/bot.html?id=${r.bot_id}" class="name" title="${title}">${short}</a>
           </div>
         </td>
-        <td class="num">${ratingVal}${rdText}</td>
-        <td>${orgCell(r.company, r.model)}</td>
-        <td class="num">${fmt(hands)}</td>
-        <td class="num">${Math.max(0,Math.min(100, Number(r.win_rate_pct||0)))}%<span class="sub">${ciTxt}</span></td>
-        <td class="num">${judge.hasData ? judge.display : '—'}</td>
-        <td class="num">${fmt(r.net_chips)}</td>
-        <td><span class="sub">${r.updated_at ? dateFmt(r.updated_at) : 'n/a'}</span></td>
+        <td class="num lb-col-rating">${ratingVal}${rdText}</td>
+        <td class="lb-col-org">${orgCell(r.company, r.model)}</td>
+        <td class="num lb-col-hands">${fmt(hands)}</td>
+        <td class="num lb-col-win">${Math.max(0,Math.min(100, Number(r.win_rate_pct||0)))}%<span class="sub">${ciTxt}</span></td>
+        <td class="num lb-col-acc">${judgeDisplay}</td>
+        <td class="num lb-col-net">${fmt(r.net_chips)}</td>
+        <td class="lb-col-updated"><span class="sub">${r.updated_at ? dateFmt(r.updated_at) : 'n/a'}</span></td>
       </tr>`;
     }
 
@@ -569,27 +570,27 @@ function rowHTML(i, r, metric){
           <div class="lb-table-wrap">
             <table class="lb-table">
             <colgroup>
-              <col style="width:56px" />
-              <col style="width:260px" />
-              <col style="width:110px" />
-              <col style="width:120px" />
-              <col style="width:120px" />
-              <col style="width:160px" />
-              <col style="width:120px" />
-              <col style="width:130px" />
-              <col style="width:220px" />
+              <col class="lb-col lb-col-rank" style="width:56px" />
+              <col class="lb-col lb-col-model" style="width:260px" />
+              <col class="lb-col lb-col-rating" style="width:110px" />
+              <col class="lb-col lb-col-org" style="width:120px" />
+              <col class="lb-col lb-col-hands" style="width:120px" />
+              <col class="lb-col lb-col-win" style="width:160px" />
+              <col class="lb-col lb-col-acc" style="width:120px" />
+              <col class="lb-col lb-col-net" style="width:130px" />
+              <col class="lb-col lb-col-updated" style="width:220px" />
             </colgroup>
             <thead>
               <tr>
-                <th class="num">#</th>
-                <th>Model</th>
-                <th id="ratingHead" class="num sortable" data-sort="rating" title="Sort by rating">Elo</th>
-                <th>Org</th>
-                <th class="num sortable" data-sort="hands" title="Sort by Hands">Hands</th>
-                <th class="num sortable" data-sort="win" title="Sort by Win %">Win%</th>
-                <th class="num sortable" data-sort="acc" title="Sort by Judge Accuracy">Acc</th>
-                <th class="num sortable" data-sort="net" title="Sort by Net">Net</th>
-                <th class="sortable" data-sort="updated" title="Sort by Updated">Updated</th>
+                <th class="num lb-col-rank">#</th>
+                <th class="lb-col-model">Model</th>
+                <th id="ratingHead" class="num sortable lb-col-rating" data-sort="rating" title="Sort by rating">Elo</th>
+                <th class="lb-col-org">Org</th>
+                <th class="num sortable lb-col-hands" data-sort="hands" title="Sort by Hands">Hands</th>
+                <th class="num sortable lb-col-win" data-sort="win" title="Sort by Win %">Win%</th>
+                <th class="num sortable lb-col-acc" data-sort="acc" title="Sort by Judge Accuracy">Acc</th>
+                <th class="num sortable lb-col-net" data-sort="net" title="Sort by Net">Net</th>
+                <th class="sortable lb-col-updated" data-sort="updated" title="Sort by Updated">Updated</th>
               </tr>
             </thead>
             <tbody id="tbody"><tr><td colspan="9">Loading...</td></tr></tbody>
@@ -622,7 +623,7 @@ function rowHTML(i, r, metric){
           </svg>
           <span>@PokerAIArena</span>
         </a>
-        <p class="site-footer__copy">© 2025 PokerBench</p>
+        <p class="site-footer__copy">&copy; 2025 PokerBench</p>
       </div>
     </div>
   </footer>

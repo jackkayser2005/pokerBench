@@ -127,6 +127,21 @@ CREATE TABLE IF NOT EXISTS action_tallies (
   PRIMARY KEY (match_id, label)
 );
 
+CREATE TABLE IF NOT EXISTS river_bluff_stats (
+  match_id BIGINT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  label    CHAR(1) NOT NULL CHECK (label IN ('A','B')),
+  leads INT NOT NULL DEFAULT 0,
+  bluffs INT NOT NULL DEFAULT 0,
+  bluff_size_small INT NOT NULL DEFAULT 0,
+  bluff_size_medium INT NOT NULL DEFAULT 0,
+  bluff_size_large INT NOT NULL DEFAULT 0,
+  bluff_ratio_sum DOUBLE PRECISION NOT NULL DEFAULT 0,
+  response_fold INT NOT NULL DEFAULT 0,
+  response_call INT NOT NULL DEFAULT 0,
+  response_raise INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (match_id, label)
+);
+
 -- =========================
 -- VIEWS
 -- =========================
@@ -149,6 +164,26 @@ SELECT
 FROM matches m
 JOIN match_participants p ON p.match_id = m.id
 JOIN action_tallies t     ON t.match_id = m.id AND t.label = p.label;
+
+CREATE OR REPLACE VIEW v_match_river_bluffs AS
+SELECT
+  m.id AS match_id,
+  p.label,
+  p.name_snapshot AS model,
+  p.company_snapshot AS company,
+  COALESCE(r.leads, 0) AS leads,
+  COALESCE(r.bluffs, 0) AS bluffs,
+  COALESCE(r.bluff_size_small, 0) AS bluff_size_small,
+  COALESCE(r.bluff_size_medium, 0) AS bluff_size_medium,
+  COALESCE(r.bluff_size_large, 0) AS bluff_size_large,
+  COALESCE(r.response_fold, 0) AS response_fold,
+  COALESCE(r.response_call, 0) AS response_call,
+  COALESCE(r.response_raise, 0) AS response_raise,
+  CASE WHEN COALESCE(r.leads, 0) > 0 THEN COALESCE(r.bluffs, 0)::float / COALESCE(r.leads, 0)::float ELSE 0 END AS bluff_pct,
+  CASE WHEN COALESCE(r.bluffs, 0) > 0 THEN COALESCE(r.bluff_ratio_sum, 0)::float / COALESCE(r.bluffs, 0)::float ELSE 0 END AS avg_bluff_ratio
+FROM matches m
+JOIN match_participants p ON p.match_id = m.id
+LEFT JOIN river_bluff_stats r ON r.match_id = m.id AND r.label = p.label;
 
 CREATE OR REPLACE VIEW v_bot_action_mix AS
 SELECT

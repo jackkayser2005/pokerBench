@@ -29,6 +29,8 @@ const ReplayPage = (() => {
     startBanks: { SB: Number.NaN, BB: Number.NaN },
     baseEquity: { SB: 0, BB: 0 },
     actionButtons: [],
+    riverBluffs: [],
+    matchLoadToken: null,
   };
 
   const els = {};
@@ -684,42 +686,6 @@ const ReplayPage = (() => {
       }
     }
 
-    if (els.solverText) {
-      const solver = row?.solver;
-      const solverVersion = row?.solver_version;
-      const bestAction = row?.eval_best_action;
-      const bestTo = row?.eval_best_to;
-      const gap = Number(row?.eval_gap_bb);
-      const prob = Number(row?.eval_correct_prob);
-      const isTop = typeof row?.eval_is_top === 'boolean' ? row.eval_is_top : null;
-      const parts = [];
-      if (solver) {
-        parts.push(solverVersion ? `${solver} ${solverVersion}` : solver);
-      }
-      if (bestAction) {
-        const move = bestTo != null ? `${bestAction} to ${fmtChips(bestTo)}` : bestAction;
-        parts.push(move);
-      }
-      if (Number.isFinite(gap)) {
-        parts.push(`${gap.toFixed(2)} bb gap`);
-      }
-      if (Number.isFinite(prob)) {
-        parts.push(`${Math.round(prob * 100)}% top action`);
-      } else if (isTop != null) {
-        parts.push(isTop ? 'Top action' : 'Off-tree');
-      }
-      const text = parts.join(' • ');
-      els.solverText.textContent = text || '—';
-      els.solverText.parentElement?.classList.toggle('is-empty', !text);
-      if (text) {
-        const tooltip = `Solver guidance: ${text}`;
-        els.solverText.setAttribute('title', tooltip);
-        els.solverText.setAttribute('aria-label', tooltip);
-      } else {
-        els.solverText.removeAttribute('title');
-        els.solverText.removeAttribute('aria-label');
-      }
-    }
   }
 
   function addPressFeedback(btn) {
@@ -1099,6 +1065,164 @@ const ReplayPage = (() => {
     els.matchMeta.textContent = parts.join(' • ');
   }
 
+  function renderRiverBluffs(options = {}) {
+    if (!els.riverBluffs) return;
+    const container = els.riverBluffs;
+    const { loading = false, message = null } = options;
+    container.innerHTML = '';
+    if (loading) {
+      container.textContent = 'Loading river bluff stats...';
+      return;
+    }
+    if (message) {
+      container.textContent = message;
+      return;
+    }
+    const rows = Array.isArray(state.riverBluffs) ? state.riverBluffs : [];
+    if (!rows.length) {
+      container.textContent = 'No river leads recorded for this match yet.';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    const heading = document.createElement('h3');
+    heading.textContent = 'River bluff summary';
+    frag.appendChild(heading);
+
+    const table = document.createElement('table');
+    table.className = 'replay-bluff-table';
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headers = [
+      { label: 'Player' },
+      { label: 'Leads', tip: 'River bets that started the action when to_call was zero.' },
+      { label: 'Bluffs', tip: 'River leads tagged as bluffs by the judge.' },
+      { label: 'Bluff %', tip: 'Bluffs divided by total river leads.' },
+      { label: 'Avg size', tip: 'Average fraction of the pot invested when leading.' },
+    ];
+    headers.forEach(col => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = col.label;
+      if (col.tip) {
+        th.title = col.tip;
+        th.setAttribute('aria-label', `${col.label}: ${col.tip}`);
+      }
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    rows.forEach(row => {
+      if (!row || typeof row !== 'object') return;
+      const label = String(row.label || '').toUpperCase();
+      const modelName = row.model || (label === 'A' ? state.modelA : state.modelB) || '';
+      const tr = document.createElement('tr');
+
+      const playerCell = document.createElement('th');
+      playerCell.scope = 'row';
+      playerCell.textContent = modelName ? `${label || 'N/A'} - ${trimName(modelName)}` : label || 'N/A';
+      tr.appendChild(playerCell);
+
+      const leadsCell = document.createElement('td');
+      leadsCell.textContent = formatNumber(row.leads ?? 0);
+      tr.appendChild(leadsCell);
+
+      const bluffsCell = document.createElement('td');
+      bluffsCell.textContent = formatNumber(row.bluffs ?? 0);
+      tr.appendChild(bluffsCell);
+
+      const bluffPctCell = document.createElement('td');
+      const bluffPct = formatPercent(Number(row.leads) > 0 ? row.bluff_pct : 0);
+      bluffPctCell.textContent = bluffPct ?? '0%';
+      tr.appendChild(bluffPctCell);
+
+      const avgSizeCell = document.createElement('td');
+      const avgRatio = Number(row.bluffs) > 0 ? formatPercent(row.avg_bluff_ratio) : '0%';
+      avgSizeCell.textContent = avgRatio ?? '0%';
+      tr.appendChild(avgSizeCell);
+
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    frag.appendChild(table);
+    container.appendChild(frag);
+  }
+
+  function applyMatchSummary(summary) {
+    if (!summary) {
+      state.riverBluffs = [];
+      renderRiverBluffs({ message: 'Unable to load river bluff stats.' });
+      return;
+    }
+
+    const match = summary.match;
+    if (match && typeof match === 'object') {
+      const matchId = match.id ?? state.matchId;
+      if (state.currentMatch && (matchId == null || String(state.currentMatch.id) === String(matchId))) {
+        state.currentMatch = { ...state.currentMatch, ...match };
+      } else {
+        state.currentMatch = { ...(state.currentMatch || {}), ...match };
+      }
+      if (matchId != null) {
+        const entry = state.matchList.find(row => String(row.id) === String(matchId));
+        if (entry) {
+          Object.assign(entry, match);
+        }
+      }
+      updateMatchMeta();
+    }
+
+    const participants = Array.isArray(summary.participants) ? summary.participants : [];
+    if (participants.length) {
+      const byLabel = new Map();
+      participants.forEach(part => {
+        const key = String(part?.label || '').toUpperCase();
+        if (key) byLabel.set(key, part);
+      });
+
+      const partA = byLabel.get('A');
+      const partB = byLabel.get('B');
+      const modelA = partA?.model || partA?.name;
+      const modelB = partB?.model || partB?.name;
+      let modelsChanged = false;
+
+      if (modelA && modelA !== state.modelA) {
+        state.modelA = modelA;
+        modelsChanged = true;
+      }
+      if (modelB && modelB !== state.modelB) {
+        state.modelB = modelB;
+        modelsChanged = true;
+      }
+
+      if (state.currentMatch) {
+        if (modelA) state.currentMatch.model_a = modelA;
+        if (modelB) state.currentMatch.model_b = modelB;
+      }
+
+      const listEntry = state.matchList.find(row => String(row.id) === String(state.matchId));
+      if (listEntry) {
+        if (modelA) listEntry.model_a = modelA;
+        if (modelB) listEntry.model_b = modelB;
+      }
+
+      if (modelsChanged) {
+        updatePlayerMap();
+        try {
+          localStorage.setItem(`replay_models_${state.matchId}`, JSON.stringify({ A: state.modelA, B: state.modelB }));
+        } catch (err) {
+          console.warn('Unable to store replay model cache', err);
+        }
+      }
+    }
+
+    state.riverBluffs = Array.isArray(summary.river_bluffs) ? summary.river_bluffs : [];
+    renderRiverBluffs();
+  }
+
   function buildMatchOptions() {
     if (!els.matchSelect) return;
     const frag = document.createDocumentFragment();
@@ -1154,8 +1278,15 @@ const ReplayPage = (() => {
     }
     const data = await getJSON('/api/matches', '/web/data/matches.json');
     state.matchList = Array.isArray(data?.rows) ? data.rows : [];
-    if (!state.matchId && state.matchList[0]) {
-      state.matchId = state.matchList[0].id;
+    if (state.matchList.length) {
+      const hasSelected = state.matchList.some(row => String(row.id) === String(state.matchId));
+      if (!hasSelected) {
+        state.matchId = state.matchList[0].id;
+      }
+    } else {
+      state.matchId = null;
+      state.currentMatch = null;
+      renderRiverBluffs({ message: 'No matches recorded yet. Run a duel to start tracking river bluff stats.' });
     }
     buildMatchOptions();
     resolveCurrentMatch();
@@ -1226,6 +1357,7 @@ const ReplayPage = (() => {
     window.clearTimeout(state.timer);
     state.timer = null;
     state.rows = [];
+    state.riverBluffs = [];
     state.index = 0;
     state.prevBoardKey = '';
     state.prevHoles = { SB: '', BB: '' };
@@ -1252,23 +1384,47 @@ const ReplayPage = (() => {
   async function loadMatchLogs() {
     if (!state.matchId) {
       state.rows = [];
+      state.riverBluffs = [];
       updateDownloadButtons();
-      renderEmptyActionList('Select a match to view its action log.');
+      const hasMatches = state.matchList.length > 0;
+      const emptyMessage = hasMatches ? 'Select a match to view its action log.' : 'No matches recorded yet. Run a duel to start a replay.';
+      renderEmptyActionList(emptyMessage);
+      if (hasMatches) {
+        renderRiverBluffs({ message: 'Select a match to view river bluff stats.' });
+      } else {
+        renderRiverBluffs({ message: 'No matches recorded yet. Run a duel to start tracking river bluff stats.' });
+      }
       return;
     }
     const requestedMatchId = state.matchId;
+    const requestToken = Symbol('matchLoad');
+    state.matchLoadToken = requestToken;
+
+    renderRiverBluffs({ loading: true });
     resetStateForMatch();
-    const data = await getJSON(`/api/match-logs?match_id=${encodeURIComponent(requestedMatchId)}`, `/web/data/match-logs-${encodeURIComponent(requestedMatchId)}.json`);
-    if (state.matchId !== requestedMatchId) {
+
+    const encodedId = encodeURIComponent(requestedMatchId);
+    const summaryPromise = getJSON(`/api/last-match?match_id=${encodedId}`);
+    const logsPromise = getJSON(`/api/match-logs?match_id=${encodedId}`, `/web/data/match-logs-${encodedId}.json`);
+
+    const [summaryData, logData] = await Promise.all([summaryPromise, logsPromise]);
+
+    if (state.matchLoadToken !== requestToken || String(state.matchId) !== String(requestedMatchId)) {
       return;
     }
-    state.rows = Array.isArray(data?.rows) ? data.rows : [];
+
+    applyMatchSummary(summaryData);
+
+    state.rows = Array.isArray(logData?.rows) ? logData.rows : [];
     updateDownloadButtons();
+
     if (!state.rows.length) {
-      renderEmptyActionList('No actions recorded for this match yet.');
+      const emptyMessage = logData ? 'No actions recorded for this match yet.' : 'Unable to load actions for this match.';
+      renderEmptyActionList(emptyMessage);
       draw();
       return;
     }
+
     const first = state.rows[0];
     const firstSbStack = Number(first?.sb_stack ?? 0);
     const firstBbStack = Number(first?.bb_stack ?? 0);
@@ -1283,13 +1439,13 @@ const ReplayPage = (() => {
     state.baseEquity.BB = state.startStacks.BB + startPot;
     buildActionList();
     draw();
-    play();
+    updateStatus('paused');
   }
-
   function cacheElements() {
     els.matchSelect = $('#matchSel');
     els.map = $('#map');
     els.matchMeta = $('#matchMeta');
+    els.riverBluffs = $('#riverBluffStats');
     els.board = $('#board');
     els.boardText = $('#boardText');
     els.sbZone = $('#sbZone');
@@ -1340,7 +1496,7 @@ const ReplayPage = (() => {
     els.toCall = $('#toCall');
     els.minRaise = $('#minRaise');
     els.raiseWindow = $('#raiseWindow');
-    els.solverText = $('#solverText');
+    renderRiverBluffs({ message: 'Loading river bluff stats...' });
   }
 
   function attachListeners() {

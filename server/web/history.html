@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -69,29 +69,30 @@
       const blinds = (m.sb != null && m.bb != null) ? `${m.sb}/${m.bb}` : '—';
       return `
         <tr>
-          <td class="history-table__cell num mono">${m.id}</td>
-          <td class="history-table__cell">
+          <td class="history-table__cell num mono history-col-id">${m.id}</td>
+          <td class="history-table__cell history-col-created">
             <div class="history-date">
               <div class="history-date__primary">${formatDate(m.created_at)}</div>
+              <span class="${status.className} history-status--mobile"><span class="history-status__dot"></span>${status.label}</span>
             </div>
           </td>
-          <td class="history-table__cell">
+          <td class="history-table__cell history-col-ended">
             <div class="history-date">
               <div class="history-date__primary">${formatDate(m.ended_at)}</div>
-              <span class="${status.className}"><span class="history-status__dot"></span>${status.label}</span>
+              <span class="${status.className} history-status--desktop"><span class="history-status__dot"></span>${status.label}</span>
             </div>
           </td>
-          <td class="history-table__cell">
+          <td class="history-table__cell history-col-models">
             <div class="history-models">
               <span>${m.model_a || 'A'}</span>
               <span class="history-models__vs">vs</span>
               <span>${m.model_b || 'B'}</span>
             </div>
           </td>
-          <td class="history-table__cell num history-blinds">${blinds}</td>
-          <td class="history-table__cell num history-blinds">${formatNumber(m.start_stack)}</td>
-          <td class="history-table__cell num history-blinds">${formatNumber(m.duel_seeds)}</td>
-          <td class="history-table__cell history-table__actions">
+          <td class="history-table__cell num history-blinds history-col-blinds">${blinds}</td>
+          <td class="history-table__cell num history-blinds history-col-start">${formatNumber(m.start_stack)}</td>
+          <td class="history-table__cell num history-blinds history-col-pairs">${formatNumber(m.duel_seeds)}</td>
+          <td class="history-table__cell history-table__actions history-col-replay">
             <div class="history-actions">
               <a class="pill accent" href="/web/replay.html?match_id=${m.id}">Replay</a>
               <a class="pill ghost" href="/api/match-logs?match_id=${m.id}" download="match-${m.id}.json">JSON</a>
@@ -167,7 +168,19 @@
 
     async function load() {
       const data = await getJSON('/api/matches', '/web/data/matches.json');
-      state.rows = data.rows || [];
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const seen = new Set();
+      const unique = [];
+      for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const id = row.id ?? row.match_id;
+        if (id == null) continue;
+        const key = String(id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(row);
+      }
+      state.rows = unique;
       render();
     }
 
@@ -270,7 +283,7 @@
         </a>
       </nav>
       <div class="topnav__actions">
-        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav">
+        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav" hidden aria-hidden="true">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
               <path d="M4 6h16"></path>
@@ -360,14 +373,14 @@
           <table class="table">
             <thead>
               <tr>
-                <th class="num sortable" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
-                <th class="sortable" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
-                <th class="sortable" data-sort="ended_at" title="Sort by ended date">Ended</th>
-                <th>Models</th>
-                <th class="num sortable" data-sort="blinds" title="Sort by blinds">Blinds</th>
-                <th class="num sortable" data-sort="start_stack" title="Sort by start stack">Start</th>
-                <th class="num sortable" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
-                <th class="num">Replay</th>
+                <th class="num sortable history-col-id" data-sort="id" aria-sort="none" title="Sort by ID">ID</th>
+                <th class="sortable history-col-created" data-sort="created_at" aria-sort="descending" title="Sort by created date">Created</th>
+                <th class="sortable history-col-ended" data-sort="ended_at" title="Sort by ended date">Ended</th>
+                <th class="history-col-models">Models</th>
+                <th class="num sortable history-col-blinds" data-sort="blinds" title="Sort by blinds">Blinds</th>
+                <th class="num sortable history-col-start" data-sort="start_stack" title="Sort by start stack">Start</th>
+                <th class="num sortable history-col-pairs" data-sort="duel_seeds" title="Sort by duel seeds">Pairs</th>
+                <th class="num history-col-replay">Replay</th>
               </tr>
             </thead>
             <tbody id="tbody"><tr><td class="history-table__cell history-table__cell--empty" colspan="8">Loading…</td></tr></tbody>

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -68,10 +68,19 @@
     }
     function eloProb(ra, rb){ return 1 / (1 + Math.pow(10, (rb - ra)/400)); }
     function matrixSizeClass(count){
+      if (count >= 48) return 'matrix-table--ultra';
+      if (count >= 40) return 'matrix-table--micro';
+      if (count >= 34) return 'matrix-table--nano';
       if (count >= 28) return 'matrix-table--xxs';
       if (count >= 22) return 'matrix-table--xs';
       if (count >= 16) return 'matrix-table--sm';
       return '';
+    }
+    function matrixScale(count){
+      if (!Number.isFinite(count) || count <= 0) return 1;
+      if (count <= 12) return 1;
+      const step = Math.max(0, count - 12) * 0.02;
+      return Math.max(0.45, 1 - step);
     }
     async function getJSON(url, fallback){
       try{ const r = await fetch(url); if(r.ok) return await r.json(); }catch(e){}
@@ -96,8 +105,12 @@
       }
       const sizeClass = matrixSizeClass(N);
       const tableClasses = ['matrix-table'];
-      if(sizeClass) tableClasses.push(sizeClass);
-      let html = `<div class="table-wrap"><table class="${tableClasses.join(' ')}"><thead><tr><th class=\"matrix-sticky\">Model</th>` + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
+      if(sizeClass){
+        tableClasses.push(...sizeClass.split(/\s+/).filter(Boolean));
+      }
+      const scale = matrixScale(N);
+      const tableStyleAttr = `style="--matrix-scale:${scale.toFixed(3)}"`;
+      let html = `<div class="table-wrap"><table class="${tableClasses.join(' ')}" ${tableStyleAttr}><thead><tr><th class=\"matrix-sticky\">Model</th>` + bots.map(b=>`<th class=\"rot\" title=\"${b.name}\">${shortName(b.name)}</th>`).join('') + '</tr></thead><tbody>';
       bots.forEach((b, i)=>{
         html += `<tr><th scope="row" class="matrix-sticky"><div>${shortName(b.name)}</div><div class=\"sub\">${b.company}</div></th>`;
         for(let j=0;j<N;j++){

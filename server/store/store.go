@@ -115,6 +115,18 @@ type UsageSummary struct {
 	CallCount        int
 }
 
+type RiverBluffSummary struct {
+	Leads           int
+	Bluffs          int
+	BluffSizeSmall  int
+	BluffSizeMedium int
+	BluffSizeLarge  int
+	BluffRatioSum   float64
+	ResponseFold    int
+	ResponseCall    int
+	ResponseRaise   int
+}
+
 func (db *DB) GetJudgeAccuracy(ctx context.Context, botID int64) (good, total int, err error) {
 	err = db.QueryRow(ctx, `
                 SELECT judge_good, judge_total
@@ -494,6 +506,24 @@ func (db *DB) InsertParticipantsAndTallies(
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (db *DB) InsertRiverBluffStats(ctx context.Context, matchID int64, label string, stats RiverBluffSummary) error {
+	_, err := db.Exec(ctx, `
+        INSERT INTO river_bluff_stats (match_id, label, leads, bluffs, bluff_size_small, bluff_size_medium, bluff_size_large, bluff_ratio_sum, response_fold, response_call, response_raise)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT (match_id, label) DO UPDATE
+          SET leads = EXCLUDED.leads,
+              bluffs = EXCLUDED.bluffs,
+              bluff_size_small = EXCLUDED.bluff_size_small,
+              bluff_size_medium = EXCLUDED.bluff_size_medium,
+              bluff_size_large = EXCLUDED.bluff_size_large,
+              bluff_ratio_sum = EXCLUDED.bluff_ratio_sum,
+              response_fold = EXCLUDED.response_fold,
+              response_call = EXCLUDED.response_call,
+              response_raise = EXCLUDED.response_raise
+    `, matchID, label, stats.Leads, stats.Bluffs, stats.BluffSizeSmall, stats.BluffSizeMedium, stats.BluffSizeLarge, stats.BluffRatioSum, stats.ResponseFold, stats.ResponseCall, stats.ResponseRaise)
+	return err
 }
 
 func (db *DB) CompleteMatch(ctx context.Context, matchID int64) error {

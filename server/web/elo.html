@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -243,8 +243,22 @@
 
     function trimModelName(s = '') {
       s = s.trim().replace(/^"+|"+$/g, '');
-      const parts = s.split(/[\/:@]/).filter(Boolean);
-      if (parts.length) s = parts[parts.length - 1];
+      // Take last path segment only (preserve ':' variant like ":free")
+      const pathParts = s.split(/[\\/]/).filter(Boolean);
+      const lastIdx = pathParts.length - 1;
+      let tail = (pathParts[lastIdx] || s).trim();
+      // Strip @version suffix inside the tail if present
+      if (tail.includes('@')) tail = tail.split('@')[0].trim();
+      // If tail is just a generic variant (e.g., "free"), prefix with previous part
+      const GENERIC_VARIANTS = new Set(['free','pro','latest','classic','mini','small','medium','large','turbo','extended','ultra','max','plus','instruct','chat','text','beta','alpha','distill','reasoning']);
+      if (!tail.includes(':') && lastIdx > 0) {
+        const lower = tail.toLowerCase();
+        if (GENERIC_VARIANTS.has(lower)) {
+          const prev = pathParts[lastIdx - 1].trim();
+          if (prev) tail = `${prev}:${tail}`;
+        }
+      }
+      s = tail;
       if (s.length > 42) s = s.slice(0, 42) + '…';
       return s;
     }
@@ -824,7 +838,8 @@
         const latest = Number.isFinite(stats.latestElo) ? stats.latestElo : 0;
         const pct = maxLatest > 0 ? Math.max(0, Math.min(1, latest / maxLatest)) : 0;
         fill.style.width = `${(pct * 100).toFixed(2)}%`;
-        fill.style.background = `linear-gradient(135deg, ${colorWithAlpha(plot.color, 0.25)} 0%, ${colorWithAlpha(plot.color, 0.6)} 50%, ${plot.color} 100%)`;
+        // Use a solid series color (no gradient) to keep visuals quiet
+        fill.style.background = colorWithAlpha(plot.color, 0.85);
         bar.appendChild(fill);
         item.appendChild(bar);
 
@@ -1016,6 +1031,7 @@
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
+      syncMobileCompanyFilter();
     }
 
     function updateActiveIndicator() {
@@ -1042,6 +1058,55 @@
       });
       updateFilterButtons();
       updateActiveIndicator();
+      renderMobileCompanyFilter();
+    }
+
+    function renderMobileCompanyFilter() {
+      const select = document.getElementById('mobileCompanyFilter');
+      if (!select) return;
+      const current = state.selectedCompany;
+      const options = [];
+      options.push({ key: 'all', label: 'All companies' });
+      state.companies.forEach(entry => {
+        options.push({ key: entry.key, label: entry.label });
+      });
+      select.innerHTML = '';
+      options.forEach(option => {
+        const optEl = document.createElement('option');
+        optEl.value = option.key;
+        optEl.textContent = option.label;
+        select.appendChild(optEl);
+      });
+      if (options.some(option => option.key === current)) {
+        select.value = current;
+      } else {
+        select.value = 'all';
+      }
+    }
+
+    function syncMobileCompanyFilter() {
+      const select = document.getElementById('mobileCompanyFilter');
+      if (!select) return;
+      const current = state.selectedCompany;
+      if (select.value === current) return;
+      const optionExists = Array.from(select.options).some(opt => opt.value === current);
+      select.value = optionExists ? current : 'all';
+    }
+
+    function bindMobileFilter() {
+      const select = document.getElementById('mobileCompanyFilter');
+      if (!select || select.dataset.bound === 'true') return;
+      select.addEventListener('change', evt => {
+        const key = evt.target.value;
+        if (!key || key === state.selectedCompany) {
+          syncMobileCompanyFilter();
+          return;
+        }
+        state.selectedCompany = key;
+        updateFilterButtons();
+        applyFilters();
+      });
+      select.dataset.bound = 'true';
     }
 
     function applyFilters() {
@@ -1214,6 +1279,7 @@
       });
       state.companies = buildCompanyIndex(grouped);
       renderCompanyFilters();
+      bindMobileFilter();
       bindFilterEvents();
       bindSortControl();
       bindMetricControl();
@@ -1294,7 +1360,7 @@
         </a>
       </nav>
       <div class="topnav__actions">
-        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav">
+        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav" hidden aria-hidden="true">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
               <path d="M4 6h16"></path>
@@ -1373,6 +1439,12 @@
             <div id="companyFilters" class="filter-chips"></div>
             <div id="activeCompanyIndicator" class="filter-indicator" aria-live="polite">Showing all companies</div>
           </div>
+          <label class="sort-control filter-select-control" for="mobileCompanyFilter">
+            <span class="sort-control__label">Company</span>
+            <select id="mobileCompanyFilter" name="mobileCompanyFilter" aria-label="Filter rating series by company">
+              <option value="all">All companies</option>
+            </select>
+          </label>
           <label class="sort-control" for="sortMode">
             <span class="sort-control__label">Sort by</span>
             <select id="sortMode" name="sortMode" aria-label="Sort rating series">
@@ -1393,6 +1465,9 @@
             <div class="chart-tooltip__time"></div>
             <div class="chart-tooltip__series"></div>
           </div>
+        </div>
+        <div class="elo-chart__mobile-message" role="note">
+          Ratings graph available on desktop — open PokerBench on a larger screen to explore match trends.
         </div>
         <div id="legend" class="elo-bars" role="list"></div>
       </div>

@@ -77,7 +77,7 @@
         </a>
       </nav>
       <div class="topnav__actions">
-        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav">
+        <button class="pill nav-link topnav__toggle" type="button" aria-expanded="false" aria-controls="primaryNav" hidden aria-hidden="true">
           <span class="nav-link__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="presentation">
               <path d="M4 6h16"></path>
@@ -153,6 +153,7 @@
           </div>
           <div class="replay-intro__players" id="map" aria-live="polite"></div>
           <div class="replay-intro__meta" id="matchMeta" aria-live="polite">Loading latest match…</div>
+          <div class='replay-intro__bluffs' id='riverBluffStats' aria-live='polite'></div>
         </div>
       </section>
 
@@ -333,12 +334,6 @@
                 <button class="inline-tip" type="button" data-tip="Legal range for raise-to amounts on this street, combining the minimum and maximum if available." aria-label="Tip: raise window definition">i</button>
               </span>
               <span class="insight__value" id="raiseWindow">—</span>
-            </div>
-            <div class="insight insight--solver" id="insightSolver">
-              <span class="insight__label">Solver guidance
-                <button class="inline-tip" type="button" data-tip="Shows solver recommendations, best action, and confidence when evaluation data is available." aria-label="Tip: solver guidance definition">i</button>
-              </span>
-              <span class="insight__value" id="solverText">—</span>
             </div>
           </div>
 
